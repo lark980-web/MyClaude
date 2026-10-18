@@ -1,0 +1,458 @@
+import { findTool, toolSchemas } from "../tools/index.js";
+import { ProviderRouter } from "../providers/router.js";
+import { PermissionEngine, loadMemory } from "./permissions.js";
+import { SYSTEM_PROMPT } from "./prompt.js";
+import { buildUserContent, buildToolAttachmentContent, resolveAttachments } from "../attachments.js";
+import { setQuestionPresenter } from "../tools/extended.js";
+
+/** Tools that never touch the filesystem, so they never need approval. */
+const NON_MUTATING_TOOLS = new Set([
+  "TodoWrite",
+  "AskUserQuestion",
+  "ExitPlanMode",
+  "BashOutput",
+  "GitStatus",
+  "GitDiff",
+  "GitLog",
+]);
+
+export class Agent {
+  constructor({ provider, config, ui, tools = toolSchemas(), permissions }) {
+    this.provider = provider;
+    // Wrap the provider so a failing endpoint can fall back to another model.
+    // The router owns the active provider; `this.provider` stays the entry point
+    // for callers that only want the current one.
+    this.router = new ProviderRouter({
+      config,
+      provider,
+      fallbacks: config.fallbacks || [],
+      onSwitch: (cfg, reason, extra) => this.onProviderSwitch(cfg, reason, extra)
+    });
+    this.config = config;
+    this.ui = ui;
+    this.tools = tools;
+    this.messages = [];
+    this.abortController = null;
+    this.turnCount = 0;
+    this.sessionKey = "default";
+    this.mcp = null;
+    this.totalInputTokens = 0;
+    this.totalOutputTokens = 0;
+    this.permissions =
+      permissions instanceof PermissionEngine
+        ? permissions
+        : new PermissionEngine(config.permissions || {});
+    this.planMode = config.permissionMode === "plan";
+    this.memory = loadMemory(process.cwd());
+    this.systemPrompt = this.buildSystemPrompt();
+    // AskUserQuestion / ExitPlanMode need a presenter; bind it per agent so a
+    // GUI or TUI session always routes prompts to its own UI.
+    if (typeof ui?.askQuestions === "function") setQuestionPresenter(ui.askQuestions);
+  }
+
+  /** Attach a new UI (one HTTP response per GUI turn) and rebind interactive tools. */
+  setUi(ui) {
+    this.ui = ui;
+    if (typeof ui?.askQuestions === "function") setQuestionPresenter(ui.askQuestions);
+    return ui;
+  }
+
+  /**
+   * Called by the router when a request fails over to another model.
+   *
+   * @param {object} cfg the candidate being used or that just failed
+   * @param {"failing"|"recovered"} reason
+   * @param {object} [extra]
+   */
+  onProviderSwitch(cfg, reason, extra) {
+    if (reason === "failing" && extra && extra.next) {
+      const err = extra.error;
+      const why = err && (err.status ? `HTTP ${err.status}` : String(err.message || "").slice(0, 80));
+      this.ui.warn(`${cfg.model} failed (${why}) \u2014 switching to ${extra.next.model}`);
+      return;
+    }
+    if (reason === "recovered") {
+      this.ui.info(`now answering with ${cfg.model}`);
+    }
+  }
+
+  /**
+   * Switch the active model at runtime.
+   *
+   * The router holds the live provider, so it must be updated too; otherwise a
+   * later failover would resurrect the previous model.
+   */
+  setModel(model) {
+    if (!model) return this.router.model;
+    this.config.model = model;
+    this.router.provider.model = model;
+    this.provider.model = model;
+    return this.router.model;
+  }
+
+  /** Current routing state, surfaced in the GUI inspector. */
+  routingStatus() {
+    return this.router.status();
+  }
+
+  /** Whether image attachments are forwarded to the model. */
+  get vision() {
+    return this.config.vision !== false;
+  }
+
+  buildSystemPrompt() {
+    const parts = [SYSTEM_PROMPT];
+    if (this.memory) {
+      parts.push(
+        `\n\n# Project memory (MYCLAUDE.md)\n\nThe following project instructions take precedence over generic defaults:\n\n${this.memory}`
+      );
+    }
+    if (this.config.permissionMode === "plan") {
+      parts.push(
+        `\n\n# Plan mode\nYou are in plan mode: you MUST NOT use Write, Edit, MultiEdit, NotebookEdit or any ` +
+          `state-changing tool. Read-only exploration is allowed. When the plan is ready, call ExitPlanMode ` +
+          `with the full plan text so the user can approve execution.`
+      );
+    }
+    if (!this.vision) {
+      parts.push(
+        `\n\n# Vision disabled\nThe current model cannot read images. Image attachments are reported by name only; ` +
+          `describe what you need instead of guessing at pixels.`
+      );
+    }
+    return parts.join("");
+  }
+
+  /**
+   * Switch permission mode at runtime. Rebuilds the system prompt so plan-mode
+   * instructions are added/removed without losing conversation history.
+   */
+  setMode(mode) {
+    if (!["ask", "auto", "plan"].includes(mode)) {
+      throw new Error(`invalid mode: ${mode} (expected ask|auto|plan)`);
+    }
+    this.config.permissionMode = mode;
+    this.planMode = mode === "plan";
+    this.systemPrompt = this.buildSystemPrompt();
+    return mode;
+  }
+
+  get mode() {
+    return this.config.permissionMode;
+  }
+
+  setVision(enabled) {
+    this.config.vision = !!enabled;
+    this.systemPrompt = this.buildSystemPrompt();
+    return this.config.vision;
+  }
+
+  reloadMemory() {
+    this.memory = loadMemory(process.cwd());
+    this.systemPrompt = this.buildSystemPrompt();
+  }
+
+  reset() {
+    this.messages = [];
+    this.turnCount = 0;
+  }
+
+  /**
+   * Drop the trailing assistant/tool exchange so the last user message can be
+   * answered again. Used by the GUI "Retry" action.
+   *
+   * @param {string} [text] replace the last user message with this text (edit & resend)
+   * @returns {{ rewound: number, lastUser: object|null }}
+   */
+  rewind(text) {
+    let lastUser = -1;
+    for (let i = this.messages.length - 1; i >= 0; i--) {
+      if (this.messages[i].role === "user") { lastUser = i; break; }
+    }
+    if (lastUser < 0) return { rewound: 0, lastUser: null };
+    const dropped = this.messages.length - lastUser - 1;
+    this.messages = this.messages.slice(0, lastUser + 1);
+    if (typeof text === "string" && text.trim()) {
+      this.messages[lastUser] = { role: "user", content: text };
+    }
+    return { rewound: dropped, lastUser: this.messages[lastUser] };
+  }
+
+  abort() {
+    this.abortController?.abort();
+  }
+
+  buildRequestMessages() {
+    return [{ role: "system", content: this.systemPrompt }, ...this.messages];
+  }
+
+  /** Tools that never mutate the workspace; allowed without prompting in plan mode. */
+  static READ_ONLY_TOOLS = new Set([
+    "Read",
+    "GitStatus",
+    "GitDiff",
+    "GitLog",
+    "LS",
+    "Glob",
+    "Grep",
+    "WebFetch",
+    "WebSearch",
+    "NotebookRead",
+    "TodoWrite",
+    "AskUserQuestion",
+    "ExitPlanMode",
+    "BashOutput",
+  ]);
+
+  /** Deny list of tools that mutate state, blocked while in plan mode. */
+  static PLAN_MODE_BLOCKED = new Set(["Write", "Edit", "MultiEdit", "NotebookEdit", "Bash", "KillShell"]);
+
+  async askPermission(toolName, args) {
+    const mode = this.config.permissionMode;
+
+    if (mode === "plan") {
+      // Plan mode is read-only: exploration is free, mutations are refused.
+      if (Agent.READ_ONLY_TOOLS.has(toolName)) return true;
+      this.ui.warn(`plan mode: ${toolName} is blocked until the plan is approved`);
+      return false;
+    }
+
+    const verdict = this.permissions.evaluate(toolName, args);
+    if (verdict === "deny") {
+      this.ui.warn(`denied by permission rule: ${toolName}`);
+      return false;
+    }
+    if (verdict === "allow") return true;
+
+    // Pure bookkeeping tools (todo list, clarification prompts, reading
+    // background output) cannot touch the workspace, so prompting for them only
+    // costs the user a click. They are always allowed.
+    if (NON_MUTATING_TOOLS.has(toolName)) return true;
+
+    if (mode === "auto") return true;
+    return this.ui.confirmTool(toolName, args);
+  }
+
+  /**
+   * Ask the model for the next turn.
+   *
+   * @param {string} userInput
+   * @param {object} [options]
+   * @param {Array} [options.attachments]
+   * @param {boolean} [options.reuseLastUser] replay the existing last user
+   *   message instead of appending a new one (used by Retry)
+   */
+  async run(userInput, { attachments, reuseLastUser } = {}) {
+    if (!reuseLastUser) {
+      const resolved = await resolveAttachments(attachments);
+      const bad = resolved.filter((a) => a.kind === "error");
+      for (const a of bad) this.ui.warn(`attachment skipped: ${a.name} — ${a.error}`);
+      const usable = resolved.filter((a) => a.kind !== "error");
+
+      this.messages.push({
+        role: "user",
+        content: buildUserContent(userInput, usable, { vision: this.vision }),
+      });
+    }
+
+    const pendingImages = [];
+
+    for (let turn = 0; turn < this.config.maxTurns; turn++) {
+      this.turnCount++;
+      this.abortController = new AbortController();
+
+      let streamed = "";
+      let result;
+      try {
+        result = await this.router.streamChat({
+          messages: this.buildRequestMessages(),
+          tools: this.tools,
+          signal: this.abortController.signal,
+          onDelta: (chunk) => {
+            streamed += chunk;
+            this.ui.streamText(chunk);
+          }
+        });
+      } catch (e) {
+        if (e.name === "AbortError") {
+          this.ui.info("\n(interrupted)");
+          this.messages.push({ role: "assistant", content: streamed || "(interrupted)" });
+          return { interrupted: true };
+        }
+        this.ui.error(`provider error: ${e.message}`);
+        return { error: e };
+      }
+
+      if (streamed) this.ui.endStream();
+
+      const { text, toolCalls } = result;
+
+      if (!toolCalls.length) {
+        this.messages.push({ role: "assistant", content: text || "" });
+        return { text, done: true, turns: this.turnCount };
+      }
+
+      this.messages.push({
+        role: "assistant",
+        content: text || null,
+        tool_calls: toolCalls.map((c) => ({
+          id: c.id,
+          type: "function",
+          function: { name: c.name, arguments: c.raw || JSON.stringify(c.arguments) },
+        })),
+      });
+
+      for (const call of toolCalls) {
+        const tool = findTool(call.name);
+        if (!tool) {
+          this.messages.push({
+            role: "tool",
+            tool_call_id: call.id,
+            content: `ERROR: unknown tool "${call.name}"`,
+          });
+          this.ui.error(`unknown tool: ${call.name}`);
+          continue;
+        }
+
+        const approved = await this.askPermission(call.name, call.arguments);
+        if (!approved) {
+          this.messages.push({
+            role: "tool",
+            tool_call_id: call.id,
+            content: "ERROR: permission denied by user",
+          });
+          this.ui.warn(`denied: ${call.name}`);
+          continue;
+        }
+
+        this.ui.toolStart(call.name, call.arguments);
+        const started = Date.now();
+        let out;
+        try {
+          out = tool.mcp
+            ? await this.mcp.call(tool.mcpToolName || call.name, call.arguments)
+            : await tool.run(call.arguments, { sessionKey: this.sessionKey });
+          if (!out || typeof out !== "object") out = { ok: true, content: String(out ?? "") };
+        } catch (e) {
+          out = { ok: false, content: `tool threw: ${e.message}` };
+        }
+        const elapsed = Date.now() - started;
+        // The 5th argument carries structured payloads (git diffs, task ids)
+        // for UIs that can render more than plain text.
+        const extra = {};
+        if (Array.isArray(out.attachments)) { extra.attachments = out.attachments; }
+        if (out.git) { extra.git = out.git; }
+        if (Array.isArray(out.diff)) { extra.diff = out.diff; }
+        if (out.taskId) { extra.taskId = out.taskId; }
+        this.ui.toolEnd(call.name, out.ok, elapsed, out.content, extra);
+
+        if (call.name === "ExitPlanMode" && out.ok && this.config.permissionMode === "plan") {
+          this.setMode("ask");
+          this.ui.success("plan approved — switched to ask mode");
+        }
+
+        if (call.name === "ExitPlanMode" && out.ok && this.mode === "plan") {
+          // Approval flips the session back to ask so the plan can be executed.
+          this.setMode("ask");
+          this.ui.success("plan approved — switched to ask mode");
+        }
+
+        this.messages.push({
+          role: "tool",
+          tool_call_id: call.id,
+          content: out.content,
+        });
+
+        // Tool output can carry images (Read on a .png). The tool role only
+        // accepts text, so images are queued and sent as a user message.
+        if (Array.isArray(out.attachments) && out.attachments.length) {
+          const extra = out.attachments
+            .map((a) => (a?.type === "image" && a.source?.data
+              ? { kind: "image", name: a.source.media_type || "image", mime: a.source.media_type, data: a.source.data }
+              : null))
+            .filter(Boolean);
+          if (extra.length) pendingImages.push(...extra);
+        }
+      }
+
+      if (pendingImages.length) {
+        const content = buildToolAttachmentContent(pendingImages, { vision: this.vision });
+        this.messages.push({ role: "user", content });
+        pendingImages.length = 0;
+      }
+    }
+
+    this.ui.warn(`reached max turns (${this.config.maxTurns})`);
+    return { maxTurnsReached: true };
+  }
+
+  /**
+   * Compact the conversation when it approaches the context limit.
+   *
+   * Plain truncation throws away decisions made early in the session, so the
+   * history is first summarised by the model itself. If that call fails (an
+   * outage the router could not route around) we fall back to truncation
+   * rather than losing the session entirely.
+   */
+  async maybeCompact() {
+    const approxChars = this.messages.reduce((sum, m) => {
+      const c = typeof m.content === "string" ? m.content : JSON.stringify(m.content ?? "");
+      return sum + c.length + 20;
+    }, 0);
+    const approxTokens = Math.ceil(approxChars / 4);
+    const limit = this.config.contextWindow * this.config.compactThreshold;
+    if (approxTokens < limit) { return null; }
+
+    const keep = this.messages.slice(-6);
+    const middle = this.messages.slice(0, this.messages.length - keep.length);
+    if (!middle.length) { return null; }
+
+    let summary = null;
+    try {
+      summary = await this.summarise(middle);
+    } catch (e) {
+      summary = null; // fall through to truncation
+    }
+
+    const opening = summary
+      ? "[earlier conversation summarised\n\n" + summary + "]"
+      : "[context compacted: " + middle.length + " earlier messages removed]";
+    this.messages = [{ role: "user", content: opening }, ...keep];
+    return { dropped: middle.length, approxTokens: approxTokens, summarised: !!summary };
+  }
+
+  /** Ask the model to condense a range of messages into a short brief. */
+  async summarise(messages) {
+    const transcript = messages
+      .map(function (m) {
+        const text = typeof m.content === "string" ? m.content : "[multi-part message]";
+        const role = m.role === "user" ? "用户" : m.role === "assistant" ? "助手" : "工具";
+        return role + ": " + String(text).slice(0, 600);
+      })
+      .join("\n\n")
+      .slice(-12000);
+
+    const result = await this.router.complete({
+      messages: [
+        {
+          role: "system",
+          content:
+            "把下面的对话浓缩成简短摘要，保留：用户的目标、已做的决定与改动、关键文件路径、未完成事项。" +
+            "用中文，200 字以内，只输出摘要本身。",
+        },
+        { role: "user", content: transcript },
+      ],
+      tools: [],
+    });
+    const text = String(result.text || "").trim();
+    return text.length > 40 ? text.slice(0, 1200) : null;
+  }
+
+  stats() {
+    return {
+      messages: this.messages.length,
+      turns: this.turnCount,
+      memory: this.memory ? true : false,
+    };
+  }
+}

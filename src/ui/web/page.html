@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="zh-CN" translate="no">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta name="google" content="notranslate">
+<meta name="robots" content="notranslate">
+<meta http-equiv="Content-Language" content="zh-CN">
+<meta name="renderer" content="webkit">
+<title>MyClaude</title>
+<script>
+  /* 首帧前确定主题，避免闪烁：URL 参数 > 本地记录 > 系统偏好 */
+  (function () {
+    var t = null;
+    try { t = new URLSearchParams(location.search).get("theme"); } catch (e) { }
+    if (t !== "light" && t !== "dark") { try { t = localStorage.getItem("myclaude.theme"); } catch (e) { } }
+    if (t !== "light" && t !== "dark") { t = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"; }
+    document.documentElement.setAttribute("data-theme", t);
+  })();
+</script>
+<link rel="stylesheet" href="/app.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='-12 -12 24 24'><g fill='%23D97757'><rect x='-1.5' y='-11' width='3' height='9' rx='1.5'/><rect x='-1.5' y='-11' width='3' height='9' rx='1.5' transform='rotate(45)'/><rect x='-1.5' y='-11' width='3' height='9' rx='1.5' transform='rotate(90)'/><rect x='-1.5' y='-11' width='3' height='9' rx='1.5' transform='rotate(135)'/><rect x='-1.5' y='-11' width='3' height='9' rx='1.5' transform='rotate(180)'/><rect x='-1.5' y='-11' width='3' height='9' rx='1.5' transform='rotate(225)'/><rect x='-1.5' y='-11' width='3' height='9' rx='1.5' transform='rotate(270)'/><rect x='-1.5' y='-11' width='3' height='9' rx='1.5' transform='rotate(315)'/></g></svg>">
+</head>
+<body>
+
+<!-- 图标库：原创的八芒星标记 + 线性图标 -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-spark" viewBox="-12 -12 24 24">
+      <g fill="currentColor">
+        <rect x="-1.45" y="-11.2" width="2.9" height="8.6" rx="1.45"/>
+        <rect x="-1.45" y="-11.2" width="2.9" height="8.6" rx="1.45" transform="rotate(45)"/>
+        <rect x="-1.45" y="-11.2" width="2.9" height="8.6" rx="1.45" transform="rotate(90)"/>
+        <rect x="-1.45" y="-11.2" width="2.9" height="8.6" rx="1.45" transform="rotate(135)"/>
+        <rect x="-1.45" y="-11.2" width="2.9" height="8.6" rx="1.45" transform="rotate(180)"/>
+        <rect x="-1.45" y="-11.2" width="2.9" height="8.6" rx="1.45" transform="rotate(225)"/>
+        <rect x="-1.45" y="-11.2" width="2.9" height="8.6" rx="1.45" transform="rotate(270)"/>
+        <rect x="-1.45" y="-11.2" width="2.9" height="8.6" rx="1.45" transform="rotate(315)"/>
+      </g>
+    </symbol>
+    <symbol id="i-plus" viewBox="0 0 20 20"><path d="M10 4.5v11M4.5 10h11" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></symbol>
+    <symbol id="i-search" viewBox="0 0 20 20"><circle cx="9" cy="9" r="5.2" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M13 13l3.5 3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></symbol>
+    <symbol id="i-chat" viewBox="0 0 20 20"><path d="M4 5.5A2.5 2.5 0 016.5 3h7A2.5 2.5 0 0116 5.5v5a2.5 2.5 0 01-2.5 2.5H9l-3.6 3v-3H6.5A2.5 2.5 0 014 10.5z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></symbol>
+    <symbol id="i-folder" viewBox="0 0 20 20"><path d="M3 6a2 2 0 012-2h3l1.6 1.8H15a2 2 0 012 2V14a2 2 0 01-2 2H5a2 2 0 01-2-2z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></symbol>
+    <symbol id="i-tool" viewBox="0 0 20 20"><path d="M8.2 3.4a4 4 0 015.2 5.2l3.4 3.4a1.5 1.5 0 01-2.1 2.1l-3.4-3.4A4 4 0 016 5.5l2 2 1.4-1.4-2-2z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></symbol>
+    <symbol id="i-task" viewBox="0 0 20 20"><rect x="3.5" y="4" width="13" height="12" rx="2.2" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M6.5 8.2h7M6.5 11.6h4.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 20 20"><circle cx="10" cy="10" r="6.5" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M10 6.5V10l2.4 1.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></symbol>
+    <symbol id="i-gear" viewBox="0 0 20 20"><path d="M8.6 2.8h2.8l.4 2 1.5.9 1.9-.7 1.4 2.4-1.5 1.4v1.8l1.5 1.4-1.4 2.4-1.9-.7-1.5.9-.4 2H8.6l-.4-2-1.5-.9-1.9.7-1.4-2.4 1.5-1.4V9.1L3.4 7.7l1.4-2.4 1.9.7 1.5-.9z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><circle cx="10" cy="10" r="2.2" fill="none" stroke="currentColor" stroke-width="1.3"/></symbol>
+    <symbol id="i-sun" viewBox="0 0 20 20"><circle cx="10" cy="10" r="3.2" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M10 2.8v1.6M10 15.6v1.6M2.8 10h1.6M15.6 10h1.6M4.9 4.9l1.1 1.1M14 14l1.1 1.1M15.1 4.9L14 6M6 14l-1.1 1.1" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></symbol>
+    <symbol id="i-moon" viewBox="0 0 20 20"><path d="M15.5 12.2A6 6 0 017.8 4.5a6 6 0 107.7 7.7z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></symbol>
+    <symbol id="i-sidebar" viewBox="0 0 20 20"><rect x="3" y="4" width="14" height="12" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M8 4.5v11" stroke="currentColor" stroke-width="1.4"/></symbol>
+    <symbol id="i-panel" viewBox="0 0 20 20"><rect x="3" y="4" width="14" height="12" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M12 4.5v11" stroke="currentColor" stroke-width="1.4"/></symbol>
+    <symbol id="i-up" viewBox="0 0 20 20"><path d="M10 15.5v-11M5.5 9L10 4.5 14.5 9" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-down" viewBox="0 0 20 20"><path d="M10 4.5v11M5.5 11L10 15.5 14.5 11" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-chev" viewBox="0 0 20 20"><path d="M6 8l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-x" viewBox="0 0 20 20"><path d="M5.5 5.5l9 9M14.5 5.5l-9 9" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></symbol>
+    <symbol id="i-eye" viewBox="0 0 20 20"><path d="M2.5 10S5.2 4.8 10 4.8 17.5 10 17.5 10 14.8 15.2 10 15.2 2.5 10 2.5 10z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><circle cx="10" cy="10" r="2.3" fill="none" stroke="currentColor" stroke-width="1.4"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 20 20"><rect x="7" y="7" width="9" height="9" rx="2" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M13 7V5.5A1.5 1.5 0 0011.5 4h-6A1.5 1.5 0 004 5.5v6A1.5 1.5 0 005.5 13H7" fill="none" stroke="currentColor" stroke-width="1.4"/></symbol>
+    <symbol id="i-retry" viewBox="0 0 20 20"><path d="M15.5 10a5.5 5.5 0 11-1.6-3.9M15.5 4v3.5H12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-edit" viewBox="0 0 20 20"><path d="M12.6 4.6l2.8 2.8-8 8H4.6v-2.8z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></symbol>
+  </defs>
+</svg>
+
+<div class="app is-empty" id="app" translate="no">
+
+  <!-- ============================== 侧栏 ============================== -->
+  <aside class="rail" id="rail">
+    <div class="rail-head">
+      <div class="brand">
+        <span class="brand-name">MyClaude</span>
+      </div>
+      <button class="icon-btn" id="btn-rail-collapse" title="收起侧栏（Ctrl+B）" aria-label="收起侧栏">
+        <svg width="18" height="18"><use href="#i-sidebar"/></svg>
+      </button>
+    </div>
+
+    <nav class="rail-nav">
+      <button class="new-chat" id="btn-new-chat" title="新对话（Ctrl+L）">
+        <span class="new-chat-ico"><svg width="14" height="14"><use href="#i-plus"/></svg></span>
+        <span>新对话</span>
+      </button>
+      <button class="rail-item" id="btn-search-chat" title="搜索（Ctrl+K）">
+        <svg width="18" height="18"><use href="#i-search"/></svg>
+        <span>搜索</span>
+        <kbd class="rail-kbd">Ctrl K</kbd>
+      </button>
+      <button class="rail-item" id="btn-sessions" title="全部对话">
+        <svg width="18" height="18"><use href="#i-chat"/></svg>
+        <span>对话</span>
+      </button>
+      <button class="rail-item" id="btn-files" title="浏览工作目录">
+        <svg width="18" height="18"><use href="#i-folder"/></svg>
+        <span>文件</span>
+      </button>
+      <button class="rail-item" id="btn-tools" title="可用工具">
+        <svg width="18" height="18"><use href="#i-tool"/></svg>
+        <span>工具</span>
+        <span class="rail-badge" id="tool-count">0</span>
+      </button>
+      <button class="rail-item" id="btn-tasks" title="后台任务">
+        <svg width="18" height="18"><use href="#i-task"/></svg>
+        <span>后台任务</span>
+      </button>
+    </nav>
+
+    <div class="rail-scroll">
+      <div class="rail-label">
+        <span>最近</span>
+        <span class="rail-count" id="chat-count">0</span>
+      </div>
+      <nav class="chat-list" id="chat-list" aria-label="会话列表"></nav>
+    </div>
+
+    <div class="rail-foot">
+      <button class="profile" id="btn-settings" title="设置（Ctrl+,）">
+        <span class="profile-avatar" id="profile-avatar">D</span>
+        <span class="profile-text">
+          <span class="profile-name" id="profile-name">Danny</span>
+          <span class="profile-sub" id="profile-sub">本地工作区</span>
+        </span>
+        <svg class="profile-gear" width="17" height="17"><use href="#i-gear"/></svg>
+      </button>
+      <button class="icon-btn" id="btn-theme" title="切换深色 / 浅色" aria-label="切换主题">
+        <svg width="17" height="17" id="theme-icon"><use href="#i-moon"/></svg>
+        <span id="theme-label" hidden>深色模式</span>
+      </button>
+    </div>
+  </aside>
+
+  <!-- ============================== 主区 ============================== -->
+  <section class="main" id="main">
+    <header class="topbar">
+      <div class="top-left">
+        <button class="icon-btn" id="btn-rail-toggle" title="展开侧栏（Ctrl+B）" aria-label="侧栏">
+          <svg width="18" height="18"><use href="#i-sidebar"/></svg>
+        </button>
+        <button class="icon-btn only-collapsed" id="btn-top-new" title="新对话" aria-label="新对话">
+          <svg width="18" height="18"><use href="#i-plus"/></svg>
+        </button>
+      </div>
+
+      <div class="top-meta">
+        <span class="top-title" id="top-title">新对话</span>
+        <span class="top-sub" id="top-sub"></span>
+      </div>
+
+      <div class="top-right">
+        <div class="usage" id="usage" title="上下文用量">
+          <span class="usage-ring" aria-hidden="true"></span>
+          <span class="usage-pct">0%</span>
+        </div>
+        <button class="icon-btn" id="btn-clear" title="新对话（Ctrl+L）" aria-label="新对话" hidden></button>
+        <button class="icon-btn" id="btn-insp-toggle" title="会话面板（Ctrl+I）" aria-label="会话面板">
+          <svg width="18" height="18"><use href="#i-panel"/>
+        <button class="ghost-btn" id="btn-expand-tools" title="展开或收起全部工具输出">
+          <span id="expand-tools-label">展开输出</span>
+        </button></svg>
+        </button>
+      </div>
+    </header>
+
+    <main class="stream" id="stream">
+      <div class="stream-inner" id="log">
+
+        <section class="welcome" id="welcome">
+          <h1 class="welcome-title">
+            <svg class="welcome-mark" width="34" height="34" aria-hidden="true"><use href="#i-spark"/></svg>
+            <span id="greeting">你好</span>
+          </h1>
+          <p class="welcome-sub" id="w-meta"></p>
+        </section>
+
+      </div>
+      <button class="to-bottom" id="btn-to-bottom" title="回到最新" aria-label="回到最新" hidden>
+        <svg width="16" height="16"><use href="#i-down"/></svg>
+      </button>
+    </main>
+
+    <footer class="composer">
+      <div class="composer-inner">
+        <div class="slash" id="slash" hidden></div>
+
+        <div class="prompt" id="composer-box">
+          <div class="tray" id="attach-list" hidden></div>
+          <div class="prompt-top">
+            <textarea id="in" rows="1" spellcheck="false" autocomplete="off"
+              placeholder="今天想让 MyClaude 帮你做什么？"></textarea>
+          </div>
+          <div class="prompt-bar">
+            <div class="prompt-left">
+              <button class="round-btn" id="btn-attach" title="添加图片或文件（也可拖放、粘贴）" aria-label="添加附件">
+                <svg width="16" height="16"><use href="#i-plus"/></svg>
+              </button>
+              <div class="segmented" id="mode-seg" role="group" aria-label="权限模式">
+                <span class="segmented-thumb" id="mode-thumb" aria-hidden="true"></span>
+                <button class="segmented-item" data-mode="ask" title="每次写入前询问">询问</button>
+                <button class="segmented-item" data-mode="auto" title="自动批准所有工具">自动</button>
+                <button class="segmented-item" data-mode="plan" title="只读，先给方案">计划</button>
+              </div>
+              <button class="round-btn vision-btn" id="btn-vision" title="是否把图片发送给模型">
+                <svg width="16" height="16"><use href="#i-eye"/></svg>
+                <span id="vision-label" class="sr">视觉开启</span>
+              </button>
+            </div>
+            <div class="prompt-right">
+              <span class="prompt-stat" id="stat"></span>
+              <div class="model-pick">
+                <button class="model-btn" id="btn-model" title="切换模型">
+                  <span id="model-label">模型</span>
+                  <svg width="14" height="14"><use href="#i-chev"/></svg>
+                </button>
+                <div class="model-menu" id="model-menu" hidden></div>
+              </div>
+              <button class="stop-btn" id="btn-stop" title="停止生成（Esc）" aria-label="停止生成" hidden>
+                <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><rect x="3" y="3" width="10" height="10" rx="2" fill="currentColor"/></svg>
+              </button>
+              <button class="send-btn" id="send" title="发送（Enter）" aria-label="发送">
+                <svg width="17" height="17"><use href="#i-up"/></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="cards" id="welcome-cards"></div>
+
+        <div class="composer-foot">
+          <span id="vision-note"></span>
+          <span class="foot-hint">MyClaude 可能会出错，请核对重要操作。<kbd>Enter</kbd> 发送 · <kbd>Shift</kbd>+<kbd>Enter</kbd> 换行</span>
+        </div>
+        <input type="file" id="file-input" multiple hidden>
+      </div>
+    </footer>
+  </section>
+
+  <!-- ============================== 会话面板 ============================== -->
+  <aside class="inspector" id="inspector">
+    <header class="insp-head">
+      <span class="insp-title">会话详情</span>
+      <button class="icon-btn" id="btn-insp-close" title="关闭" aria-label="关闭">
+        <svg width="16" height="16"><use href="#i-x"/></svg>
+      </button>
+    </header>
+    <div class="insp-scroll" id="insp-body"></div>
+  </aside>
+
+  <!-- ============================== 浮层 ============================== -->
+  <div class="dropzone" id="dropzone"><div class="dropzone-box">松手即可添加附件</div></div>
+
+  <div class="modal" id="modal" hidden>
+    <div class="modal-veil" data-close="1"></div>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+      <header class="modal-head">
+        <h2 id="modal-title">标题</h2>
+        <button class="icon-btn" data-close="1" title="关闭（Esc）" aria-label="关闭">
+          <svg width="16" height="16" style="pointer-events:none"><use href="#i-x"/></svg>
+        </button>
+      </header>
+      <div class="modal-body" id="modal-body"></div>
+      <footer class="modal-foot" id="modal-foot" hidden></footer>
+    </div>
+  </div>
+
+  <div class="cmd" id="cmd" hidden>
+    <div class="cmd-veil"></div>
+    <div class="cmd-card">
+      <div class="cmd-search">
+        <svg width="18" height="18"><use href="#i-search"/></svg>
+        <input class="cmd-input" id="cmd-input" placeholder="搜索对话或命令…" autocomplete="off" spellcheck="false">
+      </div>
+      <div class="cmd-list" id="cmd-list"></div>
+    </div>
+  </div>
+
+  <div class="toasts" id="toasts" aria-live="polite"></div>
+  <div class="veil" id="rail-veil" hidden></div>
+</div>
+
+<script src="/markdown.js" defer></script>
+<script src="/app.js" defer></script>
+</body>
+</html>

@@ -1,0 +1,39 @@
+# 依赖
+node_modules/
+
+# 构建产物（可用 npm run build 重新生成，82MB）
+dist/
+
+# 本地配置与运行时数据
+*.log
+.env
+.env.*
+config-persist*.json
+
+# 系统垃圾
+Thumbs.db
+desktop.ini
+.DS_Store
+$RECYCLE.BIN/
+
+# 编辑器
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 我此前调试用的临时文件
+_*.png
+_*.mjs
+_*.cjs
+_*.html
+_*.js
+_*.css
+*.tmp
+
+# 仓库根目录误留的脏数据（不属于本项目）
+"t.name).join(
+"{console.log("readonly"
+"1))"
+"c[n]"
+.gui7831

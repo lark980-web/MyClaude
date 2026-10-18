@@ -1,0 +1,7 @@
+{
+  "name": "react-devtools-core",
+  "version": "0.0.0-stub",
+  "description": "No-op stub so bundlers can resolve Ink's optional devtools import",
+  "main": "index.js",
+  "type": "commonjs"
+}
