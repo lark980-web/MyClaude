@@ -299,7 +299,7 @@ test("ExitPlanMode asks the browser and flips the session to ask mode", async ()
     }
 
     assert.ok(answered, "question event was emitted");
-    assert.ok(events.some((e) => e.type === "success" && /switched to ask mode/.test(e.text)));
+    assert.ok(events.some((e) => e.type === "success" && /已切回询问模式/.test(e.text)));
     assert.equal(events.find((e) => e.type === "mode").permissionMode, "ask");
     const cfg = await json(await fetch(ctx.address + "/api/config"));
     assert.equal(cfg.permissionMode, "ask");

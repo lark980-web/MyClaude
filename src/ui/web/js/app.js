@@ -82,15 +82,54 @@
   }
 
 
+  /** 最多同时显示几条提示。 */
+  var TOAST_MAX = 3;
+
+  /**
+   * Show a transient notification.
+   *
+   * Identical messages are refreshed rather than duplicated: deleting five
+   * sessions in a row used to stack five "已删除" bars, which reads as a
+   * glitch rather than as confirmation.
+   */
   function toast(text, kind) {
     var wrap = $("toasts");
     if (!wrap) { return; }
-    var t = el("div", "toast " + (kind || ""), text);
+    var label = String(text || "");
+
+    // Collapse a repeat of the message already showing.
+    var existing = null;
+    Array.prototype.forEach.call(wrap.children, function (n) {
+      if (n.getAttribute("data-msg") === label) { existing = n; }
+    });
+    if (existing) {
+      clearTimeout(Number(existing.getAttribute("data-timer")));
+      var bump = Number(existing.getAttribute("data-count") || 1) + 1;
+      existing.setAttribute("data-count", String(bump));
+      if (existing.lastChild) { existing.lastChild.textContent = bump > 1 ? " \u00D7" + bump : ""; }
+      existing.setAttribute("data-timer", String(armToast(existing)));
+      return;
+    }
+
+    var t = el("div", "toast " + (kind || ""));
+    t.setAttribute("data-msg", label);
+    t.appendChild(el("span", "toast-text", label));
+    t.appendChild(el("span", "toast-count", ""));
+    t.setAttribute("data-timer", String(armToast(t)));
     wrap.appendChild(t);
-    setTimeout(function () {
-      t.style.opacity = "0";
-      t.style.transition = "opacity .2s";
-      setTimeout(function () { if (t.parentNode) { t.parentNode.removeChild(t); } }, 220);
+
+    // Keep the stack bounded.
+    while (wrap.children.length > TOAST_MAX) {
+      wrap.removeChild(wrap.firstChild);
+    }
+  }
+
+  /** Schedule a toast for removal and return the timer id. */
+  function armToast(node) {
+    return setTimeout(function () {
+      node.style.opacity = "0";
+      node.style.transition = "opacity .2s";
+      setTimeout(function () { if (node.parentNode) { node.parentNode.removeChild(node); } }, 220);
     }, 3200);
   }
 
@@ -1000,23 +1039,85 @@
     root.appendChild(s.sec);
   }
 
+  /** 备用模型探活结果，键为 model。null 表示尚未检测。 */
+  var fallbackProbe = null;
+
+  /**
+   * Show the failover pool and — importantly — whether it actually works.
+   *
+   * A list of model names says nothing on its own: the point of the panel is
+   * to answer "if my primary provider dies, will one of these answer?", so
+   * the probe result and the switch history are the real content.
+   */
   function renderRoutingSection(root) {
     var c = S.config || {};
     var pool = c.fallbacks || [];
     if (!pool.length && !S.routing) { return; }
     var s = section("备用模型");
     s.body.appendChild(el("div", "empty-note", "限流、超时或 5xx 时自动切换"));
-    var active = S.routing && S.routing.model;
+
+    var routing = S.routing || {};
+    var live = routing.model && routing.model !== c.model;
+    if (live) {
+      var now = el("div", "route-live");
+      now.appendChild(el("span", "pill ok", "已切换"));
+      now.appendChild(el("span", null, routing.model));
+      s.body.appendChild(now);
+    }
+
     pool.forEach(function (f, i) {
-      var row = el("div", "tool-row" + (f.model === active ? " active" : ""));
+      var row = el("div", "mcp-row");
       row.appendChild(el("b", null, f.model));
-      row.appendChild(el("span", null, f.model === active ? "当前" : "待命 " + (i + 1)));
+      var right = el("span", "mcp-right");
+      var probe = fallbackProbe && fallbackProbe[f.model];
+      if (probe) {
+        right.appendChild(el("span", "pill " + (probe.ok ? "ok" : "fail"), probe.ok ? "可用 " + probe.ms + "ms" : "不可用"));
+        if (!probe.ok && probe.error) { right.title = probe.error; }
+      } else {
+        right.appendChild(el("span", "pill run", live ? "待命" : "未检测"));
+      }
+      row.appendChild(right);
       s.body.appendChild(row);
     });
+
     if (S.routing && S.routing.switches) {
-      s.body.appendChild(el("div", "empty-note", "本会话已切换 " + S.routing.switches + " 次"));
+      var meta = [];
+      meta.push("已切换 " + S.routing.switches + " 次");
+      if (S.routing.switchedAt) { meta.push(relTime(S.routing.switchedAt)); }
+      s.body.appendChild(el("div", "empty-note", meta.join(" · ")));
     }
+    if (S.routing && S.routing.lastError) {
+      var err = el("div", "empty-note", "上次失败：" + S.routing.lastError);
+      err.style.color = "var(--crit)";
+      s.body.appendChild(err);
+    }
+
+    var probeBtn = el("button", "btn ghost", fallbackProbe ? "重新检测" : "检测可用性");
+    probeBtn.type = "button";
+    probeBtn.addEventListener("click", function () {
+      probeBtn.disabled = true;
+      probeBtn.textContent = "检测中…";
+      postJSON("/api/fallbacks/test", {}).then(function (j) {
+        fallbackProbe = {};
+        (j.results || []).forEach(function (r2) { fallbackProbe[r2.model] = r2; });
+        renderInspector();
+        var bad = (j.results || []).filter(function (r2) { return !r2.ok; }).length;
+        toast(bad ? bad + " 个备用模型不可用" : "全部备用模型可用", bad ? "warn" : "ok");
+      }).catch(function (e) { toast("检测失败：" + e.message, "err"); });
+    });
+    s.body.appendChild(probeBtn);
     root.appendChild(s.sec);
+  }
+
+  /** "3 分钟前" 之类的相对时间。 */
+  function relTime(iso) {
+    var t = Date.parse(iso);
+    if (isNaN(t)) { return ""; }
+    var d = Math.max(0, Date.now() - t) / 1000;
+    if (d < 60) { return "刚刚"; }
+    if (d < 3600) { return Math.floor(d / 60) + " 分钟前"; }
+    if (d < 86400) { return Math.floor(d / 3600) + " 小时前"; }
+    return Math.floor(d / 86400) + " 天前";
   }
 
   function renderTodoSection(root) {
@@ -1131,37 +1232,156 @@
     });
   }
 
+  /** 每个项目分组默认展示的会话数，超出折叠为「再显示 N 条」。 */
+  var GROUP_LIMIT = 5;
+  var expandedGroups = {};
+
+  /** Row awaiting delete confirmation, so the state survives a re-render. */
+  var pendingDelete = null;
+
+  /**
+   * Render the session list grouped by project (working directory).
+   *
+   * Sessions from several projects are otherwise one flat, undifferentiated
+   * pile; grouping by cwd restores the "where was I working" cue that makes
+   * a long list navigable.
+   */
   function renderChatList() {
     var list = $("chat-list");
     if (!list) { return; }
     clear(list);
-    var count = $("chat-count");
-    if (count) { count.textContent = String(S.sessions.length); }
+    var badge = $("chat-count");
+    if (badge) { badge.textContent = String(S.sessions.length); }
     if (!S.sessions.length) {
       list.appendChild(el("div", "rail-empty", "暂无历史对话"));
       return;
     }
-    S.sessions.slice(0, 30).forEach(function (s) {
-      var b = el("button", "chat-row" + (s.id === S.sessionKey ? " active" : ""));
-      b.type = "button";
-      if (s.pinned) { b.appendChild(el("span", "chat-pin", "\u2605")); }
-      b.appendChild(el("span", "chat-title", s.title || s.id));
-      b.appendChild(el("span", "chat-meta", timeAgo(s.updatedAt || s.savedAt)));
-      var x = el("button", "chat-del", "\u00D7");
-      x.type = "button";
-      x.title = "删除";
-      x.addEventListener("click", function (e) {
-        e.stopPropagation();
-        deleteSession(s.id);
-      });
-      b.appendChild(x);
-      b.addEventListener("contextmenu", function (e) {
-        e.preventDefault();
-        openSessionMenu(s, e.clientX, e.clientY);
-      });
-      b.addEventListener("click", function () { resumeSession(s.id); });
-      list.appendChild(b);
+
+    // Bucket by working directory.
+    var groups = {};
+    S.sessions.forEach(function (s) {
+      var key = normCwd(s.cwd);
+      if (!groups[key]) { groups[key] = []; }
+      groups[key].push(s);
     });
+
+    // Most recently touched project first.
+    var keys = Object.keys(groups).sort(function (a, b) {
+      return newestAt(groups[b]) - newestAt(groups[a]);
+    });
+
+    keys.forEach(function (key) {
+      var items = groups[key].slice().sort(function (a, b) {
+        if (!!a.pinned !== !!b.pinned) { return a.pinned ? -1 : 1; }
+        var ua = Date.parse(a.updatedAt || a.savedAt || 0) || 0;
+        var ub = Date.parse(b.updatedAt || b.savedAt || 0) || 0;
+        return ub - ua;
+      });
+
+      var open = expandedGroups[key] === true;
+      var wrap = el("div", "chat-group");
+
+      var head = el("button", "chat-group-head");
+      head.type = "button";
+      head.title = key;
+      head.appendChild(el("span", "chat-group-arrow", open ? "\u25BE" : "\u25B8"));
+      head.appendChild(el("span", "chat-group-name", projectName(key)));
+      head.appendChild(el("span", "chat-group-n", String(items.length)));
+      head.addEventListener("click", function () {
+        expandedGroups[key] = !open;
+        renderChatList();
+      });
+      wrap.appendChild(head);
+
+      var shown = open ? items : items.slice(0, GROUP_LIMIT);
+      shown.forEach(function (s) {
+        var b = el("button", "chat-row" + (s.id === S.sessionKey ? " active" : ""));
+        b.type = "button";
+        if (s.pinned) { b.appendChild(el("span", "chat-pin", "\u2605")); }
+        b.appendChild(el("span", "chat-title", s.title || s.id));
+        b.appendChild(el("span", "chat-meta", timeAgo(s.updatedAt || s.savedAt)));
+        // Two-step delete: the row itself becomes the confirmation, so a run of
+        // deletions never stacks native dialogs or orphaned toasts.
+        if (pendingDelete === s.id) {
+          var yes = el("button", "chat-del-yes", "删除");
+          yes.type = "button";
+          yes.addEventListener("click", function (e) {
+            e.stopPropagation();
+            pendingDelete = null;
+            deleteSession(s.id);
+          });
+          b.appendChild(yes);
+          var no = el("button", "chat-del-no", "取消");
+          no.type = "button";
+          no.addEventListener("click", function (e) {
+            e.stopPropagation();
+            pendingDelete = null;
+            renderChatList();
+          });
+          b.appendChild(no);
+        } else {
+          var x = el("button", "chat-del", "\u00D7");
+          x.type = "button";
+          x.title = "删除";
+          x.addEventListener("click", function (e) {
+            e.stopPropagation();
+            pendingDelete = s.id;
+            renderChatList();
+          });
+          b.appendChild(x);
+        }
+        b.addEventListener("contextmenu", function (e) {
+          e.preventDefault();
+          openSessionMenu(s, e.clientX, e.clientY);
+        });
+        b.addEventListener("click", function () { resumeSession(s.id); });
+        wrap.appendChild(b);
+      });
+
+      if (!open && items.length > GROUP_LIMIT) {
+        var more = el("button", "chat-group-more", "再显示 " + (items.length - GROUP_LIMIT) + " 条");
+        more.type = "button";
+        more.addEventListener("click", function () {
+          expandedGroups[key] = true;
+          renderChatList();
+        });
+        wrap.appendChild(more);
+      }
+
+      list.appendChild(wrap);
+    });
+  }
+
+  /** Folder name for a working directory, falling back to the full path. */
+  /**
+   * Normalise a working directory so one project is one group.
+   *
+   * Sessions saved from different entry points record the same folder with
+   * different separators ("E:\\\\proj" vs "E:/proj") and drive-letter case,
+   * which would otherwise split a single project into several groups.
+   */
+  function normCwd(cwd) {
+    if (!cwd) { return "(unknown)"; }
+    var s = String(cwd).replace(/\\/g, "/").replace(/\/+$/, "");
+    // Lower-case only the drive letter, not the rest of the path.
+    s = s.replace(/^([A-Za-z]):/, function (_, d) { return d.toLowerCase() + ":"; });
+    return s || "(unknown)";
+  }
+
+  function projectName(cwd) {
+    if (!cwd || cwd === "(unknown)") { return "未知项目"; }
+    var parts = String(cwd).split(/[\\/]+/).filter(Boolean);
+    return parts.length ? parts[parts.length - 1] : cwd;
+  }
+
+  /** Newest timestamp inside a group of sessions. */
+  function newestAt(items) {
+    var max = 0;
+    items.forEach(function (s) {
+      var t = Date.parse(s.updatedAt || s.savedAt || 0) || 0;
+      if (t > max) { max = t; }
+    });
+    return max;
   }
 
   function refreshSessions() {
@@ -1184,7 +1404,6 @@
   }
 
   function deleteSession(id) {
-    if (!window.confirm("删除这个对话？此操作无法撤销。")) { return; }
     delJSON("/api/sessions/" + encodeURIComponent(id)).then(function () {
       toast("已删除", "ok");
       if (id === S.sessionKey) { newChat(); }

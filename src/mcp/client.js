@@ -1,5 +1,33 @@
 import { spawn } from "node:child_process";
+import { existsSync, statSync } from "node:fs";
+import { isAbsolute, extname } from "node:path";
 import { StreamableHttpTransport, SseHttpTransport } from "./http-transport.js";
+
+/**
+ * Should this command be launched through a shell?
+ *
+ * Windows is the tricky case. Passing shell:true makes cmd.exe parse the command
+ * line, and cmd splits on spaces, so an install path like
+ * "C:\\Program Files\\nodejs\\node.exe" is cut in half and the server dies
+ * immediately with exit code 1. Spawning the executable directly avoids that —
+ * but .cmd/.bat shims (npx, yarn) can only be started through cmd, so those
+ * still need a shell.
+ */
+function needsShell(command) {
+  if (process.platform !== "win32") { return false; }
+  const cmd = String(command || "").trim();
+  if (!cmd) { return false; }
+  // A bare name (no path separator) relies on PATH and may be a .cmd shim.
+  const hasSeparator = cmd.includes("/") || cmd.includes("\\");
+  if (!hasSeparator) { return true; }
+  const ext = extname(cmd).toLowerCase();
+  if (ext === ".cmd" || ext === ".bat") { return true; }
+  // An explicit path to a real file: run it directly so spaces survive.
+  try {
+    if (isAbsolute(cmd) && existsSync(cmd) && statSync(cmd).isFile()) { return false; }
+  } catch { /* fall through */ }
+  return true;
+}
 
 let nextId = 1;
 
@@ -23,7 +51,7 @@ class StdioTransport {
       env: { ...process.env, ...this.env },
       stdio: ["pipe", "pipe", "pipe"],
       windowsHide: true,
-      shell: process.platform === "win32",
+      shell: needsShell(this.command),
     });
 
     this.proc.stdout.setEncoding("utf8");

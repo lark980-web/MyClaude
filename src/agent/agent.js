@@ -5,6 +5,7 @@ import { normalizeMode, isCommonFileCommand, FILE_EDIT_TOOLS } from "./modes.js"
 import { SYSTEM_PROMPT } from "./prompt.js";
 import { buildUserContent, buildToolAttachmentContent, resolveAttachments } from "../attachments.js";
 import { setQuestionPresenter } from "../tools/extended.js";
+import { HookRunner } from "../hooks.js";
 
 /** Tools that never touch the filesystem, so they never need approval. */
 const NON_MUTATING_TOOLS = new Set([
@@ -35,6 +36,8 @@ export class Agent {
     this.messages = [];
     this.abortController = null;
     this.turnCount = 0;
+    // Guards the Stop hook so it can only extend a run once.
+    this.stopHookUsed = false;
     this.sessionKey = "default";
     this.mcp = null;
     this.totalInputTokens = 0;
@@ -45,6 +48,7 @@ export class Agent {
         : new PermissionEngine(config.permissions || {});
     this.planMode = normalizeMode(config.permissionMode) === "plan";
     this.memory = loadMemory(process.cwd());
+    this.hooks = new HookRunner({ config, cwd: process.cwd(), ui });
     this.systemPrompt = this.buildSystemPrompt();
     // AskUserQuestion / ExitPlanMode need a presenter; bind it per agent so a
     // GUI or TUI session always routes prompts to its own UI.
@@ -269,6 +273,18 @@ export class Agent {
    */
   async run(userInput, { attachments, reuseLastUser } = {}) {
     if (!reuseLastUser) {
+      // UserPromptSubmit may veto the turn or inject extra context alongside it.
+      if (this.hooks.has("UserPromptSubmit")) {
+        const verdict = await this.hooks.run("UserPromptSubmit", { prompt: String(userInput || "") });
+        if (verdict.systemMessage) { this.ui.warn(verdict.systemMessage); }
+        if (verdict.block) {
+          this.ui.warn(`prompt blocked by hook: ${verdict.reason}`);
+          return { blocked: true, reason: verdict.reason };
+        }
+        if (verdict.context) {
+          this.messages.push({ role: "user", content: "[hook context]\n" + verdict.context });
+        }
+      }
       const resolved = await resolveAttachments(attachments);
       const bad = resolved.filter((a) => a.kind === "error");
       for (const a of bad) this.ui.warn(`attachment skipped: ${a.name} — ${a.error}`);
@@ -281,6 +297,8 @@ export class Agent {
     }
 
     const pendingImages = [];
+    // Each run gets its own Stop-hook budget.
+    this.stopHookUsed = false;
 
     for (let turn = 0; turn < this.config.maxTurns; turn++) {
       this.turnCount++;
@@ -321,6 +339,21 @@ export class Agent {
 
       if (!toolCalls.length) {
         this.messages.push({ role: "assistant", content: text || "" });
+
+        // Stop may veto the ending (e.g. "tests still failing"), which keeps the
+        // agent working with the hook's reason as new context. Only allow it
+        // once per turn so a misconfigured hook cannot loop forever.
+        if (this.hooks.has("Stop") && !this.stopHookUsed) {
+          this.stopHookUsed = true;
+          const sv = await this.hooks.run("Stop", { transcript: this.messages.slice(-6) });
+          if (sv.systemMessage) { this.ui.warn(sv.systemMessage); }
+          if (sv.block) {
+            this.ui.warn("hook asked to continue: " + sv.reason);
+            this.messages.push({ role: "user", content: "[hook] " + sv.reason });
+            continue;
+          }
+        }
+        this.stopHookUsed = false;
         return { text, done: true, turns: this.turnCount };
       }
 
@@ -346,7 +379,32 @@ export class Agent {
           continue;
         }
 
-        const approved = await this.askPermission(call.name, call.arguments);
+        // PreToolUse runs before the interactive prompt so a hook can settle the
+        // decision without bothering the user (allow) or veto it outright (block).
+        let hookPermission = null;
+        if (this.hooks.has("PreToolUse", call.name)) {
+          const hv = await this.hooks.run("PreToolUse", {
+            tool_name: call.name,
+            tool_input: call.arguments,
+          });
+          hookPermission = hv.permission;
+          if (hv.systemMessage) { this.ui.warn(hv.systemMessage); }
+          if (hv.block) {
+            this.messages.push({
+              role: "tool",
+              tool_call_id: call.id,
+              content: "ERROR: blocked by hook: " + hv.reason,
+            });
+            this.ui.warn(`blocked by hook: ${call.name} — ${hv.reason}`);
+            continue;
+          }
+        }
+
+        const approved = hookPermission === "allow"
+          ? true
+          : hookPermission === "deny"
+            ? false
+            : await this.askPermission(call.name, call.arguments);
         if (!approved) {
           this.messages.push({
             role: "tool",
@@ -378,15 +436,27 @@ export class Agent {
         if (out.taskId) { extra.taskId = out.taskId; }
         this.ui.toolEnd(call.name, out.ok, elapsed, out.content, extra);
 
-        if (call.name === "ExitPlanMode" && out.ok && this.config.permissionMode === "plan") {
-          this.setMode("ask");
-          this.ui.success("plan approved — switched to ask mode");
+        // PostToolUse sees the result, so it can lint, scan or audit it. A block
+        // here cannot undo the call, but its reason is fed back to the model.
+        if (this.hooks.has("PostToolUse", call.name)) {
+          const hv = await this.hooks.run("PostToolUse", {
+            tool_name: call.name,
+            tool_input: call.arguments,
+            tool_response: out.content,
+            tool_ok: out.ok,
+          });
+          if (hv.systemMessage) { this.ui.warn(hv.systemMessage); }
+          if (hv.context) { this.messages.push({ role: "user", content: "[hook context]\n" + hv.context }); }
+          if (hv.block) {
+            this.ui.warn(`hook flagged ${call.name}: ${hv.reason}`);
+            this.messages.push({ role: "user", content: "[hook warning] " + hv.reason });
+          }
         }
 
-        if (call.name === "ExitPlanMode" && out.ok && this.mode === "plan") {
+        if (call.name === "ExitPlanMode" && out.ok && normalizeMode(this.config.permissionMode) === "plan") {
           // Approval flips the session back to ask so the plan can be executed.
           this.setMode("ask");
-          this.ui.success("plan approved — switched to ask mode");
+          this.ui.success("方案已批准 — 已切回询问模式");
         }
 
         this.messages.push({

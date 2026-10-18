@@ -66,6 +66,7 @@ export class ProviderRouter {
     // often construct it from a partial config.
     this.provider = provider || createProvider(config);
     this.switches = 0;
+    this.switchedAt = null;
     this.lastError = null;
   }
 
@@ -109,6 +110,7 @@ export class ProviderRouter {
     this.config.baseUrl = this.provider.baseUrl;
     if (cfg.apiKey) this.config.apiKey = cfg.apiKey;
     this.switches++;
+    this.switchedAt = new Date().toISOString();
     if (this.onSwitch) this.onSwitch(cfg, reason);
   }
 
@@ -158,6 +160,7 @@ export class ProviderRouter {
       baseUrl: this.provider.baseUrl,
       candidates: this.candidates().map((c) => ({ model: c.model, baseUrl: c.baseUrl })),
       switches: this.switches,
+      switchedAt: this.switchedAt,
       lastError: this.lastError ? describe(this.lastError) : null
     };
   }

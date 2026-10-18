@@ -23,7 +23,7 @@ import { loadGuiAssets } from "./assets.js";
 import { loadCommands, findCommand, expandCommand } from "../commands.js";
 import { normalizeMode, PERMISSION_MODES } from "../agent/modes.js";
 
-const VERSION = "0.13.0";
+const VERSION = "0.14.0";
 const MAX_FILE_BYTES = 1024 * 1024;
 
 /** Paths the file browser must never expose. */
@@ -400,6 +400,32 @@ export async function startGui({ config: initialConfig, port = 7788, open = true
         } catch (e) {
           sendJson(res, 200, { ok: false, models: [], error: String(e?.message || e) });
         }
+        return;
+      }
+
+      /* ---- 备用模型探活 ---- */
+      if (path === "/api/fallbacks/test" && req.method === "POST") {
+        const results = [];
+        for (const fb of config.fallbacks || []) {
+          const started = Date.now();
+          let state = { name: fb.name || fb.model, model: fb.model, ok: false, ms: 0, error: null };
+          try {
+            const probe = createProvider({
+              ...config,
+              baseUrl: fb.baseUrl,
+              apiKey: fb.apiKey || config.apiKey,
+              model: fb.model
+            });
+            await probe.listModels();
+            state.ok = true;
+            state.ms = Date.now() - started;
+          } catch (e) {
+            state.error = String(e && e.message ? e.message : e);
+            state.ms = Date.now() - started;
+          }
+          results.push(state);
+        }
+        sendJson(res, 200, { ok: true, results });
         return;
       }
 
