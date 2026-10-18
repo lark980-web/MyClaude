@@ -17,6 +17,7 @@ import {
   sessionFile,
 } from "./session.js";
 import { resolveAttachments, describeAttachment } from "./attachments.js";
+import { loadCommands, findCommand, expandCommand } from "./commands.js";
 
 const HELP = `MyClaude — terminal AI coding agent
 
@@ -345,9 +346,28 @@ async function handleCommand(raw, ctx) {
       ui.success(deleteSession(arg) ? `deleted ${arg}` : `not found: ${arg}`);
       return {};
     }
-    default:
-      ui.warn(`unknown command: /${cmd}`);
+    case "commands": {
+      const list = loadCommands(process.cwd());
+      if (!list.length) {
+        ui.info("(no custom commands) — add Markdown files under .myclaude/commands/ or ~/.myclaude/commands/");
+        return {};
+      }
+      ui.info(
+        list
+          .map((c) => `  /${c.name.padEnd(16)} ${c.description}${c.scope === "user" ? "  (user)" : ""}`)
+          .join("\n")
+      );
       return {};
+    }
+    default: {
+      // Not a built-in: try a user/project command file before giving up.
+      const custom = findCommand(cmd, process.cwd());
+      if (!custom) {
+        ui.warn(`unknown command: /${cmd}`);
+        return {};
+      }
+      return { customPrompt: expandCommand(custom, arg), customName: cmd };
+    }
   }
 }
 
@@ -370,6 +390,16 @@ async function runPlain({ config, provider, agent, autoSaver, ui }) {
     if (trimmed.startsWith("/")) {
       const r = await handleCommand(trimmed, ctx);
       if (r.exit) running = false;
+      // A custom command expands into a normal turn, so it must go through the
+      // same run/save/compact path as typed input.
+      if (r.customPrompt) {
+        ui.info(`执行自定义命令 /${r.customName}\n`);
+        const files = ctx.pendingAttachments.splice(0);
+        await agent.run(r.customPrompt, { attachments: files });
+        const compact = await agent.maybeCompact();
+        if (compact) ui.info(`context compacted (dropped ${compact.dropped} messages)`);
+        autoSaver?.save();
+      }
       continue;
     }
 
@@ -417,6 +447,23 @@ async function runTui({ config, provider, agent, autoSaver }) {
       if (r.exit) {
         exiting = true;
         tui.instance.unmount();
+        return;
+      }
+      // Custom command: run it as a normal turn with the same busy handling.
+      if (r.customPrompt) {
+        bridge.info(`执行自定义命令 /${r.customName}`);
+        bridge.setBusy(true);
+        const files = pendingAttachments.splice(0);
+        bridge.setAttachments(pendingAttachments);
+        try {
+          await agent.run(r.customPrompt, { attachments: files });
+          const compact = await agent.maybeCompact();
+          if (compact) bridge.info(`context compacted (dropped ${compact.dropped} messages)`);
+        } finally {
+          autoSaver?.save();
+          bridge.setBusy(false);
+          bridge.setMode(agent.mode ?? config.permissionMode);
+        }
       }
     },
     onExit: () => {
@@ -455,7 +502,7 @@ async function main() {
     return;
   }
   if (opts.version) {
-    console.log("myclaude 0.10.0");
+    console.log("myclaude 0.11.0");
     return;
   }
   if (opts.configPath) {

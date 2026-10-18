@@ -173,6 +173,8 @@ node bin/myclaude.js
 | `/stats` | 会话统计 |
 | `/config` | 显示当前配置 |
 | `/models` | 列出 provider 可用模型 |
+| `/commands` | 列出内建与自定义命令 |
+| `/<名字> [参数]` | 执行 `.myclaude/commands/` 下的自定义命令 |
 
 ## 命令行参数
 
@@ -238,6 +240,29 @@ Task(description="查找配置", prompt="完整自包含的指令…", subagent_
 - `explore` 走只读白名单（Read/LS/Glob/Grep），`general` 全工具
 - 子 agent 不阻塞交互（自动批准，只读性由工具白名单保证）
 - 工具调用以 `↳` 前缀显示在主界面
+
+### 自定义命令
+
+把一个 Markdown 文件放进 `commands/` 目录，它就成为一个斜杠命令：**文件名即命令名，正文即发给模型的提示词**。
+
+```
+.myclaude/commands/review.md      ->  /review      （项目级）
+~/.myclaude/commands/commit.md    ->  /commit      （用户级）
+```
+
+```markdown
+---
+description: 审查指定范围的改动
+argument-hint: [文件或目录]
+---
+请审查 $ARGUMENTS 的改动。重点：逻辑缺陷、边界情况、错误处理、缺失的测试。
+```
+
+- `$ARGUMENTS` 替换为命令后输入的全部内容；也支持 `$1`、`$2` 取位置参数
+- 正文没有占位符时，用户输入会自动追加到末尾，写纯文本命令无需模板语法
+- 顶部 `---` 块可选，支持 `description`（菜单说明）、`argument-hint`、`model`、`allowed-tools`
+- 项目命令覆盖同名的用户命令；命令会出现在 `/help`、`/commands`、斜杠补全与命令面板中
+- 本项目已自带两个示例：`/review`（审查改动）、`/explain`（讲解代码）
 
 ### MCP
 

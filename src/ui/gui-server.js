@@ -20,8 +20,9 @@ import {
   pruneSessions
 } from "../session.js";
 import { loadGuiAssets } from "./assets.js";
+import { loadCommands, findCommand, expandCommand } from "../commands.js";
 
-const VERSION = "0.10.0";
+const VERSION = "0.11.0";
 const MAX_FILE_BYTES = 1024 * 1024;
 
 /** Paths the file browser must never expose. */
@@ -394,6 +395,30 @@ export async function startGui({ config: initialConfig, port = 7788, open = true
         } catch (e) {
           sendJson(res, 200, { ok: false, models: [], error: String(e?.message || e) });
         }
+        return;
+      }
+
+      /* ---- 自定义命令 ---- */
+      if (path === "/api/commands" && req.method === "GET") {
+        sendJson(res, 200, {
+          commands: loadCommands(cwd).map((c) => ({
+            name: c.name,
+            description: c.description,
+            argumentHint: c.argumentHint,
+            scope: c.scope
+          }))
+        });
+        return;
+      }
+
+      if (path === "/api/commands/run" && req.method === "POST") {
+        const body = await readJson(req);
+        const cmd = findCommand(String(body.name || ""), cwd);
+        if (!cmd) {
+          sendJson(res, 404, { ok: false, error: "command not found" });
+          return;
+        }
+        sendJson(res, 200, { ok: true, prompt: expandCommand(cmd, String(body.args || "")), name: cmd.name });
         return;
       }
 

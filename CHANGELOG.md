@@ -11,6 +11,30 @@
 ### Added
 - `CHANGELOG.md`：建立变更记录制度。
 
+## [0.11.0] - 2026-10-18
+
+自定义斜杠命令。
+
+### Added
+- `src/commands.js`：把 Markdown 文件变成斜杠命令
+  - 扫描 `~/.myclaude/commands/`（用户级）与从 cwd 向上到仓库根的 `.myclaude/commands/`（项目级）
+  - 文件名即命令名，正文即提示词；项目命令覆盖同名用户命令
+  - `$ARGUMENTS` / `$1`..`$9` 参数替换；正文无占位符时自动追加用户输入
+  - 可选 `---` front-matter：`description` / `argument-hint` / `model` / `allowed-tools`
+- CLI 与 TUI：未知命令先查自定义命令，命中则展开为一次普通对话轮次（含自动保存与压缩）
+- 新命令 `/commands`：列出内建与自定义命令
+- GUI：`GET /api/commands`、`POST /api/commands/run`；自定义命令并入斜杠补全菜单与
+  Ctrl+K 命令面板，并带（项目）/（用户）标识
+- 本项目自带示例命令：`.myclaude/commands/review.md`、`explain.md`
+
+### Changed
+- 斜杠补全菜单显示上限从 8 条提到 12 条（此前自定义命令会被截断掉）
+
+### Verified
+- 137 项测试通过（新增 `test/commands.test.js` 7 项：发现、front-matter、
+  参数展开、大小写、非 md 忽略、仓库根停止上溯、两个 HTTP 接口）
+- 浏览器实测：输入 `/rev` 精确匹配到 `/review — 审查指定范围的改动（项目）`
+
 ## [0.10.0] - 2026-10-18
 
 真实的 token 用量统计。

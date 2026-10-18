@@ -1633,6 +1633,36 @@
 
   /* ================================================================ 命令 === */
 
+  /** 用户/项目自定义命令（来自 .myclaude/commands/*.md）。 */
+  var customCommands = [];
+
+  function loadCustomCommands() {
+    return getJSON("/api/commands").then(function (j) {
+      customCommands = j.commands || [];
+      return customCommands;
+    }).catch(function () { customCommands = []; return []; });
+  }
+
+  function findCustom(name) {
+    var n = String(name || "").toLowerCase();
+    for (var i = 0; i < customCommands.length; i++) {
+      if (customCommands[i].name === n) { return customCommands[i]; }
+    }
+    return null;
+  }
+
+  /** 把自定义命令展开成一次普通对话轮次。 */
+  function runCustomCommand(cmd, args) {
+    postJSON("/api/commands/run", { name: cmd.name, args: args }).then(function (j) {
+      if (!j.ok || !j.prompt) { addNotice("命令展开失败：" + cmd.name, "err"); return; }
+      addUserMessage("/" + cmd.name + (args ? " " + args : ""), []);
+      addNotice("执行自定义命令 /" + cmd.name, "info");
+      // Retry replays the expanded prompt, not the slash line.
+      S.lastUserText = j.prompt;
+      runTurn({ message: j.prompt, sessionKey: S.sessionKey });
+    }).catch(function (e) { addNotice("命令执行失败：" + e.message, "err"); });
+  }
+
   var COMMANDS = [
     { k: "/help", d: "显示命令列表", fn: function () { runCommand("/help"); } },
     { k: "/new", d: "新对话", fn: function () { newChat(); } },
@@ -1695,8 +1725,14 @@
       case "theme":
         toggleTheme();
         break;
-      default:
-        addNotice("未知命令：/" + cmd + "（试试 /help）", "warn");
+      case "commands":
+        openCommandsModal();
+        break;
+      default: {
+        var custom = findCustom(cmd);
+        if (custom) { runCustomCommand(custom, arg); break; }
+        addNotice("未知命令：/" + cmd + "（试试 /help 或 /commands）", "warn");
+      }
     }
   }
 
@@ -1708,7 +1744,7 @@
     var text = value || "";
     if (text.charAt(0) !== "/" || text.indexOf(" ") >= 0) { closeSlash(); return; }
     var needle = text.slice(1).toLowerCase();
-    slashMatches = COMMANDS.filter(function (c) {
+    slashMatches = allCommands().filter(function (c) {
       return !needle || c.k.toLowerCase().replace(/^\//, "").indexOf(needle) >= 0;
     });
     if (!slashMatches.length) { closeSlash(); return; }
@@ -1722,7 +1758,7 @@
     if (!host) { return; }
     host.hidden = false;
     clear(host);
-    slashMatches.slice(0, 8).forEach(function (c, i) {
+    slashMatches.slice(0, 12).forEach(function (c, i) {
       var row = el("button", "slash-item" + (i === slashIndex ? " sel" : ""));
       row.type = "button";
       row.appendChild(el("span", "slash-k", c.k));
@@ -2073,6 +2109,36 @@
   var cmdIndex = 0;
   var cmdMatches = [];
 
+  /** 内建命令 + 自定义命令，供斜杠菜单与命令面板共用。 */
+  function allCommands() {
+    var list = COMMANDS.slice();
+    customCommands.forEach(function (c) {
+      var k = "/" + c.name;
+      if (list.some(function (x) { return x.k === k; })) { return; }
+      list.push({
+        k: k,
+        d: c.description + (c.scope === "user" ? "（用户）" : "（项目）"),
+        fn: function () { runCustomCommand(c, ""); }
+      });
+    });
+    return list;
+  }
+
+  function openCommandsModal() {
+    var list = allCommands();
+    openModal("命令（" + list.length + "）", function (body) {
+      list.forEach(function (c) {
+        var row = el("div", "tool-row");
+        row.appendChild(el("b", null, c.k));
+        row.appendChild(el("span", null, c.d));
+        body.appendChild(row);
+      });
+      if (!customCommands.length) {
+        body.appendChild(el("div", "empty-note", "尚无自定义命令。在 .myclaude/commands/ 或 ~/.myclaude/commands/ 下放置 .md 文件即可，文件名即命令名，正文即提示词；$ARGUMENTS 会被替换为用户输入。"));
+      }
+    }, [{ label: "关闭", fn: closeModal }]);
+  }
+
   function openCmd() {
     var c = $("cmd");
     if (!c) { return; }
@@ -2094,7 +2160,7 @@
     if (!list) { return; }
     clear(list);
     var needle = String(q || "").toLowerCase().replace(/^\//, "");
-    cmdMatches = COMMANDS.filter(function (c) {
+    cmdMatches = allCommands().filter(function (c) {
       return !needle || c.k.toLowerCase().indexOf(needle) >= 0 || c.d.toLowerCase().indexOf(needle) >= 0;
     });
     var chats = S.sessions.filter(function (s) {
@@ -2195,11 +2261,14 @@
     renderProfile();
     if (params.get("motion") === "off") { applyMotion(false); }
 
+    loadCustomCommands();
     renderWelcomeCards();
     renderChatSkeleton();
     bindEvents();
     if (params.get("insp") === "1") { $("app").classList.add("insp-open"); }
     if (params.get("settings") === "1") { setTimeout(openSettings, 400); }
+    if (params.get("commands") === "1") { setTimeout(openCommandsModal, 500); }
+    if (params.get("slash")) { var sq = params.get("slash"); setTimeout(function () { updateSlashMenu("/" + (sq === "1" ? "" : sq)); }, 500); }
     if (params.get("resume")) { setTimeout(function () { resumeSession(params.get("resume")); }, 400); }
 
     getJSON("/api/config").then(function (j) {

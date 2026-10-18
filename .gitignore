@@ -23,6 +23,7 @@ $RECYCLE.BIN/
 *.swo
 
 # 我此前调试用的临时文件
+.gui.pid
 _*.png
 _*.mjs
 _*.cjs
