@@ -25,7 +25,7 @@
     theme: "dark",
     motion: true,
     todos: [],
-    stats: { messages: 0, turns: 0, tokens: 0, contextLimit: 0, contextUsed: 0 },
+    stats: { messages: 0, turns: 0, tokens: 0, inputTokens: 0, outputTokens: 0, contextLimit: 0, contextUsed: 0 },
     routing: null,
     toolsExpanded: false,
     lastUserText: "",
@@ -780,6 +780,8 @@
         messages: ev.messages != null ? ev.messages : S.stats.messages,
         turns: ev.turns != null ? ev.turns : S.stats.turns,
         tokens: ev.tokens || 0,
+        inputTokens: ev.inputTokens || 0,
+        outputTokens: ev.outputTokens || 0,
         contextLimit: ev.contextLimit || 0,
         contextUsed: ev.contextUsed || 0
       };
@@ -933,7 +935,8 @@
     }
     var label = host.querySelector(".usage-pct");
     if (label) { label.textContent = Math.round(used * 100) + "%"; }
-    host.title = "上下文：" + (S.stats.tokens || 0) + " / " + (S.stats.contextLimit || 0) + " tokens";
+    host.title = "上下文：" + (S.stats.tokens || 0) + " / " + (S.stats.contextLimit || 0) +
+      " tokens" + (S.stats.inputTokens ? "（输入 " + S.stats.inputTokens + " / 输出 " + S.stats.outputTokens + "）" : "");
   }
 
   function renderVision() {
@@ -976,6 +979,10 @@
     kv(dl, "模式", modeName(c.permissionMode || "ask"));
     kv(dl, "轮次", String(S.stats.turns || 0));
     kv(dl, "消息", String(S.stats.messages || 0));
+    var tok = S.stats.inputTokens || S.stats.outputTokens
+      ? (S.stats.inputTokens + " / " + S.stats.outputTokens)
+      : (S.stats.tokens ? "≈" + S.stats.tokens : "0");
+    kv(dl, "Token", tok, true);
     kv(dl, "目录", c.cwd ? c.cwd.split(/[\\/]/).slice(-1)[0] : "-", true);
     s.body.appendChild(dl);
     root.appendChild(s.sec);
@@ -1296,7 +1303,7 @@
     postJSON("/api/reset", {}).then(function () {
       S.sessionKey = null;
       S.todos = [];
-      S.stats = { messages: 0, turns: 0, tokens: 0, contextLimit: 0, contextUsed: 0 };
+      S.stats = { messages: 0, turns: 0, tokens: 0, inputTokens: 0, outputTokens: 0, contextLimit: 0, contextUsed: 0 };
       try { localStorage.removeItem(LS_SESSION); } catch (e) { }
       var root = logRoot();
       Array.prototype.slice.call(root.querySelectorAll(".msg, .tool, .notice, .ask, .thought")).forEach(function (n) {
@@ -1318,6 +1325,8 @@
         messages: j.messages != null ? j.messages : S.stats.messages,
         turns: j.turns != null ? j.turns : S.stats.turns,
         tokens: j.tokens || 0,
+        inputTokens: j.inputTokens || 0,
+        outputTokens: j.outputTokens || 0,
         contextLimit: j.contextLimit || 0,
         contextUsed: j.contextUsed || 0
       };
@@ -2200,6 +2209,8 @@
         messages: j.messages || 0,
         turns: j.turns || 0,
         tokens: j.tokens || 0,
+        inputTokens: j.inputTokens || 0,
+        outputTokens: j.outputTokens || 0,
         contextLimit: j.contextLimit || 0,
         contextUsed: j.contextUsed || 0
       };

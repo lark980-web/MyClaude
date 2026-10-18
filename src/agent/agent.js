@@ -287,6 +287,13 @@ export class Agent {
 
       const { text, toolCalls } = result;
 
+      // Accumulate reported usage; endpoints that omit it leave the counters
+      // at zero rather than guessing.
+      if (result.usage) {
+        this.totalInputTokens += result.usage.promptTokens || 0;
+        this.totalOutputTokens += result.usage.completionTokens || 0;
+      }
+
       if (!toolCalls.length) {
         this.messages.push({ role: "assistant", content: text || "" });
         return { text, done: true, turns: this.turnCount };

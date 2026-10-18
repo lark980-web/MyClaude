@@ -81,6 +81,9 @@ export class OpenAIProvider {
       stream: true,
       max_tokens: this.config.maxTokens,
       temperature: this.config.temperature,
+      // Ask for a final usage chunk; endpoints that ignore it simply never
+      // send one, and usage stays null instead of lying.
+      stream_options: { include_usage: true },
     };
     if (tools && tools.length) {
       body.tools = tools;
@@ -105,6 +108,7 @@ export class OpenAIProvider {
     const decoder = new TextDecoder();
     let buffer = "";
     let text = "";
+    let usage = null;
     const toolAccum = new Map();
     let finishReason = null;
 
@@ -126,6 +130,15 @@ export class OpenAIProvider {
           chunk = JSON.parse(payload);
         } catch {
           continue;
+        }
+
+        // The usage chunk carries no choices, so it must be read first.
+        if (chunk.usage) {
+          usage = {
+            promptTokens: chunk.usage.prompt_tokens ?? null,
+            completionTokens: chunk.usage.completion_tokens ?? null,
+            totalTokens: chunk.usage.total_tokens ?? null,
+          };
         }
 
         const choice = chunk.choices?.[0];
@@ -167,7 +180,7 @@ export class OpenAIProvider {
 
     for (const call of toolCalls) onToolCall?.(call);
 
-    return { text, toolCalls, finishReason };
+    return { text, toolCalls, finishReason, usage };
   }
 
   async complete({ messages, tools, signal }) {
@@ -202,7 +215,16 @@ export class OpenAIProvider {
       }
       return { id: t.id, name: t.function.name, arguments: args, raw: t.function.arguments };
     });
-    return { text: msg.content || "", toolCalls, finishReason: json.choices?.[0]?.finish_reason };
+    return {
+      text: msg.content || "",
+      toolCalls,
+      finishReason: json.choices?.[0]?.finish_reason,
+      usage: json.usage ? {
+        promptTokens: json.usage.prompt_tokens ?? null,
+        completionTokens: json.usage.completion_tokens ?? null,
+        totalTokens: json.usage.total_tokens ?? null,
+      } : null,
+    };
   }
 }
 

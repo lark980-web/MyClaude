@@ -11,6 +11,26 @@
 ### Added
 - `CHANGELOG.md`：建立变更记录制度。
 
+## [0.10.0] - 2026-10-18
+
+真实的 token 用量统计。
+
+### Added
+- `OpenAIProvider` 解析流式尾部的 `usage` 块（请求带 `stream_options.include_usage`），
+  `streamChat()` / `complete()` 返回 `{ promptTokens, completionTokens, totalTokens }`
+- `Agent` 跨轮次累加 `totalInputTokens` / `totalOutputTokens`
+- `/api/config` 与 `stats` 事件下发 `inputTokens` / `outputTokens`
+- GUI 检查器「会话」分区新增 Token 行；用量环悬停提示显示输入/输出拆分
+- `test/usage.test.js`（4 项）：端点上报时正确累加、不上报时保持为 0
+
+### Changed
+- 端点未上报 usage 时，上下文用量回退到字符估算并在界面标为 `≈N`，
+  不再把估算值伪装成真实计数
+
+### Verified
+- 130 项测试全部通过
+- 真实端点（不支持 include_usage 的网关）验证回退路径：显示 `≈13` 而非 0
+
 ## [0.9.0] - 2026-10-18
 
 MCP 支持远程服务器；子代理递归防护；界面细节修复。

@@ -21,7 +21,7 @@ import {
 } from "../session.js";
 import { loadGuiAssets } from "./assets.js";
 
-const VERSION = "0.9.0";
+const VERSION = "0.10.0";
 const MAX_FILE_BYTES = 1024 * 1024;
 
 /** Paths the file browser must never expose. */
@@ -199,12 +199,17 @@ export async function startGui({ config: initialConfig, port = 7788, open = true
   };
 
   const statsOf = (agent) => {
-    const used = approxTokens(agent);
+    // Prefer the endpoint's own accounting; fall back to the character
+    // estimate when a provider does not report usage.
+    const reported = agent ? (agent.totalInputTokens || 0) + (agent.totalOutputTokens || 0) : 0;
+    const used = reported || approxTokens(agent);
     const limit = Math.round((config.contextWindow || 1000000) * (config.compactThreshold || 0.8));
     return {
       messages: agent ? agent.messages.length : 0,
       turns: agent ? agent.turnCount : 0,
       tokens: used,
+      inputTokens: agent ? agent.totalInputTokens || 0 : 0,
+      outputTokens: agent ? agent.totalOutputTokens || 0 : 0,
       contextLimit: limit,
       contextUsed: limit ? Math.min(1, used / limit) : 0
     };
