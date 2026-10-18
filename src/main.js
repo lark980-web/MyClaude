@@ -455,7 +455,7 @@ async function main() {
     return;
   }
   if (opts.version) {
-    console.log("myclaude 0.8.0");
+    console.log("myclaude 0.9.0");
     return;
   }
   if (opts.configPath) {

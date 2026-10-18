@@ -21,7 +21,7 @@ import {
 } from "../session.js";
 import { loadGuiAssets } from "./assets.js";
 
-const VERSION = "0.8.0";
+const VERSION = "0.9.0";
 const MAX_FILE_BYTES = 1024 * 1024;
 
 /** Paths the file browser must never expose. */
@@ -404,9 +404,29 @@ export async function startGui({ config: initialConfig, port = 7788, open = true
       }
 
       if (path === "/api/mcp") {
-        const agent = sessions.get("default");
+        // Any live agent owns the shared manager, so search across tabs.
         let servers = [];
-        try { servers = agent?.mcpManager?.status?.() || []; } catch {}
+        for (const agent of sessions.values()) {
+          try {
+            const st = agent?.mcpManager?.status?.();
+            if (st && st.length) { servers = st; break; }
+            if (st) { servers = st; }
+          } catch {}
+        }
+        // Before the first turn no agent exists yet, so fall back to the
+        // configured names; the UI can then show "waiting" instead of claiming
+        // nothing is configured.
+        if (!servers.length) {
+          servers = Object.entries(config.mcpServers || {})
+            .filter(([, spec]) => !spec?.disabled)
+            .map(([name, spec]) => ({
+              name,
+              tools: 0,
+              pending: true,
+              transport: spec?.url ? (spec.transport || "http") : "stdio",
+              url: spec?.url || null,
+            }));
+        }
         sendJson(res, 200, { servers });
         return;
       }

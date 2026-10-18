@@ -1,6 +1,9 @@
 import { Agent } from "./agent.js";
 import { toolSchemas } from "../tools/index.js";
 
+/** Sub-agents may not delegate recursively past this depth. */
+const MAX_TASK_DEPTH = 2;
+
 const SUBAGENT_PROMPT_SUFFIX = `
 
 # Sub-agent mode
@@ -13,7 +16,7 @@ You are a focused sub-agent invoked by a parent agent to complete one task.
 
 ${"{TASK_PROMPT}"}`;
 
-export function createTaskTool({ provider, config, ui, maxTurns = 40 }) {
+export function createTaskTool({ provider, config, ui, maxTurns = 40, depth = 0 }) {
   return {
     name: "Task",
     description:
@@ -40,6 +43,14 @@ export function createTaskTool({ provider, config, ui, maxTurns = 40 }) {
       required: ["description", "prompt"],
     },
     async run({ description, prompt, subagent_type = "general" }) {
+      // Without a cap a sub-agent can delegate to another sub-agent
+      // indefinitely, each burning tokens and holding a provider slot.
+      if (depth >= MAX_TASK_DEPTH) {
+        return {
+          ok: false,
+          content: "task depth limit reached (" + MAX_TASK_DEPTH + "): do the work directly instead of delegating",
+        };
+      }
       const readOnly = subagent_type === "explore";
 
       const subConfig = {
@@ -55,8 +66,10 @@ export function createTaskTool({ provider, config, ui, maxTurns = 40 }) {
         ? ["Read", "LS", "Glob", "Grep"]
         : null;
 
+      // A sub-agent never gets the Task tool back: delegation must not
+      // recurse. It still receives every other tool (or the read-only subset).
       const tools = toolSchemas().filter((t) => {
-        if (readOnly && t.function.name === "Task") return false;
+        if (t.function.name === "Task") return false;
         if (allowed && !allowed.includes(t.function.name)) return false;
         return true;
       });

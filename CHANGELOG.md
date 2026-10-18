@@ -11,6 +11,46 @@
 ### Added
 - `CHANGELOG.md`：建立变更记录制度。
 
+## [0.9.0] - 2026-10-18
+
+MCP 支持远程服务器；子代理递归防护；界面细节修复。
+
+### Added
+- `src/mcp/http-transport.js`：两种 HTTP 线格式
+  - Streamable HTTP（现代）：POST 单端点，响应可为 JSON 或 SSE
+  - HTTP + SSE（2024 拆分协议）：GET 长连接收消息、POST 端点发消息
+- `createTransport()` 按配置选择传输；`McpClient.connect()` 在 Streamable 请求被
+  4xx 拒绝时自动回退到 SSE，因此只实现旧协议的主机也能连上
+- MCP 配置支持 `url` / `headers` / `transport` / `timeoutMs` / `disabled`
+- `McpManager.status()` 现在同时返回连接成功与失败的服务器（含错误原因与传输类型）
+- GUI 检查器新增「MCP 服务器」分区：待连接 / N 工具 / 失败原因
+- `test/mcp-http.test.js`（6 项）：mock 服务器同时实现两种协议，验证握手、
+  工具调用、自动回退、失败上报与不可达时不挂起
+
+### Changed
+- 工具说明在 GUI 中改为中文（工具名保持英文，它是 API 标识符）
+- 检查器不再罗列工具清单（工具数改由侧栏徽标显示），改为展示 MCP 状态
+- `notifications/initialized` 改为 await：stdio 写入本身有序，但 HTTP 传输必须等
+  通知送达后再发 `tools/list`，否则握手存在竞态
+
+### Fixed
+- 子代理可以无限递归委派 Task：现在子代理不再获得 Task 工具，并加入
+  `MAX_TASK_DEPTH = 2` 的显式上限
+- `.ghost-btn` 无样式定义，导致顶栏「展开输出」按钮文字竖排
+- 顶栏 HTML 结构被破坏（按钮嵌进未闭合的 `<svg>`），已重建并校验标签配平
+- 工具数徽标恒为 0：赋值被放在只在对话结束时调用的 `refreshStats` 里，
+  移到 `renderTopMeta`（启动即执行）
+- `/api/mcp` 只查 `default` 会话，多标签页下查不到；改为遍历全部会话，
+  且首轮对话前返回配置中的服务器并标记为待连接
+- `SseHttpTransport.start()` 内部是无退出条件的读循环，await 它会永久挂起；
+  改为后台读流 + 等待 endpoint 事件
+- `git log --pretty=format:%h` 的 `%` 被 PowerShell 吞掉（0.8 遗留）
+
+### Verified
+- 126 项测试连续三轮全绿
+- 真实 MCP stdio 服务器端到端：连接、tools/list、GUI 展示「demo · 1 工具」
+- 顶栏、检查器、MCP 分区逐一截图确认
+
 ## [0.8.0] - 2026-10-18
 
 补齐编程 agent 的核心工具链与界面能力。

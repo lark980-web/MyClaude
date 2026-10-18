@@ -907,6 +907,10 @@
     if (wm && c.model) { wm.textContent = c.cwd || ""; }
     var ml = $("model-label");
     if (ml) { ml.textContent = c.model || "选择模型"; }
+
+    var tc = $("tool-count");
+    if (tc) { tc.textContent = String((c.tools || []).length); }
+
     renderProfile();
   }
 
@@ -961,7 +965,7 @@
     renderSessionSection(body);
     renderRoutingSection(body);
     renderTodoSection(body);
-    renderToolsSection(body);
+    renderMcpSection(body);
   }
 
   function renderSessionSection(root) {
@@ -1019,19 +1023,72 @@
     root.appendChild(s.sec);
   }
 
-  function renderToolsSection(root) {
-    var tools = (S.config && S.config.tools) || [];
-    var s = section("工具");
-    var count = $("tool-count");
-    if (count) { count.textContent = String(tools.length); }
-    tools.slice(0, 24).forEach(function (t) {
-      var row = el("div", "tool-row");
-      row.appendChild(el("b", null, t.name));
-      var d = String(t.description || "").split(".")[0];
-      row.appendChild(el("span", null, d));
-      s.body.appendChild(row);
-    });
+  /** 工具的中文说明；工具名本身是 API 标识符，保持英文。 */
+  var TOOL_ZH = {
+    Read: "读取文件（带行号，支持偏移与行数限制；图片返回可视附件）",
+    Write: "写入文件，自动创建父目录",
+    Edit: "精确字符串替换（唯一性校验）",
+    MultiEdit: "同一文件多次编辑，全部校验后原子落盘",
+    LS: "列出目录内容",
+    Glob: "按通配符查找文件（支持 ** 与 *）",
+    Grep: "按正则搜索文件内容",
+    Bash: "执行 shell 命令（可后台运行）",
+    BashOutput: "增量读取后台任务的输出",
+    KillShell: "终止后台任务",
+    TodoWrite: "创建或更新任务清单",
+    WebFetch: "抓取网页并转为可读文本",
+    WebSearch: "联网搜索",
+    NotebookRead: "读取 Jupyter 笔记本",
+    NotebookEdit: "编辑笔记本单元格",
+    AskUserQuestion: "向用户提出澄清问题",
+    ExitPlanMode: "提交方案等待批准",
+    Task: "委派子任务给独立上下文的子代理",
+    GitStatus: "查看分支与工作区改动",
+    GitDiff: "查看改动差异",
+    GitLog: "查看提交历史",
+    GitCommit: "暂存并提交改动"
+  };
+
+  function toolZh(name, description) {
+    if (TOOL_ZH[name]) { return TOOL_ZH[name]; }
+    return String(description || "").split(".")[0];
+  }
+
+
+
+  /** MCP 服务器状态：连接情况与各自暴露的工具数。 */
+  function renderMcpSection(root) {
+    var s = section("MCP 服务器");
+    var host = el("div", "mcp-list");
+    s.body.appendChild(host);
     root.appendChild(s.sec);
+    getJSON("/api/mcp").then(function (j) {
+      var list = j.servers || [];
+      clear(host);
+      if (!list.length) {
+        host.appendChild(el("div", "empty-note", "未配置 MCP 服务器。可在 ~/.myclaude/config.json 的 mcpServers 中添加 command（stdio）或 url（HTTP/SSE）。"));
+        return;
+      }
+      list.forEach(function (sv) {
+        var row = el("div", "mcp-row");
+        row.appendChild(el("b", null, sv.name));
+        var right = el("span", "mcp-right");
+        if (sv.error) {
+          right.appendChild(el("span", "pill fail", "失败"));
+          right.appendChild(el("span", null, String(sv.error).slice(0, 60)));
+        } else if (sv.pending) {
+          right.appendChild(el("span", "pill run", "待连接"));
+          right.appendChild(el("span", null, sv.transport === "stdio" ? "本地进程" : "HTTP"));
+        } else {
+          right.appendChild(el("span", "pill ok", sv.tools + " 工具"));
+        }
+        row.appendChild(right);
+        host.appendChild(row);
+      });
+    }).catch(function () {
+      clear(host);
+      host.appendChild(el("div", "empty-note", "无法读取 MCP 状态"));
+    });
   }
 
   function kv(dl, k, v, mono) {
@@ -1418,7 +1475,7 @@
       tools.forEach(function (t) {
         var row = el("div", "tool-row");
         row.appendChild(el("b", null, t.name));
-        row.appendChild(el("span", null, t.description || ""));
+        row.appendChild(el("span", null, toolZh(t.name, t.description)));
         body.appendChild(row);
       });
     }, [{ label: "关闭", fn: closeModal }]);
@@ -2132,6 +2189,7 @@
     renderWelcomeCards();
     renderChatSkeleton();
     bindEvents();
+    if (params.get("insp") === "1") { $("app").classList.add("insp-open"); }
     if (params.get("settings") === "1") { setTimeout(openSettings, 400); }
     if (params.get("resume")) { setTimeout(function () { resumeSession(params.get("resume")); }, 400); }
 

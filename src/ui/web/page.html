@@ -146,16 +146,18 @@
       </div>
 
       <div class="top-right">
+        <button class="ghost-btn" id="btn-expand-tools" title="展开或收起全部工具输出">
+          <span id="expand-tools-label">展开输出</span>
+        </button>
         <div class="usage" id="usage" title="上下文用量">
           <span class="usage-ring" aria-hidden="true"></span>
           <span class="usage-pct">0%</span>
         </div>
-        <button class="icon-btn" id="btn-clear" title="新对话（Ctrl+L）" aria-label="新对话" hidden></button>
+        <button class="icon-btn" id="btn-clear" title="新对话（Ctrl+L）" aria-label="新对话" hidden>
+          <svg width="18" height="18"><use href="#i-plus"/></svg>
+        </button>
         <button class="icon-btn" id="btn-insp-toggle" title="会话面板（Ctrl+I）" aria-label="会话面板">
-          <svg width="18" height="18"><use href="#i-panel"/>
-        <button class="ghost-btn" id="btn-expand-tools" title="展开或收起全部工具输出">
-          <span id="expand-tools-label">展开输出</span>
-        </button></svg>
+          <svg width="18" height="18"><use href="#i-panel"/></svg>
         </button>
       </div>
     </header>

@@ -189,21 +189,44 @@ node bin/myclaude.js
 --config-path     打印配置文件路径
 ```
 
-## 工具集（11 个）
+## 工具集（21 个）
 
+**文件**
 | 工具 | 能力 |
 |---|---|
-| `Read` | 读文件（带行号，支持 offset/limit）；图片返回 base64 附件 |
+| `Read` | 读文件（带行号，支持 offset/limit）；图片返回可视附件，PDF 尽力抽取文本 |
 | `Write` | 写文件（自动建父目录） |
 | `Edit` | 精确字符串替换（唯一性校验 / replace_all） |
 | `MultiEdit` | 单文件多编辑，全量校验后才落盘（原子） |
-| `LS` | 列目录 |
-| `Glob` | glob 匹配（`**`、`*`） |
-| `Grep` | 正则搜索文件内容 |
-| `Bash` | 执行 shell 命令（PowerShell / sh） |
-| `TodoWrite` | 任务列表（按会话隔离，整体替换语义） |
+| `LS` / `Glob` / `Grep` | 列目录、通配查找、正则搜索 |
+| `NotebookRead` / `NotebookEdit` | 读写 Jupyter 笔记本（含 percent 脚本） |
+
+**执行**
+| 工具 | 能力 |
+|---|---|
+| `Bash` | 执行 shell 命令（PowerShell / sh），支持 `run_in_background` |
+| `BashOutput` | 按 offset 增量读取后台任务输出 |
+| `KillShell` | 终止后台任务（Windows 用 `taskkill /T /F` 结束进程树） |
+| `Task` | 委派子 agent（general 全权限 / explore 只读），**不可递归委派** |
+
+**Git**
+| 工具 | 能力 |
+|---|---|
+| `GitStatus` | 分支、staged/unstaged/untracked、最近提交（结构化返回） |
+| `GitDiff` | 统一 diff，同时返回解析后的 files/hunks/add/del，GUI 渲染为着色视图 |
+| `GitLog` | 提交历史（count / paths / range / oneline） |
+| `GitCommit` | 按 paths 或 add_all 暂存后提交，拒绝空消息与空暂存区 |
+
+**网络与交互**
+| 工具 | 能力 |
+|---|---|
 | `WebFetch` | 抓取 http(s) 页面并转可读文本（30s 超时） |
-| `Task` | 子 agent 委派（general 全权限 / explore 只读） |
+| `WebSearch` | 联网搜索（支持 allowed_domains / block_domains） |
+| `TodoWrite` | 任务列表（按会话隔离，整体替换语义） |
+| `AskUserQuestion` | 向用户提澄清问题（单选/多选/自由文本） |
+| `ExitPlanMode` | 提交方案等待批准，批准后自动切回 ask 模式 |
+
+此外还有 MCP 桥接工具，以 `<server>__<tool>` 命名。
 
 ### 子 agent（Task）
 
@@ -218,7 +241,7 @@ Task(description="查找配置", prompt="完整自包含的指令…", subagent_
 
 ### MCP
 
-在 `~/.myclaude/config.json` 添加：
+在 `~/.myclaude/config.json` 的 `mcpServers` 里添加，支持三种传输：
 
 ```json
 {
@@ -226,13 +249,29 @@ Task(description="查找配置", prompt="完整自包含的指令…", subagent_
     "filesystem": {
       "command": "npx",
       "args": ["-y", "@modelcontextprotocol/server-filesystem", "E:\\WorkSpaces"]
+    },
+    "github": {
+      "url": "https://api.githubcopilot.com/mcp/",
+      "headers": { "Authorization": "Bearer <token>" }
+    },
+    "legacy-sse": {
+      "url": "http://127.0.0.1:3001/sse",
+      "transport": "sse"
     }
   }
 }
 ```
 
-启动时自动连接，MCP 工具以 `<server>__<tool>` 暴露给模型。`/mcp` 查看连接状态。
-当前仅支持 stdio 传输；HTTP/SSE 未实现。
+| 写法 | 传输 | 说明 |
+|---|---|---|
+| `command` + `args` | stdio | 本地子进程 |
+| `url` | Streamable HTTP | 现代协议；若服务器只支持旧式 SSE，会自动回退 |
+| `url` + `transport: "sse"` | HTTP + SSE | 强制使用 2024 拆分协议 |
+
+- MCP 工具以 `<server>__<tool>` 命名暴露给模型
+- `/mcp`（TUI）或 GUI 检查器的「MCP 服务器」分区查看状态：待连接 / N 工具 / 失败原因
+- `disabled: true` 可临时停用某个服务器而不删配置
+- 每个服务器支持 `timeoutMs`（默认 60 秒）与 `headers`（鉴权）
 
 ## 配置
 
@@ -343,13 +382,16 @@ src/
 │   ├── permissions.js   权限规则引擎 + MYCLAUDE.md 记忆
 │   └── prompt.js        系统提示词
 ├── providers/
-│   └── openai.js        OpenAI 兼容 SSE 流式客户端 + tool_calls 累积
+│   ├── openai.js        OpenAI 兼容 SSE 流式客户端 + tool_calls 累积 + 请求超时
+│   └── router.js        ProviderRouter：错误分类与备用模型故障转移
 ├── mcp/
-│   └── client.js        MCP stdio 客户端
+│   ├── client.js        MCP 客户端（stdio / Streamable HTTP / SSE 自动协商）
+│   └── http-transport.js 两种 HTTP 线格式的实现
 ├── tools/
 │   ├── index.js         核心工具（Read/Write/Edit/MultiEdit/LS/Glob/Grep/Bash/BashOutput/KillShell）
 │   ├── extra.js         TodoWrite / WebFetch
 │   ├── extended.js      WebSearch / NotebookRead / NotebookEdit / AskUserQuestion / ExitPlanMode
+│   ├── git.js           GitStatus / GitDiff / GitLog / GitCommit + diff 解析器
 │   └── tasks.js         后台任务注册表
 ├── ui/
 │   ├── ink-app.js       Ink TUI 组件（App / ToolItem / StatusBar / AttachmentBar）
@@ -392,8 +434,8 @@ user input
 node --test "test/*.test.js"
 ```
 
-98 个测试覆盖：工具边界（偏移读取、歧义编辑、无匹配、非零退出码）、附件（mime 识别、超大拒绝、多部分消息组装、工具图片回灌）、模式切换（plan 只读白名单、ExitPlanMode 审批后自动切 ask）、Markdown 渲染（XSS 转义、危险协议拦截、表格/列表/代码块）、GUI HTTP/SSE 端到端（上传、聊天、提问往返、多会话隔离、abort、文件浏览越界拒绝、权限规则、会话增删、
-重命名与置顶、Markdown 导出、上下文用量）。
+126 个测试覆盖：工具边界（偏移读取、歧义编辑、无匹配、非零退出码）、附件（mime 识别、超大拒绝、多部分消息组装、工具图片回灌）、模式切换（plan 只读白名单、ExitPlanMode 审批后自动切 ask）、Markdown 渲染（XSS 转义、危险协议拦截、表格/列表/代码块）、GUI HTTP/SSE 端到端（上传、聊天、提问往返、多会话隔离、abort、文件浏览越界拒绝、权限规则、会话增删、
+重命名与置顶、Markdown 导出、上下文用量）、Git 工具（在临时仓库中跑真实 git，覆盖状态/差异/日志/提交与解析器）、MCP HTTP 传输（mock 服务器验证 Streamable 与 SSE 两种协议、自动回退、失败上报）、故障转移（限流/超时/5xx 切换、400 不切换、用户取消不切换）。
 
 测试使用 `MYCLAUDE_HOME` 指向临时目录，不会读写你真实的 `~/.myclaude/`。
 

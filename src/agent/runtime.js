@@ -38,6 +38,9 @@ export async function createAgent({ provider, config, ui, providerFactory }) {
         provider: providerFactory(),
         config,
         ui,
+        // Top-level agents sit at depth 0; sub-agents are constructed without
+        // Task entirely, so this value only guards direct misuse.
+        depth: config.taskDepth ?? 0,
       }),
     ]);
   }
