@@ -11,6 +11,29 @@
 ### Added
 - `CHANGELOG.md`：建立变更记录制度。
 
+## [0.13.0] - 2026-10-18
+
+MCP 支持 prompts 与 resources。
+
+### Added
+- `McpClient` 新增 `refreshPrompts()` / `getPrompt()` / `refreshResources()` / `readResource()`；
+  `connect()` 读取服务器 `capabilities`，只在服务器声明时才查询，避免对不支持的服务器产生错误噪声
+- `McpManager` 新增 `allPrompts()` / `allResources()` / `findPrompt()` / `findResource()` /
+  `usePrompt()` / `readResourceBy()`
+- `McpManager.call()` 支持三种限定名：`server__tool`、`server__prompt__name`、
+  `server__resource__name`，让模型通过既有的工具调用路径访问提示词与资源
+- `runtime` 把 prompts/resources 桥接为模型可见工具：提示词的参数映射为 input_schema 属性
+- `status()` 返回 `prompts` / `resources` 计数与 `promptList` / `resourceList` 明细
+- GUI 检查器 MCP 分区显示「N 工具 · N 提示词 · N 资源」
+- `test/mcp-prompts.test.js`（5 项）：能力发现、限定名分发、名称解析、未声明能力不查询
+
+### Fixed
+- `getPrompt()` 原先只返回 `messages`，agent 的工具结果路径读 `content` 会拿到 undefined；
+  现在同时返回两者
+
+### Verified
+- 154 项测试通过（新增 5 项）
+
 ## [0.12.0] - 2026-10-18
 
 权限模式对齐 Claude Code：从 3 种扩展到 6 种。

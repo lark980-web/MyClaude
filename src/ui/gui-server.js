@@ -23,7 +23,7 @@ import { loadGuiAssets } from "./assets.js";
 import { loadCommands, findCommand, expandCommand } from "../commands.js";
 import { normalizeMode, PERMISSION_MODES } from "../agent/modes.js";
 
-const VERSION = "0.12.0";
+const VERSION = "0.13.0";
 const MAX_FILE_BYTES = 1024 * 1024;
 
 /** Paths the file browser must never expose. */

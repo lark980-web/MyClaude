@@ -148,6 +148,9 @@ export class McpClient {
     this.spec = spec;
     this.transport = createTransport(name, spec);
     this.tools = [];
+    this.prompts = [];
+    this.resources = [];
+    this.capabilities = {};
     this.serverInfo = null;
     this.initialized = false;
   }
@@ -198,10 +201,70 @@ export class McpClient {
     }
 
     this.serverInfo = result?.serverInfo || null;
+    this.capabilities = result?.capabilities || {};
     await this.transport.notify("notifications/initialized", {});
     this.initialized = true;
     await this.refreshTools();
+    // Only ask for prompts/resources when the server advertises them; a server
+    // that never mentioned them answers -32601 and we would just log noise.
+    if (this.capabilities.prompts) { await this.refreshPrompts().catch(() => {}); }
+    if (this.capabilities.resources) { await this.refreshResources().catch(() => {}); }
     return this;
+  }
+
+  /** List prompt templates exposed by the server. */
+  async refreshPrompts() {
+    const result = await this.transport.request("prompts/list", {}, 30000);
+    this.prompts = (result?.prompts || []).map((p) => ({
+      name: p.name,
+      description: p.description || "",
+      arguments: p.arguments || [],
+      server: this.name
+    }));
+    return this.prompts;
+  }
+
+  /** Render a prompt template into messages. */
+  async getPrompt(name, args = {}) {
+    const result = await this.transport.request("prompts/get", { name, arguments: args }, 60000);
+    const out = [];
+    for (const m of result?.messages || []) {
+      const c = m.content;
+      const text = c?.type === "text" ? c.text : c ? JSON.stringify(c) : "";
+      out.push({ role: m.role, text });
+    }
+    // content keeps the agent's tool-result path happy; messages is the
+    // structured form the GUI can render per-role.
+    return {
+      ok: true,
+      description: result?.description || "",
+      messages: out,
+      content: out.map((m) => m.role + ": " + m.text).join("\n\n") || "(empty prompt)"
+    };
+  }
+
+  /** List resources exposed by the server. */
+  async refreshResources() {
+    const result = await this.transport.request("resources/list", {}, 30000);
+    this.resources = (result?.resources || []).map((r) => ({
+      uri: r.uri,
+      name: r.name || r.uri,
+      description: r.description || "",
+      mimeType: r.mimeType || "",
+      server: this.name
+    }));
+    return this.resources;
+  }
+
+  /** Read one resource by URI. */
+  async readResource(uri) {
+    const result = await this.transport.request("resources/read", { uri }, 60000);
+    const parts = [];
+    for (const c of result?.contents || []) {
+      if (typeof c.text === "string") parts.push(c.text);
+      else if (c.blob) parts.push("[binary " + (c.mimeType || "unknown") + " " + Math.round((c.blob.length * 3) / 4) + "B]");
+    }
+    return { ok: true, content: parts.join("\n") || "(empty)" };
   }
 
   /** Swap a failed Streamable HTTP attempt for the legacy SSE transport. */
@@ -279,6 +342,58 @@ export class McpManager {
     return results;
   }
 
+  /** Every prompt across all connected servers. */
+  allPrompts() {
+    const out = [];
+    for (const client of this.clients.values()) out.push(...(client.prompts || []));
+    return out;
+  }
+
+  /** Every resource across all connected servers. */
+  allResources() {
+    const out = [];
+    for (const client of this.clients.values()) out.push(...(client.resources || []));
+    return out;
+  }
+
+  /** Find "<server>__<prompt>" or a bare prompt name on a single server. */
+  findPrompt(qualified) {
+    for (const [server, client] of this.clients) {
+      for (const p of client.prompts || []) {
+        if (qualified === p.name || qualified === server + "__" + p.name) {
+          return { server, client, prompt: p };
+        }
+      }
+    }
+    return null;
+  }
+
+  /** Find a resource by "<server>__<name>" or its raw URI. */
+  findResource(qualified) {
+    for (const [server, client] of this.clients) {
+      for (const r of client.resources || []) {
+        if (qualified === r.uri || qualified === server + "__" + r.name) {
+          return { server, client, resource: r };
+        }
+      }
+    }
+    return null;
+  }
+
+  async usePrompt(qualified, args = {}) {
+    const hit = this.findPrompt(qualified);
+    if (!hit) return { ok: false, content: "unknown prompt: " + qualified };
+    const result = await hit.client.getPrompt(hit.prompt.name, args);
+    const lines = result.messages.map((m) => m.role + ": " + m.text);
+    return { ok: true, content: lines.join("\n\n") || "(empty prompt)" };
+  }
+
+  async readResourceBy(qualified) {
+    const hit = this.findResource(qualified);
+    if (!hit) return { ok: false, content: "unknown resource: " + qualified };
+    return hit.client.readResource(hit.resource.uri);
+  }
+
   allTools() {
     const out = [];
     for (const [name, client] of this.clients) {
@@ -292,14 +407,35 @@ export class McpManager {
     return out;
   }
 
+  /**
+   * Dispatch a qualified name.
+   *
+   * Three shapes are understood:
+   *   server__tool            a normal MCP tool
+   *   server__prompt__name    render a prompt template
+   *   server__resource__name  read a resource
+   *
+   * The latter two let the model reach prompts and resources through the same
+   * tool-calling path it already knows.
+   */
   async call(qualifiedName, args) {
     const idx = qualifiedName.indexOf("__");
     if (idx < 0) throw new Error(`invalid MCP tool name: ${qualifiedName}`);
     const server = qualifiedName.slice(0, idx);
-    const tool = qualifiedName.slice(idx + 2);
+    const rest = qualifiedName.slice(idx + 2);
     const client = this.clients.get(server);
     if (!client) throw new Error(`unknown MCP server: ${server}`);
-    return client.callTool(tool, args);
+
+    if (rest.startsWith("prompt__")) {
+      return client.getPrompt(rest.slice("prompt__".length), args || {});
+    }
+    if (rest.startsWith("resource__")) {
+      const name = rest.slice("resource__".length);
+      const hit = (client.resources || []).find((r) => r.name === name || r.uri === name);
+      if (!hit) return { ok: false, content: "unknown resource: " + name };
+      return client.readResource(hit.uri);
+    }
+    return client.callTool(rest, args);
   }
 
   /** Connected servers plus the ones that failed, so the UI can show why. */
@@ -307,6 +443,10 @@ export class McpManager {
     const out = [...this.clients.entries()].map(([name, c]) => ({
       name,
       tools: c.tools.length,
+      prompts: (c.prompts || []).length,
+      resources: (c.resources || []).length,
+      promptList: (c.prompts || []).map((p) => ({ name: p.name, description: p.description, arguments: p.arguments })),
+      resourceList: (c.resources || []).map((r) => ({ uri: r.uri, name: r.name, mimeType: r.mimeType })),
       info: c.serverInfo,
       transport: c.spec.url ? (c.spec.transport || "http") : "stdio",
       url: c.spec.url || null,

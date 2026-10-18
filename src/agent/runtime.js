@@ -62,6 +62,31 @@ export async function createAgent({ provider, config, ui, providerFactory }) {
       mcp: true,
       mcpToolName: t.qualifiedName,
     }));
+
+    // Prompts and resources are exposed as tools too, so the model reaches them
+    // through the same call path. Names are server__prompt__x / server__resource__x.
+    for (const st of mcp.status()) {
+      for (const pr of st.promptList || []) {
+        const props = {};
+        for (const arg of pr.arguments || []) props[arg.name] = { type: "string", description: arg.description || (arg.required ? "required" : "optional") };
+        bridged.push({
+          name: `${st.name}__prompt__${pr.name}`,
+          description: `[MCP ${st.name} 提示词] ${pr.description || pr.name}`.trim(),
+          input_schema: { type: "object", properties: props },
+          mcp: true,
+          mcpToolName: `${st.name}__prompt__${pr.name}`,
+        });
+      }
+      for (const rs of st.resourceList || []) {
+        bridged.push({
+          name: `${st.name}__resource__${rs.name}`,
+          description: `[MCP ${st.name} 资源] ${rs.uri}`.trim(),
+          input_schema: { type: "object", properties: {} },
+          mcp: true,
+          mcpToolName: `${st.name}__resource__${rs.name}`,
+        });
+      }
+    }
     registerTools(bridged);
 
     agent.mcp = mcp;

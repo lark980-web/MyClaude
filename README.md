@@ -294,7 +294,10 @@ argument-hint: [文件或目录]
 | `url` + `transport: "sse"` | HTTP + SSE | 强制使用 2024 拆分协议 |
 
 - MCP 工具以 `<server>__<tool>` 命名暴露给模型
-- `/mcp`（TUI）或 GUI 检查器的「MCP 服务器」分区查看状态：待连接 / N 工具 / 失败原因
+- 服务器若声明 `prompts` / `resources` 能力，会额外桥接为工具：
+  `<server>__prompt__<名字>`（渲染提示词模板，参数即模板变量）与
+  `<server>__resource__<名字>`（读取资源内容）；未声明的能力不会被查询
+- `/mcp`（TUI）或 GUI 检查器的「MCP 服务器」分区查看状态：待连接 / N 工具 · N 提示词 · N 资源 / 失败原因
 - `disabled: true` 可临时停用某个服务器而不删配置
 - 每个服务器支持 `timeoutMs`（默认 60 秒）与 `headers`（鉴权）
 

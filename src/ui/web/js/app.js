@@ -1099,7 +1099,10 @@
           right.appendChild(el("span", "pill run", "待连接"));
           right.appendChild(el("span", null, sv.transport === "stdio" ? "本地进程" : "HTTP"));
         } else {
-          right.appendChild(el("span", "pill ok", sv.tools + " 工具"));
+          var bits = [sv.tools + " 工具"];
+          if (sv.prompts) { bits.push(sv.prompts + " 提示词"); }
+          if (sv.resources) { bits.push(sv.resources + " 资源"); }
+          right.appendChild(el("span", "pill ok", bits.join(" · ")));
         }
         row.appendChild(right);
         host.appendChild(row);
