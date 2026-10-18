@@ -241,7 +241,11 @@ test("setMode rebuilds the system prompt and rejects bad values", () => {
   assert.match(agent.systemPrompt, /# Plan mode/);
   agent.setMode("ask");
   assert.doesNotMatch(agent.systemPrompt, /# Plan mode/);
-  assert.throws(() => agent.setMode("yolo"), /invalid mode/);
+  // "yolo" is now a real alias for bypassPermissions; use a genuinely
+  // unrecognised value to check the rejection path.
+  assert.equal(agent.setMode("yolo"), "bypassPermissions");
+  agent.setMode("ask");
+  assert.throws(() => agent.setMode("swim"), /invalid mode/);
 });
 
 test("plan mode allows read-only tools and blocks mutations", async () => {

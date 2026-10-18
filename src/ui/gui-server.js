@@ -21,8 +21,9 @@ import {
 } from "../session.js";
 import { loadGuiAssets } from "./assets.js";
 import { loadCommands, findCommand, expandCommand } from "../commands.js";
+import { normalizeMode, PERMISSION_MODES } from "../agent/modes.js";
 
-const VERSION = "0.11.0";
+const VERSION = "0.12.0";
 const MAX_FILE_BYTES = 1024 * 1024;
 
 /** Paths the file browser must never expose. */
@@ -323,6 +324,7 @@ export async function startGui({ config: initialConfig, port = 7788, open = true
           cwd,
           permissions: config.permissions || {},
           fallbacks: (config.fallbacks || []).map((f) => ({ name: f.name || f.model, model: f.model })),
+          modes: PERMISSION_MODES.map((m) => ({ id: m.id, zh: m.zh, desc: m.desc })),
           routing: agent ? agent.routingStatus?.() : null,
           tools: toolList(),
           ...statsOf(agent)
@@ -338,10 +340,13 @@ export async function startGui({ config: initialConfig, port = 7788, open = true
           for (const agent of sessions.values()) agent.setModel?.(config.model);
           saveConfig({ model: config.model });
         }
-        if (body.permissionMode && ["ask", "auto", "plan"].includes(body.permissionMode)) {
-          config.permissionMode = body.permissionMode;
-          saveConfig({ permissionMode: config.permissionMode });
-          for (const agent of sessions.values()) agent.setMode?.(config.permissionMode);
+        if (body.permissionMode) {
+          const wanted = normalizeMode(body.permissionMode);
+          if (wanted) {
+            config.permissionMode = wanted;
+            saveConfig({ permissionMode: wanted });
+            for (const agent of sessions.values()) agent.setMode?.(wanted);
+          }
         }
         if (typeof body.vision === "boolean") {
           config.vision = body.vision;

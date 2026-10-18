@@ -888,6 +888,18 @@
     });
     var item = items[idx];
     if (!item) { return; }
+    // The segmented control only carries the three everyday modes. When the
+    // session is in one of the others (set from Settings), hide the thumb
+    // instead of parking it under the wrong label.
+    var matched = Array.prototype.some.call(items, function (it) {
+      return it.getAttribute("data-mode") === mode;
+    });
+    if (!matched) {
+      thumb.style.width = "0px";
+      thumb.style.opacity = "0";
+      return;
+    }
+    thumb.style.opacity = "";
     thumb.style.width = item.offsetWidth + "px";
     thumb.style.transform = "translateX(" + (item.offsetLeft - 2) + "px)";
   }
@@ -916,10 +928,10 @@
     renderProfile();
   }
 
+  /** 短标签用于分段器与顶栏；完整说明见设置页。 */
   function modeName(mode) {
-    if (mode === "auto") { return "自动"; }
-    if (mode === "plan") { return "计划"; }
-    return "询问";
+    var names = { ask: "询问", acceptEdits: "接受编辑", auto: "自动", dontAsk: "不再提问", plan: "计划", bypassPermissions: "全部放行" };
+    return names[mode] || "询问";
   }
 
   function renderUsage() {
@@ -1429,7 +1441,14 @@
 
       var grid = el("div", "field-row");
       var modeSel = document.createElement("select");
-      [["ask", "询问：每次写入前确认"], ["auto", "自动：全部批准"], ["plan", "计划：只读"]].forEach(function (o) {
+      ((c.modes && c.modes.length ? c.modes : [
+        { id: "ask", zh: "询问", desc: "每次写入前确认" },
+        { id: "acceptEdits", zh: "接受编辑", desc: "自动批准编辑与常规构建" },
+        { id: "auto", zh: "自动", desc: "不再询问任何工具" },
+        { id: "dontAsk", zh: "不再提问", desc: "需要确认的一律拒绝" },
+        { id: "plan", zh: "计划", desc: "只读，先给方案" },
+        { id: "bypassPermissions", zh: "全部放行", desc: "跳过确认，慎用" }
+      ]).map(function (o) { return [o.id, o.zh + "：" + o.desc]; })).forEach(function (o) {
         var opt = document.createElement("option");
         opt.value = o[0];
         opt.textContent = o[1];

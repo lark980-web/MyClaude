@@ -144,7 +144,7 @@ node bin/myclaude.js
 
 #### 模式切换
 
-- 顶栏下拉或 `/mode ask|auto|plan`，**立即生效**（`agent.setMode()` 重建系统提示词，不用重启）
+- 顶栏分段器或 `/mode <模式>`，**立即生效**（`agent.setMode()` 重建系统提示词，不用重启）
 - `plan` 模式是真正的只读：Read/LS/Glob/Grep/WebFetch/WebSearch/NotebookRead/TodoWrite/AskUserQuestion/ExitPlanMode/BashOutput 免确认放行，Write/Edit/MultiEdit/NotebookEdit/Bash/KillShell 直接拒绝
 - 计划写好后模型调用 `ExitPlanMode`，浏览器弹出「Approve / Reject」；Approve 后自动切回 `ask` 模式开始执行
 
@@ -163,7 +163,7 @@ node bin/myclaude.js
 | `/provider [name]` | 查看/切换 provider |
 | `/base [url]` | 查看/设置 API base URL |
 | `/key [key]` | 查看/设置 API key |
-| `/mode [ask\|auto\|plan]` | 权限模式（立即生效） |
+| `/mode [模式]` | 切换权限模式（6 种，见「权限模式」） |
 | `/attach <path…>` | 附加图片/文本文件到下一条消息 |
 | `/attachments` | 查看待发送附件 |
 | `/detach` | 清空待发送附件 |
@@ -383,15 +383,25 @@ MYCLAUDE_PROVIDER
 /model gpt-4o
 ```
 
-## 权限模式
+## 权限模式（6 种）
 
-| 模式 | 行为 |
-|---|---|
-| `ask` | 每个写操作前询问（默认） |
-| `auto` | 全部自动批准 |
-| `plan` | 只读：探索类工具放行，写操作拒绝；`ExitPlanMode` 审批后自动切 `ask` |
+| 模式 | 别名 | 行为 |
+|---|---|---|
+| `ask` | `default` | 每个写操作前询问（默认） |
+| `acceptEdits` | `edits`、`accept-edits` | 自动批准文件编辑与常规构建/测试命令；删除、推送、发布、联网仍询问 |
+| `auto` | | 不再询问任何工具 |
+| `dontAsk` | `dont-ask` | 需要确认的一律**自动拒绝**（不再打断你） |
+| `plan` | | 只读：探索放行，改动拒绝；`ExitPlanMode` 审批后自动切回 `ask` |
+| `bypassPermissions` | `bypass`、`yolo` | 跳过确认，慎用 |
 
-运行时切换：TUI/GUI 下拉或 `/mode`，走 `agent.setMode()`，即时重建系统提示词，无需重启。
+**任何模式下的固定规则**：
+- `deny` 规则优先级最高，`bypassPermissions` 也拦不住它
+- 只读工具（`Read`/`Grep`/`Glob`/`LS`/`GitStatus`/`GitDiff`/`GitLog`/`WebFetch`/`WebSearch` 等）永不询问、永不被拒
+- 记账类工具（`TodoWrite`/`AskUserQuestion`/`ExitPlanMode`/`BashOutput`）不触碰文件系统，直接放行
+- `acceptEdits` 对 Bash 采用白名单 + 危险模式双重判定：`rm`/`del`/`mv`/`git clean`/`git push`/`npm publish`/`chmod`/`dd`/`sudo` 等一律视为危险，含管道、重定向、命令替换的复合命令也不自动放行
+
+运行时切换：GUI 分段器（询问/自动/计划）或设置页下拉、TUI `/mode`、CLI `--auto`/`--plan`，
+走 `agent.setMode()` 即时重建系统提示词，无需重启。模式名可用上表任一别名。
 
 ## 架构
 
@@ -403,6 +413,7 @@ src/
 ├── attachments.js       附件读取、mime 识别、多部分消息组装、vision 开关
 ├── agent/
 │   ├── agent.js         Agent 主循环（stream → tool calls → 回灌 → 重复）、setMode/setVision
+│   ├── modes.js         6 种权限模式注册表、别名归一、危险命令判定
 │   ├── runtime.js       装配扩展工具 + MCP
 │   ├── permissions.js   权限规则引擎 + MYCLAUDE.md 记忆
 │   └── prompt.js        系统提示词

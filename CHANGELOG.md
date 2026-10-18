@@ -11,6 +11,33 @@
 ### Added
 - `CHANGELOG.md`：建立变更记录制度。
 
+## [0.12.0] - 2026-10-18
+
+权限模式对齐 Claude Code：从 3 种扩展到 6 种。
+
+### Added
+- `src/agent/modes.js`：权限模式注册表，CLI / agent / HTTP / UI 共用一份定义
+  - 6 种模式：`ask` / `acceptEdits` / `auto` / `dontAsk` / `plan` / `bypassPermissions`
+  - 别名归一化：`default`→ask、`edits`/`accept-edits`→acceptEdits、`dont-ask`→dontAsk、
+    `bypass`/`yolo`→bypassPermissions（大小写、连字符、空格均可）
+  - `isCommonFileCommand()`：acceptEdits 的 Bash 白名单（ls/cat/git status/npm test/cargo build…）
+  - `isDestructiveCommand()`：危险模式黑名单（rm/del/mv/git clean/git push/npm publish/
+    chmod/dd/sudo/注册表操作…），含管道、重定向、命令替换的复合命令一律不放行
+- `test/permission-modes.test.js`（12 项）：注册表、别名、每种模式的决策表、
+  deny 规则在 bypass 下仍然生效、危险命令零漏网
+
+### Changed
+- **只读工具在任何模式下都放行**（此前仅 plan 模式生效）：`Read`/`Grep`/`Glob`/`LS`/
+  `Git*`/`WebFetch`/`WebSearch` 不再询问，也不会被 `dontAsk` 拒绝——否则 agent 将无事可做
+- `dontAsk` 语义：需要确认的操作直接拒绝并说明原因，全程不打断用户
+- `setMode()` 接受别名，非法值报错信息列出全部 6 种模式
+- GUI 设置页下拉列出 6 种模式（含中文说明）；分段器仍保留日常三种，
+  选中其余模式时隐藏滑块而不是错位停靠在别的标签下
+- CLI `/mode` 无参数时列出全部模式；`--auto`/`--plan` 行为不变
+
+### Fixed
+- README 命令表在批量替换时被误伤（`/model` 行被覆盖并与下一行粘连），已修复
+
 ## [0.11.0] - 2026-10-18
 
 自定义斜杠命令。

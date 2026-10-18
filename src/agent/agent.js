@@ -1,6 +1,7 @@
 import { findTool, toolSchemas } from "../tools/index.js";
 import { ProviderRouter } from "../providers/router.js";
 import { PermissionEngine, loadMemory } from "./permissions.js";
+import { normalizeMode, isCommonFileCommand, FILE_EDIT_TOOLS } from "./modes.js";
 import { SYSTEM_PROMPT } from "./prompt.js";
 import { buildUserContent, buildToolAttachmentContent, resolveAttachments } from "../attachments.js";
 import { setQuestionPresenter } from "../tools/extended.js";
@@ -42,7 +43,7 @@ export class Agent {
       permissions instanceof PermissionEngine
         ? permissions
         : new PermissionEngine(config.permissions || {});
-    this.planMode = config.permissionMode === "plan";
+    this.planMode = normalizeMode(config.permissionMode) === "plan";
     this.memory = loadMemory(process.cwd());
     this.systemPrompt = this.buildSystemPrompt();
     // AskUserQuestion / ExitPlanMode need a presenter; bind it per agent so a
@@ -128,13 +129,14 @@ export class Agent {
    * instructions are added/removed without losing conversation history.
    */
   setMode(mode) {
-    if (!["ask", "auto", "plan"].includes(mode)) {
-      throw new Error(`invalid mode: ${mode} (expected ask|auto|plan)`);
+    const canon = normalizeMode(mode);
+    if (!canon) {
+      throw new Error("invalid mode: " + mode + " (expected ask|acceptEdits|auto|dontAsk|plan|bypassPermissions)");
     }
-    this.config.permissionMode = mode;
-    this.planMode = mode === "plan";
+    this.config.permissionMode = canon;
+    this.planMode = canon === "plan";
     this.systemPrompt = this.buildSystemPrompt();
-    return mode;
+    return canon;
   }
 
   get mode() {
@@ -210,13 +212,6 @@ export class Agent {
   async askPermission(toolName, args) {
     const mode = this.config.permissionMode;
 
-    if (mode === "plan") {
-      // Plan mode is read-only: exploration is free, mutations are refused.
-      if (Agent.READ_ONLY_TOOLS.has(toolName)) return true;
-      this.ui.warn(`plan mode: ${toolName} is blocked until the plan is approved`);
-      return false;
-    }
-
     const verdict = this.permissions.evaluate(toolName, args);
     if (verdict === "deny") {
       this.ui.warn(`denied by permission rule: ${toolName}`);
@@ -224,12 +219,42 @@ export class Agent {
     }
     if (verdict === "allow") return true;
 
+    if (mode === "plan") {
+      // Plan mode is read-only: exploration is free (handled below), mutations
+      // are refused until the plan is approved.
+      if (!Agent.READ_ONLY_TOOLS.has(toolName)) {
+        this.ui.warn(`plan mode: ${toolName} is blocked until the plan is approved`);
+        return false;
+      }
+    }
+
     // Pure bookkeeping tools (todo list, clarification prompts, reading
     // background output) cannot touch the workspace, so prompting for them only
     // costs the user a click. They are always allowed.
     if (NON_MUTATING_TOOLS.has(toolName)) return true;
 
+    // Reading and searching are safe in every mode, not just plan: gating them
+    // behind a prompt (or auto-denying them under dontAsk) would leave the
+    // agent unable to do anything at all.
+    if (Agent.READ_ONLY_TOOLS.has(toolName)) return true;
+
+    if (mode === "bypassPermissions") return true;
+
+    if (mode === "acceptEdits") {
+      // File edits and routine build/test commands go through; anything that
+      // could delete, publish or reach the network still asks.
+      if (FILE_EDIT_TOOLS.has(toolName)) return true;
+      if (toolName === "Bash" && isCommonFileCommand(args && args.command)) return true;
+    }
+
     if (mode === "auto") return true;
+
+    if (mode === "dontAsk") {
+      // The user opted out of prompts entirely: refuse rather than ask.
+      this.ui.warn(`don't ask: ${toolName} was auto-denied`);
+      return false;
+    }
+
     return this.ui.confirmTool(toolName, args);
   }
 

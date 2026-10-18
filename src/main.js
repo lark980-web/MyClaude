@@ -164,13 +164,16 @@ async function handleCommand(raw, ctx) {
       }
       return {};
     case "mode":
-      if (arg && ["ask", "auto", "plan"].includes(arg)) {
-        saveConfig({ permissionMode: arg });
-        config.permissionMode = arg;
-        agent.setMode?.(arg);
-        ui.success(`permissionMode = ${arg}`);
+      const wanted = normalizeMode(arg);
+      if (arg && wanted) {
+        saveConfig({ permissionMode: wanted });
+        config.permissionMode = wanted;
+        agent.setMode?.(wanted);
+        ui.success(`permissionMode = ${wanted}`);
+      } else if (!arg) {
+        ui.info(`permissionMode = ${agent.mode ?? config.permissionMode}\n  可选: ${PERMISSION_MODES.map((x) => x.id).join(" | ")}`);
       } else {
-        ui.info(`permissionMode = ${agent.mode ?? config.permissionMode} (ask|auto|plan)`);
+        ui.warn(`unknown mode: ${arg}  (可选: ${PERMISSION_MODES.map((x) => x.id).join(" | ")})`);
       }
       return {};
     case "attach": {
@@ -502,7 +505,7 @@ async function main() {
     return;
   }
   if (opts.version) {
-    console.log("myclaude 0.11.0");
+    console.log("myclaude 0.12.0");
     return;
   }
   if (opts.configPath) {
