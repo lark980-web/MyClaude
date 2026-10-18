@@ -1539,3 +1539,27 @@ body.no-motion *, body.no-motion *::before, body.no-motion *::after { animation:
   font-size: 11.5px;
   color: var(--fg-2);
 }
+
+/* -------------------------------------------- 模型按供应商分栏 ------------ */
+.model-group { margin: 2px 0 6px; }
+.model-group-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 7px 4px;
+  color: var(--fg-4);
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  user-select: none;
+}
+.model-group-head::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+}
+.model-group-list { display: flex; flex-direction: column; gap: 2px; }
+.model-group .mcp-row { margin-left: 4px; }
+.model-group .model-opt { margin-left: 4px; }

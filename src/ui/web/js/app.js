@@ -1065,19 +1065,27 @@
       s.body.appendChild(now);
     }
 
-    pool.forEach(function (f, i) {
-      var row = el("div", "mcp-row");
-      row.appendChild(el("b", null, f.model));
-      var right = el("span", "mcp-right");
-      var probe = fallbackProbe && fallbackProbe[f.model];
-      if (probe) {
-        right.appendChild(el("span", "pill " + (probe.ok ? "ok" : "fail"), probe.ok ? "可用 " + probe.ms + "ms" : "不可用"));
-        if (!probe.ok && probe.error) { right.title = probe.error; }
-      } else {
+    // 按供应商分栏展示备用池。
+    groupByVendor(pool.map(function (f) { return f.model; })).forEach(function (g) {
+      var gwrap = el("div", "model-group");
+      gwrap.appendChild(el("div", "model-group-head", g.zh));
+      var list = el("div", "model-group-list");
+      g.models.forEach(function (name) {
+        var row = el("div", "mcp-row");
+        row.appendChild(el("b", null, name));
+        var right = el("span", "mcp-right");
+        var probe = fallbackProbe && fallbackProbe[name];
         right.appendChild(el("span", "pill run", live ? "待命" : "未检测"));
-      }
-      row.appendChild(right);
-      s.body.appendChild(row);
+        if (probe) {
+          right.lastChild.textContent = probe.ok ? "可用 " + probe.ms + "ms" : "不可用";
+          right.lastChild.className = "pill " + (probe.ok ? "ok" : "fail");
+          if (!probe.ok && probe.error) { right.lastChild.title = probe.error; }
+        }
+        row.appendChild(right);
+        list.appendChild(row);
+      });
+      gwrap.appendChild(list);
+      s.body.appendChild(gwrap);
     });
 
     if (S.routing && S.routing.switches) {
@@ -1108,6 +1116,7 @@
     s.body.appendChild(probeBtn);
     root.appendChild(s.sec);
   }
+
 
   /** "3 分钟前" 之类的相对时间。 */
   function relTime(iso) {
@@ -1366,6 +1375,67 @@
     // Lower-case only the drive letter, not the rest of the path.
     s = s.replace(/^([A-Za-z]):/, function (_, d) { return d.toLowerCase() + ":"; });
     return s || "(unknown)";
+  }
+
+  /**
+   * 已知供应商前缀，按匹配优先级排列。
+   */
+  var VENDORS = [
+    { id: "deepseek",   zh: "DeepSeek",   re: /^(deepseek|deepseek-)/i },
+    { id: "zhipu",      zh: "智谱",       re: /^(glm|z-ai\/glm|zhipu)/i },
+    { id: "openai",     zh: "OpenAI",     re: /^(gpt-|o[13]|text-davinci|openai\/)/i },
+    { id: "anthropic", zh: "Anthropic", re: /^(claude)/i },
+    { id: "alibaba",    zh: "阿里通义",   re: /^(qwen|tongyi|aliyun)/i },
+    { id: "meta",       zh: "Meta",      re: /^(llama|meta\/)/i },
+    { id: "moonshot",   zh: "月之暗面",   re: /^(kimi|moonshot)/i },
+    { id: "baidu",     zh: "百度",      re: /^(ernie)/i },
+    { id: "baichuan",   zh: "百川",      re: /^(baichuan)/i },
+    { id: "google",     zh: "Google",     re: /^(gemini|palm|bard)/i },
+    { id: "mistral",    zh: "Mistral",    re: /^(mistral|mixtral)/i },
+    { id: "xai",        zh: "xAI",        re: /^(grok)/i },
+    { id: "nvidia",    zh: "NVIDIA",     re: /^(nvidia\/)/i }
+  ];
+
+  /**
+   * 从模型名推断供应商。无法识别时回落为「其他」。
+   *
+   * 模型名形如 "deepseek-v4.1-flash" 或 "openai/gpt-oss-20b"，
+   * 供应商信息只在名字里，所以这里集中做一次识别，
+   * 避免每处展示各写一套判断。
+   */
+  function vendorOf(name) {
+    var s = String(name || "").trim();
+    if (!s) { return { id: "other", zh: "其他" }; }
+    for (var i = 0; i < VENDORS.length; i++) {
+      if (VENDORS[i].re.test(s)) { return { id: VENDORS[i].id, zh: VENDORS[i].zh }; }
+    }
+    // 形如 "vendor/model" 的第一个片段，若未在已知表中则原样显示。
+    if (s.indexOf("/") > 0) { return { id: s.split("/")[0].toLowerCase(), zh: s.split("/")[0] }; }
+    return { id: "other", zh: "其他" };
+  }
+
+  /**
+   * 把模型列表按供应商分桶，返回按已知顺序排列的分组。
+   *
+   * @param {string[]} names
+   * @returns {Array<{id: string, zh: string, models: string[]}>}
+   */
+  function groupByVendor(names) {
+    var map = {};
+    (names || []).forEach(function (n) {
+      var v = vendorOf(n);
+      if (!map[v.id]) { map[v.id] = { id: v.id, zh: v.zh, models: [] }; }
+      map[v.id].models.push(n);
+    });
+    var order = {};
+    VENDORS.forEach(function (v, i) { order[v.id] = i; });
+    var out = Object.keys(map).map(function (k) { return map[k]; });
+    out.sort(function (a, b) {
+      var oa = a.id in order ? order[a.id] : 999;
+      var ob = b.id in order ? order[b.id] : 999;
+      return oa - ob || String(a.id).localeCompare(String(b.id));
+    });
+    return out;
   }
 
   function projectName(cwd) {
@@ -1629,18 +1699,26 @@
 
       function renderModelList() {
         clear(modelList);
-        models.slice(0, 12).forEach(function (name) {
-          var b = el("button", "opt");
-          b.type = "button";
-          b.appendChild(el("span", "opt-mark", "\u2713"));
-          b.appendChild(el("span", "opt-label", name));
-          if (name === c.model) { b.classList.add("picked"); }
-          b.addEventListener("click", function () {
-            modelInput.value = name;
-            Array.prototype.forEach.call(modelList.children, function (x) { x.classList.remove("picked"); });
-            b.classList.add("picked");
+        // 按供应商分栏：模型名相似看不出差别，供应商才是选择依据。
+        groupByVendor(models.slice()).forEach(function (g) {
+          var gwrap = el("div", "model-group");
+          gwrap.appendChild(el("div", "model-group-head", g.zh));
+          var list = el("div", "model-group-list");
+          g.models.forEach(function (name) {
+            var b = el("button", "opt");
+            b.type = "button";
+            b.appendChild(el("span", "opt-mark", "\u2713"));
+            b.appendChild(el("span", "opt-label", name));
+            if (name === c.model) { b.classList.add("picked"); }
+            b.addEventListener("click", function () {
+              modelInput.value = name;
+              Array.prototype.forEach.call(modelList.children, function (x) { x.classList.remove("picked"); });
+              b.classList.add("picked");
+            });
+            list.appendChild(b);
           });
-          modelList.appendChild(b);
+          gwrap.appendChild(list);
+          modelList.appendChild(gwrap);
         });
       }
 
@@ -2314,15 +2392,22 @@
     clear(menu);
     var cur = (S.config && S.config.model) || "";
     menu.appendChild(el("div", "model-menu-head", "模型"));
-    var list = modelCache == null ? null : modelCache.slice();
-    if (list && cur && list.indexOf(cur) < 0) { list.unshift(cur); }
-    if (list == null) {
+
+    if (!modelCache) {
       menu.appendChild(el("div", "empty-note", "正在加载…"));
-    } else if (!list.length) {
+      return;
+    }
+    if (!modelCache.length) {
       menu.appendChild(el("div", "empty-note", "未发现可用模型，可在设置中手动填写"));
-    } else {
-      var box = el("div", "model-menu-list");
-      list.forEach(function (name) {
+      return;
+    }
+
+    // 按供应商分栏，让"这个模型来自哪家"一眼可见。
+    groupByVendor(modelCache.slice()).forEach(function (g) {
+      var gwrap = el("div", "model-group");
+      gwrap.appendChild(el("div", "model-group-head", g.zh));
+      var list = el("div", "model-group-list");
+      g.models.forEach(function (name) {
         var b = el("button", "model-opt" + (name === cur ? " on" : ""));
         b.type = "button";
         b.appendChild(el("span", "model-opt-name", name));
@@ -2337,15 +2422,13 @@
             toast("已切换到 " + (j.model || name), "ok");
           }).catch(function (e) { toast("切换失败：" + e.message, "err"); });
         });
-        box.appendChild(b);
+        list.appendChild(b);
       });
-      menu.appendChild(box);
-    }
-    var more = el("button", "model-more", "更多设置…");
-    more.type = "button";
-    more.addEventListener("click", function () { menu.hidden = true; openSettings(); });
-    menu.appendChild(more);
+      gwrap.appendChild(list);
+      menu.appendChild(gwrap);
+    });
   }
+
 
   var cmdIndex = 0;
   var cmdMatches = [];
