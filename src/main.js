@@ -71,7 +71,7 @@ function parseArgs(argv) {
     gui: argv.includes("--gui") || argv.includes("--web"),
     plain: argv.includes("--plain"),
     noOpen: argv.includes("--no-open"),
-    port: 7788,
+    port: Number(process.env.PORT) || 7788,
     auto: argv.includes("--auto") || argv.includes("--yes"),
     plan: argv.includes("--plan"),
     oneShot: null,

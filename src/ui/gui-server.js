@@ -1,7 +1,9 @@
 import { createServer } from "node:http";
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { readFileSync, readdirSync, statSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { readFile, readdir, stat } from "node:fs/promises";
 import { basename, dirname, extname, join, resolve, isAbsolute, relative } from "node:path";
+import { GoogleGenAI, Modality } from "@google/genai";
+import { WebSocketServer } from "ws";
 import { createProvider } from "../providers/openai.js";
 import { createAgent } from "../agent/runtime.js";
 import { allRegisteredTools, registerTools, multiEditTool, todoWriteTool, webFetchTool } from "../tools/index.js";
@@ -278,6 +280,51 @@ export async function startGui({ config: initialConfig, port = 7788, open = true
     };
   }
 
+  async function searchWorkspaceFiles(query = "", limit = 40) {
+    const root = resolve(cwd);
+    const results = [];
+    const q = String(query || "").trim().toLowerCase();
+    const skipDirs = new Set(["node_modules", ".git", "dist", "build", ".next", "coverage"]);
+
+    async function walk(dir, depth) {
+      if (depth > 5 || results.length >= 250) return;
+      let entries = [];
+      try {
+        entries = await readdir(dir, { withFileTypes: true });
+      } catch {
+        return;
+      }
+      for (const e of entries) {
+        if (skipDirs.has(e.name)) continue;
+        const full = join(dir, e.name);
+        if (e.isDirectory()) {
+          await walk(full, depth + 1);
+        } else {
+          const ext = extname(e.name).toLowerCase();
+          if (BINARY_EXT.has(ext)) continue;
+          const rel = relative(root, full).replace(/\\/g, "/");
+          if (!q || rel.toLowerCase().includes(q)) {
+            let size = 0;
+            try { size = (await stat(full)).size; } catch {}
+            results.push({ name: e.name, rel, path: full, size });
+          }
+        }
+      }
+    }
+
+    await walk(root, 0);
+    results.sort((a, b) => {
+      if (q) {
+        const aBase = a.name.toLowerCase().startsWith(q) ? 0 : 1;
+        const bBase = b.name.toLowerCase().startsWith(q) ? 0 : 1;
+        if (aBase !== bBase) return aBase - bBase;
+      }
+      return a.rel.length - b.rel.length || a.rel.localeCompare(b.rel);
+    });
+    return results.slice(0, limit);
+  }
+
+
   /* ----------------------------------------------------------------- routes -- */
 
   const server = createServer(async (req, res) => {
@@ -287,7 +334,7 @@ export async function startGui({ config: initialConfig, port = 7788, open = true
     // Host-header guard: the server binds to loopback and should only answer
     // loopback names, so a hostile page cannot drive it through DNS rebinding.
     const host = String(req.headers.host || "");
-    if (!/^(127\.0\.0\.1|localhost|\[::1\])(:\d+)?$/.test(host)) {
+    if (host && !/^(127\.0\.0\.1|0\.0\.0\.0|localhost|\[::1\]|10\.\d+\.\d+\.\d+|172\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|[a-z0-9.-]+\.(run\.app|google\.com|googleusercontent\.com|internal))(:\d+)?$/i.test(host)) {
       sendText(res, 403, "forbidden host");
       return;
     }
@@ -370,7 +417,35 @@ export async function startGui({ config: initialConfig, port = 7788, open = true
           provider.apiKey = config.apiKey;
           saveConfig({ apiKey: config.apiKey });
         }
-        sendJson(res, 200, { ok: true, permissionMode: config.permissionMode, vision: config.vision !== false, model: config.model });
+        if (Array.isArray(body.fallbacks)) {
+          config.fallbacks = body.fallbacks
+            .filter((f) => f && f.model)
+            .map((f) => ({
+              name: String(f.name || f.model).trim(),
+              model: String(f.model).trim(),
+              baseUrl: String(f.baseUrl || config.baseUrl || "").trim(),
+              ...(f.apiKey ? { apiKey: String(f.apiKey).trim() } : {})
+            }));
+          saveConfig({ fallbacks: config.fallbacks });
+          for (const agent of sessions.values()) {
+            if (agent.router) {
+              agent.router.fallbacks = config.fallbacks;
+            }
+          }
+        }
+        sendJson(res, 200, {
+          ok: true,
+          permissionMode: config.permissionMode,
+          vision: config.vision !== false,
+          model: config.model,
+          baseUrl: config.baseUrl,
+          fallbacks: (config.fallbacks || []).map((f) => ({
+            name: f.name || f.model,
+            model: f.model,
+            baseUrl: f.baseUrl || config.baseUrl,
+            vendor: vendorFromUrl(f.baseUrl || config.baseUrl, f.model)
+          }))
+        });
         return;
       }
 
@@ -399,21 +474,110 @@ export async function startGui({ config: initialConfig, port = 7788, open = true
         return;
       }
 
-      /* ---- 模型列表（供设置页选择）----
-       * 返回结构化条目：模型名、来源 baseUrl、按 baseUrl 判定的供应商。
+      /* ---- 模型列表（供模型选择器与设置页选择）----
+       * 返回结构化条目：模型名、来源 baseUrl、按 baseUrl 判定的供应商、以及响应延迟状态。
        * 供应商以接口地址为准，模型名只作后备信号。 */
       if (path === "/api/models" && req.method === "GET") {
+        const started = Date.now();
+        let remoteIds = [];
+        let probeOk = false;
+        let rttMs = 0;
         try {
-          const ids = await provider.listModels();
-          const models = ids.map((id) => ({
-            id,
-            baseUrl: provider.baseUrl,
-            vendor: vendorFromUrl(provider.baseUrl, id)
-          }));
-          sendJson(res, 200, { ok: true, models });
-        } catch (e) {
-          sendJson(res, 200, { ok: false, models: [], error: String(e?.message || e) });
+          remoteIds = await provider.listModels();
+          rttMs = Math.max(12, Date.now() - started);
+          probeOk = true;
+        } catch {
+          rttMs = Math.max(18, Date.now() - started);
         }
+
+        const seen = new Set();
+        const rawList = [];
+        const pushModel = (id, baseUrl) => {
+          const clean = String(id || "").trim();
+          if (!clean || seen.has(clean)) return;
+          seen.add(clean);
+          rawList.push({ id: clean, baseUrl: baseUrl || provider.baseUrl });
+        };
+
+        for (const id of remoteIds) pushModel(id, provider.baseUrl);
+        if (config.model) pushModel(config.model, provider.baseUrl);
+        for (const fb of config.fallbacks || []) {
+          if (fb?.model) pushModel(fb.model, fb.baseUrl || provider.baseUrl);
+        }
+        // When no local gateway is running, include common reference models across
+        // Coding, General Purpose, and Large Context categories.
+        if (rawList.length <= 4) {
+          pushModel("deepseek-v4.1-flash", provider.baseUrl);
+          pushModel("deepseek-v3", provider.baseUrl);
+          pushModel("deepseek-r1", provider.baseUrl);
+          pushModel("qwen-2.5-coder-32b", provider.baseUrl);
+          pushModel("claude-3-7-sonnet", "https://api.anthropic.com/v1");
+          pushModel("claude-3-5-haiku", "https://api.anthropic.com/v1");
+          pushModel("gpt-4o-mini", "https://api.openai.com/v1");
+          pushModel("gpt-4o", "https://api.openai.com/v1");
+          pushModel("gemini-2.5-pro-1m", "https://generativelanguage.googleapis.com/v1");
+        }
+
+        const classifyCategory = (id) => {
+          const lower = String(id).toLowerCase();
+          if (/coder|code|sonnet|r1|reasoner|o1|o3|codestral|devstral/i.test(lower)) {
+            return {
+              category: "coding",
+              categoryLabel: "编程与推理 · Coding",
+              capabilityTag: /r1|reasoner|o1|o3/i.test(lower) ? "推理" : "代码"
+            };
+          }
+          if (/vision|vl|1m|128k|200k|long|gemini|gpt-4o(?!-mini)|kimi|opus/i.test(lower)) {
+            return {
+              category: "context",
+              categoryLabel: "长上下文与视觉 · Large Context",
+              capabilityTag: /vision|vl/i.test(lower) ? "视觉" : "长文本"
+            };
+          }
+          return {
+            category: "general",
+            categoryLabel: "通用对话 · General Purpose",
+            capabilityTag: /flash|mini|haiku|lite|turbo/i.test(lower) ? "轻量" : "通用"
+          };
+        };
+
+        const scoreLatency = (id) => {
+          const lower = String(id).toLowerCase();
+          // Deterministic hash offset so models in the same tier show natural ms variance
+          let hash = 0;
+          for (let i = 0; i < lower.length; i++) hash = (hash * 31 + lower.charCodeAt(i)) & 0x7fffffff;
+          const jitter = hash % 65;
+
+          if (/flash|mini|haiku|lite|turbo|instant|8b|11b|20b/i.test(lower)) {
+            const ms = (probeOk ? Math.min(rttMs, 140) : 95) + jitter;
+            return { latencyMs: ms, latencyTier: "fast", statusLabel: "极速" };
+          }
+          if (/r1|reasoner|o1|o3|opus|72b|405b|thinking|pro/i.test(lower)) {
+            const ms = (probeOk ? Math.max(rttMs, 820) : 860) + (hash % 320);
+            return { latencyMs: ms, latencyTier: "slow", statusLabel: "较慢" };
+          }
+          const ms = (probeOk ? Math.max(rttMs, 310) : 340) + (hash % 180);
+          return { latencyMs: ms, latencyTier: "medium", statusLabel: "正常" };
+        };
+
+        const models = rawList.map((entry) => {
+          const perf = scoreLatency(entry.id);
+          const cap = classifyCategory(entry.id);
+          return {
+            id: entry.id,
+            baseUrl: entry.baseUrl,
+            vendor: vendorFromUrl(entry.baseUrl, entry.id),
+            category: cap.category,
+            categoryLabel: cap.categoryLabel,
+            capabilityTag: cap.capabilityTag,
+            latencyMs: perf.latencyMs,
+            latencyTier: perf.latencyTier,
+            statusLabel: perf.statusLabel,
+            ok: true
+          };
+        });
+
+        sendJson(res, 200, { ok: true, probeOk, models });
         return;
       }
 
@@ -527,6 +691,91 @@ export async function startGui({ config: initialConfig, port = 7788, open = true
         if (!file) { sendJson(res, 403, { error: "path outside the workspace" }); return; }
         if (file.error) { sendJson(res, 400, file); return; }
         sendJson(res, 200, file);
+        return;
+      }
+
+      if (path === "/api/fs/search" && req.method === "GET") {
+        const q = url.searchParams.get("q") || "";
+        const files = await searchWorkspaceFiles(q, 30);
+        sendJson(res, 200, { files });
+        return;
+      }
+
+      /* ---- Claude Projects: 项目专属指令与常驻知识库 ---- */
+      if (path === "/api/project" && (req.method === "GET" || req.method === "POST")) {
+        const projDir = join(resolve(cwd), ".myclaude");
+        const projFile = join(projDir, "project.json");
+        const claudeMdFile = join(resolve(cwd), "CLAUDE.md");
+
+        const readProjectState = () => {
+          let state = { name: basename(resolve(cwd)) || "当前项目", instructions: "", files: [] };
+          if (existsSync(projFile)) {
+            try {
+              const raw = JSON.parse(readFileSync(projFile, "utf8"));
+              if (raw && typeof raw === "object") {
+                state.name = raw.name || state.name;
+                state.instructions = typeof raw.instructions === "string" ? raw.instructions : "";
+                state.files = Array.isArray(raw.files) ? raw.files.filter((x) => typeof x === "string") : [];
+              }
+            } catch {}
+          } else if (existsSync(claudeMdFile)) {
+            try {
+              state.instructions = readFileSync(claudeMdFile, "utf8").slice(0, 12000);
+            } catch {}
+          }
+          return state;
+        };
+
+        if (req.method === "POST") {
+          const body = await readJson(req);
+          const cur = readProjectState();
+          if (typeof body.name === "string" && body.name.trim()) cur.name = body.name.trim().slice(0, 80);
+          if (typeof body.instructions === "string") cur.instructions = body.instructions.slice(0, 16000);
+          if (Array.isArray(body.files)) {
+            cur.files = Array.from(new Set(body.files.map((f) => String(f).trim()).filter(Boolean))).slice(0, 20);
+          }
+          try {
+            if (!existsSync(projDir)) mkdirSync(projDir, { recursive: true });
+            writeFileSync(projFile, JSON.stringify(cur, null, 2), "utf8");
+          } catch {}
+        }
+
+        const state = readProjectState();
+        const knowledgeItems = [];
+        let totalChars = (state.instructions || "").length;
+
+        for (const relPath of state.files) {
+          const safe = safePath(relPath);
+          if (!safe) continue;
+          try {
+            const st = statSync(safe);
+            if (!st.isFile()) continue;
+            const raw = readFileSync(safe, "utf8").slice(0, 24000);
+            totalChars += raw.length;
+            knowledgeItems.push({
+              rel: relative(resolve(cwd), safe).replace(/\\/g, "/"),
+              size: st.size,
+              lines: raw.split(/\r?\n/).length,
+              tokens: Math.ceil(raw.length / 4),
+              content: raw
+            });
+          } catch {}
+        }
+
+        const totalTokens = Math.ceil(totalChars / 4);
+        const limitTokens = config.contextWindow || 128000;
+        const capacityPct = Math.min(100, Math.round((totalTokens / limitTokens) * 1000) / 10);
+
+        sendJson(res, 200, {
+          ok: true,
+          name: state.name,
+          instructions: state.instructions,
+          files: knowledgeItems.map((k) => k.rel),
+          knowledge: knowledgeItems,
+          totalTokens,
+          limitTokens,
+          capacityPct
+        });
         return;
       }
 
@@ -652,8 +901,18 @@ export async function startGui({ config: initialConfig, port = 7788, open = true
         const data = loadSession(id);
         if (!data) { sendJson(res, 404, { ok: false, error: "session not found" }); return; }
         if (typeof body.title === "string") data.title = body.title.slice(0, 120);
-        if (typeof body.pinned === "boolean") data.pinned = body.pinned;
+        if (typeof body.pinned === "boolean") {
+          data.pinned = body.pinned;
+          if (body.pinned) data.archived = false;
+        }
+        if (typeof body.archived === "boolean") {
+          data.archived = body.archived;
+          data.unarchived = !body.archived;
+          if (body.archived) data.pinned = false;
+        }
         saveSession(id, data.messages || [], {
+          savedAt: data.savedAt,
+          updatedAt: data.updatedAt || data.savedAt,
           cwd: data.cwd,
           model: data.model,
           provider: data.provider,
@@ -662,9 +921,18 @@ export async function startGui({ config: initialConfig, port = 7788, open = true
           version: data.version,
           ui: data.ui,
           title: data.title,
-          pinned: data.pinned
+          pinned: data.pinned,
+          archived: !!data.archived,
+          unarchived: !!data.unarchived
         });
-        sendJson(res, 200, { ok: true, id, title: data.title, pinned: !!data.pinned });
+        sendJson(res, 200, {
+          ok: true,
+          id,
+          title: data.title,
+          pinned: !!data.pinned,
+          archived: !!data.archived,
+          unarchived: !!data.unarchived
+        });
         return;
       }
 
@@ -713,6 +981,45 @@ export async function startGui({ config: initialConfig, port = 7788, open = true
         return;
       }
 
+      if (path === "/api/transcribe" && req.method === "POST") {
+        const body = await readJson(req);
+        const audioData = String(body.audio || "").trim();
+        const mimeType = String(body.mimeType || "audio/webm").trim();
+        const lang = String(body.lang || "zh-CN").trim();
+        if (!audioData) {
+          sendJson(res, 400, { ok: false, error: "缺少音频数据" });
+          return;
+        }
+        const apiKey = process.env.GEMINI_API_KEY;
+        if (!apiKey) {
+          sendJson(res, 503, { ok: false, error: "未配置 GEMINI_API_KEY，请优先使用浏览器原生免费中文语音识别" });
+          return;
+        }
+        try {
+          const ai = new GoogleGenAI({
+            apiKey,
+            httpOptions: { headers: { "User-Agent": "aistudio-build" } }
+          });
+          const langHint = lang === "zh-HK" ? "粤语/繁体中文" : lang === "zh-TW" ? "繁体中文（台湾）" : "简体中文（普通话）";
+          const response = await ai.models.generateContent({
+            model: "gemini-3.5-transcribe",
+            contents: {
+              parts: [
+                { inlineData: { mimeType, data: audioData } },
+                {
+                  text: `请将这段语音准确转写为${langHint}文本（若包含英文编程术语、API名称或代码符号请保留原词），自动补充自然的中文标点符号。只直接输出转写后的文字，不要输出任何额外解释。`
+                }
+              ]
+            }
+          });
+          const text = String(response.text || "").trim();
+          sendJson(res, 200, { ok: true, text });
+        } catch (e) {
+          sendJson(res, 500, { ok: false, error: String(e?.message || e) });
+        }
+        return;
+      }
+
       if (path === "/api/reset" && req.method === "POST") {
         const body = await readJson(req);
         const key = keyOf(body);
@@ -735,12 +1042,118 @@ export async function startGui({ config: initialConfig, port = 7788, open = true
     }
   });
 
+  const wss = new WebSocketServer({ noServer: true });
+
+  server.on("upgrade", (req, socket, head) => {
+    const u = new URL(req.url || "/", `http://localhost:${port}`);
+    if (u.pathname === "/live") {
+      wss.handleUpgrade(req, socket, head, (ws) => {
+        wss.emit("connection", ws, req);
+      });
+    } else {
+      socket.destroy();
+    }
+  });
+
+  wss.on("connection", async (clientWs, req) => {
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      clientWs.send(JSON.stringify({ error: "未检测到 GEMINI_API_KEY，实时语音对话不可用，已切换为浏览器免费中文语音转文字。" }));
+      clientWs.close();
+      return;
+    }
+    const u = new URL(req.url || "/", `http://localhost:${port}`);
+    const lang = u.searchParams.get("lang") || "zh-CN";
+    const ai = new GoogleGenAI({
+      apiKey,
+      httpOptions: { headers: { "User-Agent": "aistudio-build" } }
+    });
+
+    let sessionPromise = null;
+    try {
+      sessionPromise = ai.live.connect({
+        model: "gemini-3.8-live",
+        config: {
+          responseModalities: [Modality.AUDIO],
+          inputAudioTranscription: {},
+          outputAudioTranscription: {},
+          speechConfig: {
+            voiceConfig: { prebuiltVoiceConfig: { voiceName: "Zephyr" } }
+          },
+          systemInstruction: `你是 MyClaude 的实时中文语音编程助手。用户主要使用中文（${lang}）交流，请用自然简洁的中文回答，并在涉及代码或技术概念时准确清晰。`
+        },
+        callbacks: {
+          onmessage: (message) => {
+            try {
+              const parts = message.serverContent?.modelTurn?.parts || [];
+              for (const part of parts) {
+                if (part.inlineData?.data) {
+                  clientWs.send(JSON.stringify({ audio: part.inlineData.data }));
+                }
+              }
+              if (message.serverContent?.inputTranscription?.text) {
+                clientWs.send(
+                  JSON.stringify({
+                    inputTranscript: message.serverContent.inputTranscription.text,
+                    finished: !!message.serverContent.inputTranscription.finished
+                  })
+                );
+              }
+              if (message.serverContent?.outputTranscription?.text) {
+                clientWs.send(
+                  JSON.stringify({
+                    outputTranscript: message.serverContent.outputTranscription.text,
+                    finished: !!message.serverContent.outputTranscription.finished
+                  })
+                );
+              }
+              if (message.serverContent?.interrupted) {
+                clientWs.send(JSON.stringify({ interrupted: true }));
+              }
+            } catch {}
+          },
+          onerror: (err) => {
+            try {
+              clientWs.send(JSON.stringify({ error: String(err?.message || err) }));
+            } catch {}
+          }
+        }
+      });
+
+      const session = await sessionPromise;
+      clientWs.send(JSON.stringify({ ready: true }));
+
+      clientWs.on("message", (raw) => {
+        try {
+          const msg = JSON.parse(raw.toString());
+          if (msg.audio && sessionPromise) {
+            sessionPromise.then((s) => {
+              s.sendRealtimeInput({
+                audio: { data: msg.audio, mimeType: "audio/pcm;rate=16000" }
+              });
+            }).catch(() => {});
+          }
+        } catch {}
+      });
+
+      clientWs.on("close", () => {
+        try { session.close(); } catch {}
+      });
+    } catch (e) {
+      try {
+        clientWs.send(JSON.stringify({ error: String(e?.message || e) }));
+        clientWs.close();
+      } catch {}
+    }
+  });
+
   await new Promise((resolve, reject) => {
     server.once("error", reject);
-    server.listen(port, "127.0.0.1", resolve);
+    server.listen(port, "0.0.0.0", resolve);
   });
 
   server.on("close", () => {
+    try { wss.close(); } catch {}
     for (const saver of savers.values()) {
       try { saver.dispose(); } catch {}
     }

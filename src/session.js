@@ -48,10 +48,20 @@ export function saveSession(id, messages, meta = {}) {
   const file = join(SESSIONS_DIR, `${id}.json`);
   const tmp = `${file}.${process.pid}.tmp`;
   const now = new Date().toISOString();
+  let prev = null;
+  if (existsSync(file)) {
+    try {
+      prev = JSON.parse(readFileSync(file, "utf8"));
+    } catch {}
+  }
   const payload = {
     id,
-    savedAt: now,
+    savedAt: prev?.savedAt || now,
     updatedAt: now,
+    ...(prev?.title !== undefined ? { title: prev.title } : {}),
+    ...(prev?.pinned !== undefined ? { pinned: prev.pinned } : {}),
+    ...(prev?.archived !== undefined ? { archived: prev.archived } : {}),
+    ...(prev?.unarchived !== undefined ? { unarchived: prev.unarchived } : {}),
     ...meta,
     messages: messages || [],
   };
@@ -92,6 +102,8 @@ export function listSessions() {
           turns: data.turnCount ?? null,
           title: data.title ?? null,
           pinned: data.pinned === true,
+          archived: data.archived === true,
+          unarchived: data.unarchived === true,
         };
       } catch {
         return { id: f.replace(/\.json$/, ""), savedAt: null, messages: 0 };
