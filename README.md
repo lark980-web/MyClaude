@@ -387,6 +387,33 @@ MYCLAUDE_PROVIDER
 /model gpt-4o
 ```
 
+## 模型
+
+模型通过**单一本地网关**引入，与 DSH 同构：`baseUrl` 指向 `http://127.0.0.1:3425/v1`，
+一个网关背后是多家供应商。
+
+**内置目录 46 个模型 / 9 家供应商**，模型 id 的第一段即供应商：
+
+| 供应商 | 数量 | 示例 |
+|---|---|---|
+| opencode-zen | 11 | `opencode-zen/glm-5.3-flash-free` |
+| amd | 9 | `amd/DeepSeek-V4.1-Flash` |
+| group | 6 | `group/auto-deepseek-v4-1-flash` |
+| trae-cn | 5 | `trae-cn/DeepSeek-V4-Pro` |
+| beatapi | 5 | `beatapi/gemini-3.8-flash-free` |
+| workbuddy | 3 | `workbuddy/hy4-preview` |
+| workbuddy-ai | 3 | `workbuddy-ai/deepseek-v4.1-flash` |
+| qoder-cn | 3 | `qoder-cn/gfmodel`（默认） |
+| sensenova | 1 | `sensenova/sensenova-6.8-flash-lite` |
+
+每个模型携带 `contextWindow` / `maxTokens` / 是否支持图片。**上下文窗口按模型动态解析**，
+不再使用全局写死值——切换模型时压缩节奏自动匹配真实窗口。
+
+切换模型：顶栏下拉（按供应商分栏、可搜索）、设置页，或直接改 `config.json` 的 `model`。
+
+**故障转移**：默认 failover 池取自同一网关的多家供应商，限流时由另一家承接，
+无需第二个端点或第二套凭据。可用 `/api/fallbacks/test` 逐个探测可用性。
+
 ## 权限模式（7 种）
 
 | 模式 | 别名 | 行为 |

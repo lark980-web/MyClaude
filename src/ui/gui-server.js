@@ -25,8 +25,9 @@ import { loadGuiAssets } from "./assets.js";
 import { loadCommands, findCommand, expandCommand } from "../commands.js";
 import { normalizeMode, PERMISSION_MODES } from "../agent/modes.js";
 import { vendorFromUrl, endpointLabel } from "../vendors.js";
+import { MODELS, findModel, supportsVision, contextWindowOf } from "../models.js";
 
-const VERSION = "0.17.0";
+const VERSION = "0.18.0";
 const MAX_FILE_BYTES = 1024 * 1024;
 
 /** Paths the file browser must never expose. */
@@ -208,7 +209,10 @@ export async function startGui({ config: initialConfig, port = 7788, open = true
     // estimate when a provider does not report usage.
     const reported = agent ? (agent.totalInputTokens || 0) + (agent.totalOutputTokens || 0) : 0;
     const used = reported || approxTokens(agent);
-    const limit = Math.round((config.contextWindow || 1000000) * (config.compactThreshold || 0.8));
+    // The agent resolves the real window per model; config.contextWindow is
+    // only the pre-selection fallback.
+    const window = (agent && agent.contextWindow) || config.contextWindow || 200000;
+    const limit = Math.round(window * (config.compactThreshold || 0.8));
     return {
       messages: agent ? agent.messages.length : 0,
       turns: agent ? agent.turnCount : 0,
@@ -383,6 +387,12 @@ export async function startGui({ config: initialConfig, port = 7788, open = true
           })),
           modes: PERMISSION_MODES.map((m) => ({ id: m.id, zh: m.zh, desc: m.desc })),
           endpoint: { vendor: vendorFromUrl(config.baseUrl, config.model), label: endpointLabel(config.baseUrl), baseUrl: config.baseUrl },
+          // Full catalogue so the UI can list every model instead of guessing,
+          // plus the current model's resolved limits.
+          models: MODELS,
+          currentModel: findModel(config.model) || null,
+          modelContextWindow: contextWindowOf(config.model),
+          modelSupportsVision: supportsVision(config.model),
           routing: agent ? agent.routingStatus?.() : null,
           tools: toolList(),
           ...statsOf(agent)
@@ -503,6 +513,9 @@ export async function startGui({ config: initialConfig, port = 7788, open = true
           rawList.push({ id: clean, baseUrl: baseUrl || provider.baseUrl });
         };
 
+        // The built-in catalogue first: it works even when the gateway is down,
+        // and it is what the model picker should show by default.
+        for (const m of MODELS) pushModel(m.id, provider.baseUrl);
         for (const id of remoteIds) pushModel(id, provider.baseUrl);
         if (config.model) pushModel(config.model, provider.baseUrl);
         for (const fb of config.fallbacks || []) {

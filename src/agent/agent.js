@@ -6,6 +6,7 @@ import { SYSTEM_PROMPT } from "./prompt.js";
 import { buildUserContent, buildToolAttachmentContent, resolveAttachments } from "../attachments.js";
 import { setQuestionPresenter } from "../tools/extended.js";
 import { HookRunner } from "../hooks.js";
+import { contextWindowOf, maxTokensOf, supportsVision, findModel } from "../models.js";
 
 /** Tools that never touch the filesystem, so they never need approval. */
 const NON_MUTATING_TOOLS = new Set([
@@ -35,6 +36,11 @@ export class Agent {
     this.tools = tools;
     this.messages = [];
     this.abortController = null;
+    // Resolve the model's real limits instead of assuming one global number:
+    // the catalogue carries per-model context window and token ceiling, and a
+    // 1M-token model must not be compacted on a 200k model's schedule.
+    this.contextWindow = contextWindowOf(config.model);
+    this.maxTokens = maxTokensOf(config.model);
     this.turnCount = 0;
     // Guards the Stop hook so it can only extend a run once.
     this.stopHookUsed = false;
@@ -90,6 +96,9 @@ export class Agent {
   setModel(model) {
     if (!model) return this.router.model;
     this.config.model = model;
+    // Keep the compaction schedule and output ceiling in step with the model.
+    this.contextWindow = contextWindowOf(model);
+    this.maxTokens = maxTokensOf(model);
     this.router.provider.model = model;
     this.provider.model = model;
     return this.router.model;
@@ -135,7 +144,7 @@ export class Agent {
   setMode(mode) {
     const canon = normalizeMode(mode);
     if (!canon) {
-      throw new Error("invalid mode: " + mode + " (expected ask|acceptEdits|auto|dontAsk|plan|bypassPermissions)");
+      throw new Error("invalid mode: " + mode + " (expected ask|acceptEdits|auto|dontAsk|plan|bypassPermissions|fullAccess)");
     }
     this.config.permissionMode = canon;
     this.planMode = canon === "plan";

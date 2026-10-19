@@ -76,6 +76,10 @@ export function vendorFromUrl(baseUrl, model = "") {
   for (const [re, name] of HOST_VENDORS) {
     if (re.test(host)) { return name; }
   }
+  // "vendor/model" is the gateway convention (DSH does the same): the segment
+  // before the slash names the vendor, so it beats any name-based guess.
+  const slash = String(model || "").indexOf("/");
+  if (slash > 0) { return String(model).slice(0, slash); }
   // A local gateway proxies many vendors under one host, so the endpoint says
   // nothing and every model would land in a single useless group. Fall back to
   // the model name to surface the vendor behind the gateway; only models we

@@ -11,6 +11,35 @@
 ### Added
 - `CHANGELOG.md`：建立变更记录制度。
 
+## [0.18.0] - 2026-10-19
+
+模型引入方式对齐 DSH：单一网关 + 完整模型目录。
+
+### Added
+- `src/models.js`：内置模型目录，**46 个模型 / 9 家供应商**，与 DSH 同源
+  - 每个模型带 `name`（人类可读名）、`contextWindow`、`maxTokens`、`input` 能力
+  - 供应商即模型 id 的第一段（`qoder-cn/gfmodel` → `qoder-cn`），不必猜名字
+  - 辅助函数：`findModel` / `contextWindowOf` / `maxTokensOf` / `supportsVision` /
+    `vendorOfModel` / `vendorList`
+- `/api/config` 暴露完整目录（`models`）、当前模型元数据（`currentModel`）、
+  解析后的窗口与视觉能力
+
+### Changed
+- **默认配置切到本地网关**：`baseUrl` 改为 `http://127.0.0.1:3425/v1`（与 DSH 同一
+  magpie 网关），默认模型 `qoder-cn/gfmodel`
+- **上下文窗口按模型动态解析**：不再使用全局写死的 `1000000`；切换模型时
+  `setModel()` 同步刷新窗口与输出上限，压缩节奏随之匹配真实模型
+- **failover 池改为同网关多供应商**：限流时由另一家供应商承接，无需第二个端点
+  或第二套凭据
+- `/api/models` 以内置目录为主数据源（网关不在时也能列出全部模型），
+  实时列表只用于补充目录缺失项
+- 供应商判定优先取模型 id 前缀（网关约定），避免本地网关把厂商信息吞成「本地网关」
+
+### Verified
+- 178 项测试全部通过
+- 实测：46 个模型归入 9 家；默认模型 `qoder-cn/gfmodel` 对话正常返回；
+  上下文上限 160000（= 200000 × 0.8，按模型真实窗口计算）
+
 ## [0.17.0] - 2026-10-19
 
 新增 fullAccess 权限模式：完全按指令执行。

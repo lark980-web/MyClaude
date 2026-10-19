@@ -1,6 +1,7 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { GATEWAY_BASE_URL, GATEWAY_KEY_ENV, DEFAULT_MODEL, contextWindowOf, maxTokensOf, MODELS } from "./models.js";
 
 /**
  * Config location. `MYCLAUDE_HOME` overrides the default directory, which lets
@@ -25,25 +26,45 @@ const nvidiaKey = () => {
   return env.split(/[,\s]+/).filter(Boolean)[0] || "";
 };
 
+/** Gateway key from the first environment variable that is set. */
+const gatewayKey = () => {
+  for (const name of GATEWAY_KEY_ENV) {
+    const v = process.env[name];
+    if (v && v.trim()) { return v.trim(); }
+  }
+  return "";
+};
+
+/**
+ * Failover pool drawn from the same gateway, so a rate limit on one vendor can
+ * be served by another without a second endpoint or credential.
+ */
+const GATEWAY_FALLBACKS = [
+  "group/auto-deepseek-v4-1-flash",
+  "workbuddy-ai/deepseek-v4.1-flash",
+  "amd/DeepSeek-V4.1-Flash",
+  "opencode-zen/deepseek-v4.1-flash-free",
+  "beatapi/deepseek-v4.1-flash-free",
+].map((id) => ({ name: id, model: id, baseUrl: GATEWAY_BASE_URL, apiKey: "" }));
+
 export const DEFAULT_CONFIG = {
   provider: "openai",
-  baseUrl: "http://127.0.0.1:8000/v1",
-  apiKey: "wb-local-8888",
-  model: "deepseek-v4.1-flash",
+  // One local gateway fronts every vendor, exactly as DSH wires it.
+  baseUrl: GATEWAY_BASE_URL,
+  apiKey: gatewayKey(),
+  model: DEFAULT_MODEL,
   // Seconds to wait for a response before considering the endpoint dead.
   requestTimeoutMs: 90000,
-  // Free fallbacks, verified to support tool calling.
-  fallbacks: [
-    { name: "gpt-oss-20b", baseUrl: NVIDIA_BASE, apiKey: nvidiaKey(), model: "openai/gpt-oss-20b" },
-    { name: "glm-5.3-flash", baseUrl: NVIDIA_BASE, apiKey: nvidiaKey(), model: "z-ai/glm-5.3-flash" },
-    { name: "llama-3.2-11b-vision", baseUrl: NVIDIA_BASE, apiKey: nvidiaKey(), model: "meta/llama-3.2-11b-vision-instruct" }
-  ],
+  // Same-gateway failover pool: a rate limit on one vendor is served by another.
+  fallbacks: GATEWAY_FALLBACKS,
   maxTokens: 8192,
   temperature: 0.7,
   permissionMode: "ask",
   vision: true,
   maxTurns: 100,
-  contextWindow: 1000000,
+  // Resolved per model by the agent (see contextWindowOf); this is only the
+  // value used before a model is chosen.
+  contextWindow: contextWindowOf(DEFAULT_MODEL),
   compactThreshold: 0.8,
   mcpServers: {},
 };
