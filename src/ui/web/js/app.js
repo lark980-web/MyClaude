@@ -2593,6 +2593,7 @@
     if (params.get("settings") === "1") { setTimeout(openSettings, 400); }
     if (params.get("commands") === "1") { setTimeout(openCommandsModal, 500); }
     if (params.get("slash")) { var sq = params.get("slash"); setTimeout(function () { updateSlashMenu("/" + (sq === "1" ? "" : sq)); }, 500); }
+    if (params.get("modelmenu") === "1") { setTimeout(toggleModelMenu, 500); }
     if (params.get("resume")) { setTimeout(function () { resumeSession(params.get("resume")); }, 400); }
 
     getJSON("/api/config").then(function (j) {
