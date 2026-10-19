@@ -40,9 +40,16 @@
     welcomeCat: "code",
     archivePolicy: "smart",
     thinking: false,
+    webSearch: false,
+    pendingCitations: [],
+    _pendingRetryBranches: null,
     artifactFullscreen: false,
-    project: { name: "当前项目", instructions: "", files: [], knowledge: [], totalTokens: 0, limitTokens: 128000, capacityPct: 0 }
+    pinnedMessages: [],
+    pinnedExpanded: false,
+    project: { activeProjectId: "proj-default", projects: [], name: "当前项目", instructions: "", files: [], knowledge: [], totalTokens: 0, limitTokens: 128000, capacityPct: 0 }
   };
+
+  var LS_PINNED_PREFIX = "myclaude.pinned.";
 
   var LS_THEME = "myclaude.theme";
   var LS_MOTION = "myclaude.motion";
@@ -55,6 +62,7 @@
   var LS_STYLE = "myclaude.style";
   var LS_ARCHIVE_POLICY = "myclaude.archive.policy";
   var LS_THINKING = "myclaude.thinking";
+  var LS_WEB_SEARCH = "myclaude.websearch";
 
   /* ================================================================ 工具 === */
 
@@ -328,10 +336,23 @@
     return nodes;
   }
 
+  var msgSeqCounter = 0;
+
+  function assignMsgId(wrap, role) {
+    if (!wrap._msgId) {
+      msgSeqCounter++;
+      wrap._msgId = "msg-" + role + "-" + msgSeqCounter;
+      wrap.id = wrap._msgId;
+    }
+    return wrap._msgId;
+  }
+
   function addUserMessage(text, files) {
     hideWelcome();
     var root = logRoot();
     var wrap = el("div", "msg msg-user");
+    assignMsgId(wrap, "user");
+    wrap._role = "user";
     wrap._text = text;
     wrap._files = (files || []).slice();
     wrap._branches = [];
@@ -365,16 +386,19 @@
 
     function renderUserActions() {
       clear(actions);
-      if (wrap._branches && wrap._branches.length > 1) {
+      var hasBranches = Boolean(wrap._branches && wrap._branches.length > 1);
+      wrap.classList.toggle("has-branches", hasBranches);
+      if (hasBranches) {
         var nav = el("div", "msg-branch-nav");
-        var prevB = el("button", "msg-branch-btn", "\u25C2");
+        nav.title = "同一会话内切换不同提问分支版本";
+        var prevB = el("button", "branch-arrow", "\u25C0");
         prevB.type = "button";
         prevB.title = "上一分支版本";
         prevB.disabled = wrap._branchIdx <= 0;
         prevB.addEventListener("click", function () {
           switchUserBranch(wrap, wrap._branchIdx - 1);
         });
-        var nextB = el("button", "msg-branch-btn", "\u25B8");
+        var nextB = el("button", "branch-arrow", "\u25B6");
         nextB.type = "button";
         nextB.title = "下一分支版本";
         nextB.disabled = wrap._branchIdx >= wrap._branches.length - 1;
@@ -382,10 +406,18 @@
           switchUserBranch(wrap, wrap._branchIdx + 1);
         });
         nav.appendChild(prevB);
-        nav.appendChild(el("span", null, (wrap._branchIdx + 1) + " / " + wrap._branches.length));
+        nav.appendChild(el("span", "branch-indicator", (wrap._branchIdx + 1) + " / " + wrap._branches.length));
         nav.appendChild(nextB);
         actions.appendChild(nav);
       }
+      var pinBtn = mkMini("置顶", function () {
+        togglePinMessage(wrap, "user", function () { return wrap._text; }, pinBtn);
+      });
+      pinBtn.classList.add("pin-btn");
+      wrap._pinBtn = pinBtn;
+      updateMessagePinVisual(wrap, pinBtn, isMessagePinned(wrap, wrap._text));
+      actions.appendChild(pinBtn);
+
       actions.appendChild(mkMini("编辑", function () {
         openInlineUserEditor(wrap, bubble, renderUserActions);
       }));
@@ -500,6 +532,16 @@
     hideWelcome();
     var root = logRoot();
     var wrap = el("div", "msg msg-asst");
+    assignMsgId(wrap, "asst");
+    wrap._role = "assistant";
+    if (S.pendingCitations && S.pendingCitations.length) {
+      wrap._citations = S.pendingCitations.slice();
+      S.pendingCitations = [];
+    }
+    if (S._pendingRetryBranches && S._pendingRetryBranches.length) {
+      wrap._asstBranches = S._pendingRetryBranches.slice();
+      S._pendingRetryBranches = null;
+    }
     var av = el("div", "avatar");
     av.appendChild(icon("i-spark", 18));
     var content = el("div", "content");
@@ -834,7 +876,7 @@
     return svg;
   }
 
-  var MINI_ICON = { "复制": "i-copy", "重试": "i-retry", "编辑": "i-edit" };
+  var MINI_ICON = { "复制": "i-copy", "重试": "i-retry", "编辑": "i-edit", "置顶": "i-pin", "朗读": "i-volume" };
 
   function mkMini(label, fn) {
     var b = el("button", "mini-btn");
@@ -845,6 +887,368 @@
     else { b.textContent = label; }
     b.addEventListener("click", fn);
     return b;
+  }
+
+  /* ---- 消息置顶与聊天区顶部置顶栏 (Pin Messages to Top of Chat Area) ---- */
+  function pinnedStorageKey(sessionId) {
+    return LS_PINNED_PREFIX + (sessionId || S.sessionKey || "draft");
+  }
+
+  function savePinnedForCurrentSession() {
+    try {
+      localStorage.setItem(pinnedStorageKey(), JSON.stringify(S.pinnedMessages || []));
+    } catch (e) {}
+  }
+
+  function loadPinnedForCurrentSession() {
+    try {
+      var raw = localStorage.getItem(pinnedStorageKey());
+      var parsed = raw ? JSON.parse(raw) : [];
+      S.pinnedMessages = Array.isArray(parsed) ? parsed : [];
+    } catch (e) {
+      S.pinnedMessages = [];
+    }
+    renderPinnedBar();
+  }
+
+  function isMessagePinned(wrap, rawText) {
+    if (!S.pinnedMessages || !S.pinnedMessages.length) { return false; }
+    var id = wrap && wrap._msgId;
+    var clean = String(rawText || "").trim();
+    return S.pinnedMessages.some(function (p) {
+      if (id && p.id === id) { return true; }
+      return clean && p.text === clean;
+    });
+  }
+
+  function updateMessagePinVisual(wrap, pinBtn, isPinned) {
+    if (!wrap) { return; }
+    wrap.classList.toggle("is-pinned", !!isPinned);
+    if (pinBtn) {
+      pinBtn.classList.toggle("active", !!isPinned);
+      pinBtn.title = isPinned ? "取消置顶此消息" : "置顶此消息到聊天区顶部以便随时参考";
+      pinBtn.setAttribute("aria-pressed", isPinned ? "true" : "false");
+    }
+    var existingTag = wrap.querySelector(".msg-pin-tag");
+    if (isPinned && !existingTag) {
+      var tag = el("div", "msg-pin-tag");
+      tag.appendChild(icon("i-pin", 12));
+      tag.appendChild(el("span", null, "已置顶到顶部"));
+      if (wrap.classList.contains("msg-asst")) {
+        var contentBox = wrap.querySelector(".content");
+        if (contentBox) { contentBox.insertBefore(tag, contentBox.firstChild); }
+      } else {
+        wrap.insertBefore(tag, wrap.firstChild);
+      }
+    } else if (!isPinned && existingTag && existingTag.parentNode) {
+      existingTag.parentNode.removeChild(existingTag);
+    }
+  }
+
+  function makePinnedSnippet(rawText) {
+    var clean = String(rawText || "")
+      .replace(/```[\s\S]*?```/g, " [代码片段] ")
+      .replace(/[#>*_`~-]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (!clean) { clean = String(rawText || "").replace(/\s+/g, " ").trim(); }
+    return clean.length > 96 ? clean.slice(0, 96) + "…" : clean;
+  }
+
+  function smoothAdjustStreamForPinnedBar(prevHeight, newHeight, anchorNode) {
+    var stream = $("stream");
+    if (!stream) { return; }
+    var deltaH = (newHeight || 0) - (prevHeight || 0);
+    if (!deltaH) { return; }
+
+    requestAnimationFrame(function () {
+      var maxScroll = Math.max(0, stream.scrollHeight - stream.clientHeight);
+      if (deltaH > 0) {
+        if (maxScroll > 0) {
+          stream.scrollBy({ top: deltaH, behavior: "smooth" });
+        }
+        if (anchorNode && anchorNode.getBoundingClientRect) {
+          var sRect = stream.getBoundingClientRect();
+          var aRect = anchorNode.getBoundingClientRect();
+          if (aRect.top < sRect.top + 8) {
+            stream.scrollBy({ top: aRect.top - sRect.top - 12, behavior: "smooth" });
+          } else if (aRect.bottom > sRect.bottom - 8 && maxScroll > 0) {
+            stream.scrollBy({ top: Math.min(deltaH, aRect.bottom - sRect.bottom + 12), behavior: "smooth" });
+          }
+        }
+      } else if (deltaH < 0 && stream.scrollTop > 0) {
+        stream.scrollBy({ top: deltaH, behavior: "smooth" });
+      }
+    });
+  }
+
+  function togglePinMessage(wrap, role, getTextFn, pinBtn) {
+    var rawText = String((getTextFn && getTextFn()) || "").trim();
+    if (!rawText) {
+      toast("空白消息无法置顶", "warn");
+      return;
+    }
+    var msgId = assignMsgId(wrap, role === "assistant" ? "asst" : "user");
+    var idx = -1;
+    for (var i = 0; i < S.pinnedMessages.length; i++) {
+      if (S.pinnedMessages[i].id === msgId || S.pinnedMessages[i].text === rawText) {
+        idx = i;
+        break;
+      }
+    }
+    if (idx >= 0) {
+      S.pinnedMessages.splice(idx, 1);
+      updateMessagePinVisual(wrap, pinBtn, false);
+      savePinnedForCurrentSession();
+      renderPinnedBar({ anchorNode: wrap, animateScroll: true });
+      toast("已取消置顶该对话片段", "info");
+    } else {
+      var wasEmpty = S.pinnedMessages.length === 0;
+      S.pinnedMessages.push({
+        id: msgId,
+        role: role === "assistant" ? "assistant" : "user",
+        text: rawText,
+        snippet: makePinnedSnippet(rawText),
+        pinnedAt: new Date().toISOString()
+      });
+      updateMessagePinVisual(wrap, pinBtn, true);
+      savePinnedForCurrentSession();
+      renderPinnedBar({ firstPin: wasEmpty, anchorNode: wrap, animateScroll: true });
+      toast("已置顶到聊天区顶部，点击顶部置顶栏可随时定位或引用", "ok");
+    }
+  }
+
+  function findDomNodeForPin(pinItem) {
+    var root = logRoot();
+    if (!root || !pinItem) { return null; }
+    var byId = document.getElementById(pinItem.id);
+    if (byId && root.contains(byId)) { return byId; }
+    var msgs = root.querySelectorAll(".msg");
+    for (var i = 0; i < msgs.length; i++) {
+      var m = msgs[i];
+      var mText = String(m._text || m._raw || "").trim();
+      if (mText && mText === pinItem.text) {
+        m._msgId = pinItem.id;
+        m.id = pinItem.id;
+        return m;
+      }
+    }
+    return null;
+  }
+
+  function scrollToPinnedMessage(pinItem) {
+    var node = findDomNodeForPin(pinItem);
+    if (!node) {
+      toast("该置顶片段不在当前视图中", "warn");
+      return;
+    }
+    node.scrollIntoView({ behavior: "smooth", block: "center" });
+    node.classList.remove("pin-flash");
+    void node.offsetWidth;
+    node.classList.add("pin-flash");
+    setTimeout(function () {
+      node.classList.remove("pin-flash");
+    }, 1400);
+  }
+
+  function quotePinnedMessageToInput(pinItem) {
+    if (!pinItem || !pinItem.text) { return; }
+    var snippet = pinItem.snippet || makePinnedSnippet(pinItem.text);
+    S.attachments.push({
+      kind: "text",
+      quote: true,
+      name: "置顶引用: " + snippet.slice(0, 22) + (snippet.length > 22 ? "…" : ""),
+      mime: "text/plain",
+      size: pinItem.text.length,
+      lines: pinItem.text.split(/\r?\n/).length,
+      text: "> [置顶片段参考 (" + (pinItem.role === "assistant" ? "MyClaude" : "用户") + ")]：\n" + pinItem.text
+    });
+    renderAttachments();
+    var ta = $("in");
+    if (ta) { ta.focus(); }
+    toast("已将置顶片段作为引用加入当前输入", "ok");
+  }
+
+  function unpinByItem(pinItem) {
+    if (!pinItem) { return; }
+    var node = findDomNodeForPin(pinItem);
+    S.pinnedMessages = (S.pinnedMessages || []).filter(function (p) {
+      return p.id !== pinItem.id && p.text !== pinItem.text;
+    });
+    if (node) {
+      updateMessagePinVisual(node, node._pinBtn || node.querySelector(".pin-btn"), false);
+    }
+    savePinnedForCurrentSession();
+    renderPinnedBar({ anchorNode: node, animateScroll: true });
+    toast("已取消置顶", "info");
+  }
+
+  function syncPinnedDomNodes() {
+    var root = logRoot();
+    if (!root) { return; }
+    Array.prototype.forEach.call(root.querySelectorAll(".msg"), function (m) {
+      var txt = m._text != null ? m._text : (m._raw || "");
+      var pinned = isMessagePinned(m, txt);
+      if (pinned) {
+        var match = (S.pinnedMessages || []).filter(function (p) {
+          return p.id === m._msgId || p.text === String(txt || "").trim();
+        })[0];
+        if (match) {
+          m._msgId = match.id;
+          m.id = match.id;
+        }
+      }
+      updateMessagePinVisual(m, m._pinBtn || m.querySelector(".pin-btn"), pinned);
+    });
+    renderPinnedBar({ animateScroll: false });
+  }
+
+  function renderPinnedBar(opts) {
+    var bar = $("pinned-bar");
+    if (!bar) { return; }
+    var wasHidden = bar.hidden;
+    var prevHeight = wasHidden ? 0 : (bar.offsetHeight || 0);
+    var shouldAnimateScroll = !opts || opts.animateScroll !== false;
+
+    clear(bar);
+    var list = S.pinnedMessages || [];
+    if (!list.length) {
+      bar.hidden = true;
+      bar.classList.remove("pop-in");
+      S.pinnedExpanded = false;
+      if (shouldAnimateScroll && prevHeight > 0) {
+        smoothAdjustStreamForPinnedBar(prevHeight, 0, opts && opts.anchorNode);
+      }
+      return;
+    }
+    bar.hidden = false;
+
+    var isFirstPin = Boolean((opts && opts.firstPin) || (wasHidden && list.length === 1));
+    if (isFirstPin) {
+      bar.classList.remove("pop-in");
+      void bar.offsetWidth;
+      bar.classList.add("pop-in");
+    } else if (!wasHidden) {
+      bar.classList.remove("pop-in");
+    }
+
+    var inner = el("div", "pinned-bar-inner");
+    var latest = list[list.length - 1];
+
+    var headRow = el("div", "pinned-head-row");
+    var headLeft = el("div", "pinned-head-left");
+    headLeft.title = "点击定位到该置顶消息原文：\n" + latest.text.slice(0, 240);
+
+    var badge = el("span", "pinned-ico-badge");
+    badge.appendChild(icon("i-pin", 12));
+    badge.appendChild(el("span", null, "已置顶 " + list.length));
+    headLeft.appendChild(badge);
+
+    var roleTag = el("span", "pinned-role-tag" + (latest.role === "assistant" ? " asst" : ""), latest.role === "assistant" ? "AI 回复" : "用户提问");
+    headLeft.appendChild(roleTag);
+
+    headLeft.appendChild(el("span", "pinned-preview-text", latest.snippet || makePinnedSnippet(latest.text)));
+    headLeft.addEventListener("click", function () {
+      scrollToPinnedMessage(latest);
+    });
+    headRow.appendChild(headLeft);
+
+    var headRight = el("div", "pinned-head-right");
+
+    var jumpBtn = el("button", "pinned-op-btn", "定位原文");
+    jumpBtn.type = "button";
+    jumpBtn.title = "滚动到对话流中的对应消息位置";
+    jumpBtn.addEventListener("click", function () {
+      scrollToPinnedMessage(latest);
+    });
+    headRight.appendChild(jumpBtn);
+
+    var quoteBtn = el("button", "pinned-op-btn primary-op", "引用追问");
+    quoteBtn.type = "button";
+    quoteBtn.title = "将此置顶片段引用到底部输入框";
+    quoteBtn.addEventListener("click", function () {
+      quotePinnedMessageToInput(latest);
+    });
+    headRight.appendChild(quoteBtn);
+
+    if (list.length > 1) {
+      var expBtn = el("button", "pinned-op-btn", S.pinnedExpanded ? "收起列表 \u25B4" : "全部 (" + list.length + ") \u25BE");
+      expBtn.type = "button";
+      expBtn.addEventListener("click", function () {
+        S.pinnedExpanded = !S.pinnedExpanded;
+        renderPinnedBar({ animateScroll: true });
+      });
+      headRight.appendChild(expBtn);
+    }
+
+    var unpinBtn = el("button", "pinned-op-btn", list.length > 1 && S.pinnedExpanded ? "清空置顶" : "\u00D7");
+    unpinBtn.type = "button";
+    unpinBtn.title = list.length > 1 && S.pinnedExpanded ? "取消当前对话的所有置顶消息" : "取消置顶此条消息";
+    unpinBtn.addEventListener("click", function () {
+      if (list.length > 1 && S.pinnedExpanded) {
+        var oldH = bar.offsetHeight || 0;
+        S.pinnedMessages = [];
+        savePinnedForCurrentSession();
+        syncPinnedDomNodes();
+        smoothAdjustStreamForPinnedBar(oldH, 0, null);
+        toast("已清空当前对话的所有置顶消息", "info");
+      } else {
+        unpinByItem(latest);
+      }
+    });
+    headRight.appendChild(unpinBtn);
+
+    headRow.appendChild(headRight);
+    inner.appendChild(headRow);
+
+    if (S.pinnedExpanded && list.length > 1) {
+      var drawer = el("div", "pinned-drawer");
+      list.slice().reverse().forEach(function (item, idx) {
+        var row = el("div", "pinned-item");
+        var main = el("div", "pinned-item-main");
+        main.title = "点击滚动定位到此消息：\n" + item.text.slice(0, 240);
+        main.appendChild(el("span", "fb-rank", "#" + (list.length - idx)));
+        main.appendChild(el("span", "pinned-role-tag" + (item.role === "assistant" ? " asst" : ""), item.role === "assistant" ? "AI 回复" : "用户提问"));
+        main.appendChild(el("span", "pinned-item-snippet", item.snippet || makePinnedSnippet(item.text)));
+        main.addEventListener("click", function () {
+          scrollToPinnedMessage(item);
+        });
+        row.appendChild(main);
+
+        var acts = el("div", "pinned-item-actions");
+        var bJump = el("button", "fb-op-btn", "定位");
+        bJump.type = "button";
+        bJump.addEventListener("click", function () { scrollToPinnedMessage(item); });
+        acts.appendChild(bJump);
+
+        var bQuote = el("button", "fb-op-btn use", "引用");
+        bQuote.type = "button";
+        bQuote.addEventListener("click", function () { quotePinnedMessageToInput(item); });
+        acts.appendChild(bQuote);
+
+        var bCopy = el("button", "fb-op-btn", "复制");
+        bCopy.type = "button";
+        bCopy.addEventListener("click", function () { copyText(item.text); });
+        acts.appendChild(bCopy);
+
+        var bDel = el("button", "fb-op-btn del", "\u00D7");
+        bDel.type = "button";
+        bDel.title = "取消置顶";
+        bDel.addEventListener("click", function () { unpinByItem(item); });
+        acts.appendChild(bDel);
+
+        row.appendChild(acts);
+        drawer.appendChild(row);
+      });
+      inner.appendChild(drawer);
+    }
+
+    bar.appendChild(inner);
+
+    var newHeight = bar.offsetHeight || 0;
+    if (shouldAnimateScroll && newHeight !== prevHeight) {
+      smoothAdjustStreamForPinnedBar(prevHeight, newHeight, opts && opts.anchorNode);
+    }
   }
 
   function buildFollowupPrompts(rawText, bodyEl) {
@@ -872,11 +1276,528 @@
     ];
   }
 
+  /* ---- 语音朗读 (TTS SpeechSynthesis 内联播放控制栏) 与内联引文渲染 ---- */
+  var LS_TTS_RATE = "myclaude.tts.rate";
+  var TTS_SPEEDS = [0.75, 1.0, 1.25, 1.5, 2.0];
+
+  var ttsState = {
+    activeWrap: null,
+    activeBtn: null,
+    barEl: null,
+    playPauseBtn: null,
+    statusTextEl: null,
+    statusPctEl: null,
+    progressFillEl: null,
+    speedBtns: [],
+    cleanText: "",
+    charIndex: 0,
+    baseOffset: 0,
+    rate: 1.0,
+    playing: false,
+    paused: false,
+    utterance: null,
+     fallbackTimer: null,
+    sessionToken: 0
+  };
+
+  try {
+    var savedTtsRate = parseFloat(localStorage.getItem(LS_TTS_RATE));
+    if (!isNaN(savedTtsRate) && savedTtsRate >= 0.5 && savedTtsRate <= 2.5) {
+      ttsState.rate = savedTtsRate;
+    }
+  } catch (e) {}
+
+  function cleanMarkdownForTts(raw) {
+    return String(raw || "")
+      .replace(/```[\s\S]*?```/g, "，代码片段已略过，")
+      .replace(/[#>*_`~[\]()]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  function clearTtsFallbackTimer() {
+    if (ttsState.fallbackTimer) {
+      clearInterval(ttsState.fallbackTimer);
+      ttsState.fallbackTimer = null;
+    }
+  }
+
+  function updateTtsPlayerUI() {
+    var totalLen = Math.max(1, (ttsState.cleanText || "").length);
+    var curIdx = Math.min(totalLen, Math.max(0, ttsState.charIndex || 0));
+    var pct = Math.min(100, Math.round((curIdx / totalLen) * 100));
+
+    if (ttsState.activeBtn) {
+      ttsState.activeBtn.classList.toggle("speaking", Boolean(ttsState.playing || ttsState.paused));
+      ttsState.activeBtn.title = ttsState.playing
+        ? "正在朗读（点击暂停）"
+        : (ttsState.paused ? "已暂停朗读（点击继续）" : "语音朗读此条 AI 回复");
+    }
+    if (ttsState.activeWrap) {
+      ttsState.activeWrap.classList.toggle("tts-active", Boolean(ttsState.barEl));
+    }
+    if (!ttsState.barEl) { return; }
+
+    ttsState.barEl.classList.toggle("is-paused", !ttsState.playing);
+
+    if (ttsState.playPauseBtn) {
+      ttsState.playPauseBtn.textContent = ttsState.playing ? "\u23F8 暂停" : (curIdx > 0 && curIdx < totalLen ? "\u25B6 继续" : "\u25B6 播放");
+      ttsState.playPauseBtn.title = ttsState.playing ? "暂停语音朗读" : "继续/开始语音朗读";
+    }
+
+    if (ttsState.statusTextEl) {
+      var snippet = (ttsState.cleanText || "").slice(curIdx, curIdx + 26).trim();
+      if (ttsState.playing) {
+        ttsState.statusTextEl.textContent = snippet ? ("正在朗读：“" + snippet + (snippet.length >= 26 ? "…”" : "”")) : "正在朗读回复内容…";
+      } else if (ttsState.paused) {
+        ttsState.statusTextEl.textContent = snippet ? ("已暂停：“" + snippet + (snippet.length >= 26 ? "…”" : "”")) : "已暂停朗读";
+      } else {
+        ttsState.statusTextEl.textContent = "朗读已完成（点击播放可重听）";
+      }
+    }
+
+    if (ttsState.statusPctEl) {
+      ttsState.statusPctEl.textContent = pct + "%";
+    }
+    if (ttsState.progressFillEl) {
+      ttsState.progressFillEl.style.width = pct + "%";
+    }
+
+    (ttsState.speedBtns || []).forEach(function (b) {
+      var r = parseFloat(b.getAttribute("data-rate"));
+      b.classList.toggle("active", Math.abs(r - ttsState.rate) < 0.02);
+    });
+  }
+
+  function stopTtsPlayback(removeBar) {
+    ttsState.sessionToken++;
+    clearTtsFallbackTimer();
+    if ("speechSynthesis" in window) {
+      try { window.speechSynthesis.cancel(); } catch (e) {}
+    }
+    ttsState.playing = false;
+    ttsState.paused = false;
+    ttsState.utterance = null;
+
+    if (removeBar) {
+      if (ttsState.barEl && ttsState.barEl.parentNode) {
+        ttsState.barEl.parentNode.removeChild(ttsState.barEl);
+      }
+      if (ttsState.activeWrap) {
+        ttsState.activeWrap.classList.remove("tts-active");
+      }
+      if (ttsState.activeBtn) {
+        ttsState.activeBtn.classList.remove("speaking");
+        ttsState.activeBtn.title = "语音朗读此条 AI 回复";
+      }
+      ttsState.barEl = null;
+      ttsState.activeWrap = null;
+      ttsState.activeBtn = null;
+      ttsState.playPauseBtn = null;
+      ttsState.statusTextEl = null;
+      ttsState.statusPctEl = null;
+      ttsState.progressFillEl = null;
+      ttsState.speedBtns = [];
+    } else {
+      updateTtsPlayerUI();
+    }
+  }
+
+  function startTtsFromOffset(offset) {
+    if (!("speechSynthesis" in window)) {
+      toast("当前浏览器不支持语音朗读 (SpeechSynthesis)", "warn");
+      return;
+    }
+    var synth = window.speechSynthesis;
+    ttsState.sessionToken++;
+    var myToken = ttsState.sessionToken;
+    clearTtsFallbackTimer();
+
+    try { synth.cancel(); } catch (e) {}
+
+    var fullText = ttsState.cleanText || "";
+    if (!fullText) { return; }
+    var safeOffset = Math.max(0, Math.min(fullText.length - 1, offset || 0));
+    var remaining = fullText.slice(safeOffset);
+    if (!remaining.trim()) {
+      safeOffset = 0;
+      remaining = fullText;
+    }
+
+    ttsState.baseOffset = safeOffset;
+    ttsState.charIndex = safeOffset;
+    ttsState.playing = true;
+    ttsState.paused = false;
+
+    var utter = new SpeechSynthesisUtterance(remaining);
+    utter.lang = /[\u4e00-\u9fa5]/.test(remaining) ? "zh-CN" : "en-US";
+    utter.rate = ttsState.rate || 1.0;
+    ttsState.utterance = utter;
+
+    var boundaryFired = false;
+    utter.onboundary = function (ev) {
+      if (ttsState.sessionToken !== myToken) { return; }
+      if (typeof ev.charIndex === "number") {
+        boundaryFired = true;
+        ttsState.charIndex = Math.min(fullText.length, ttsState.baseOffset + ev.charIndex);
+        updateTtsPlayerUI();
+      }
+    };
+
+    // 部分浏览器中文语音引擎不触发 onboundary，使用平滑字符估算兜底进度条与倍速续播定位
+    var charsPerSec = 4.6 * (ttsState.rate || 1.0);
+    ttsState.fallbackTimer = setInterval(function () {
+      if (ttsState.sessionToken !== myToken || !ttsState.playing || ttsState.paused) { return; }
+      if (!boundaryFired) {
+        ttsState.charIndex = Math.min(fullText.length - 1, ttsState.charIndex + Math.max(1, Math.round(charsPerSec * 0.25)));
+        updateTtsPlayerUI();
+      }
+    }, 250);
+
+    utter.onend = function () {
+      if (ttsState.sessionToken !== myToken) { return; }
+      clearTtsFallbackTimer();
+      ttsState.charIndex = fullText.length;
+      ttsState.playing = false;
+      ttsState.paused = false;
+      updateTtsPlayerUI();
+    };
+
+    utter.onerror = function (ev) {
+      if (ttsState.sessionToken !== myToken) { return; }
+      if (ev && (ev.error === "interrupted" || ev.error === "canceled")) { return; }
+      clearTtsFallbackTimer();
+      ttsState.playing = false;
+      ttsState.paused = false;
+      updateTtsPlayerUI();
+    };
+
+    updateTtsPlayerUI();
+    synth.speak(utter);
+  }
+
+  function pauseTtsPlayback() {
+    if (!ttsState.playing) { return; }
+    var synth = window.speechSynthesis;
+    ttsState.playing = false;
+    ttsState.paused = true;
+    if (synth && synth.speaking) {
+      try { synth.pause(); } catch (e) {}
+    }
+    updateTtsPlayerUI();
+  }
+
+  function resumeTtsPlayback() {
+    var synth = window.speechSynthesis;
+    if (ttsState.paused && synth && synth.paused) {
+      ttsState.playing = true;
+      ttsState.paused = false;
+      try { synth.resume(); } catch (e) {
+        startTtsFromOffset(ttsState.charIndex);
+      }
+      updateTtsPlayerUI();
+      return;
+    }
+    var nextOffset = ttsState.charIndex >= (ttsState.cleanText.length - 2) ? 0 : ttsState.charIndex;
+    startTtsFromOffset(nextOffset);
+  }
+
+  function setTtsPlaybackRate(nextRate) {
+    var r = Number(nextRate) || 1.0;
+    ttsState.rate = r;
+    try { localStorage.setItem(LS_TTS_RATE, String(r)); } catch (e) {}
+    if (ttsState.playing) {
+      startTtsFromOffset(ttsState.charIndex);
+    } else {
+      updateTtsPlayerUI();
+    }
+  }
+
+  function mountInlineTtsBar(wrap, btn, cleanText) {
+    if (!wrap) { return; }
+    if (ttsState.activeWrap && ttsState.activeWrap !== wrap) {
+      stopTtsPlayback(true);
+    }
+    var oldBar = wrap.querySelector(".tts-player-bar");
+    if (oldBar && oldBar.parentNode) {
+      oldBar.parentNode.removeChild(oldBar);
+    }
+
+    ttsState.activeWrap = wrap;
+    ttsState.activeBtn = btn;
+    ttsState.cleanText = cleanText;
+    ttsState.charIndex = 0;
+    ttsState.baseOffset = 0;
+
+    var bar = el("div", "tts-player-bar");
+    bar.setAttribute("role", "region");
+    bar.setAttribute("aria-label", "语音朗读播放控制栏");
+
+    var playPauseBtn = el("button", "tts-ctrl-btn play-pause", "\u23F8 暂停");
+    playPauseBtn.type = "button";
+    playPauseBtn.addEventListener("click", function () {
+      if (ttsState.playing) {
+        pauseTtsPlayback();
+      } else {
+        resumeTtsPlayback();
+      }
+    });
+    bar.appendChild(playPauseBtn);
+
+    var wave = el("div", "tts-wave");
+    wave.setAttribute("aria-hidden", "true");
+    for (var w = 0; w < 4; w++) { wave.appendChild(document.createElement("i")); }
+    bar.appendChild(wave);
+
+    var progWrap = el("div", "tts-progress-wrap");
+    var statusRow = el("div", "tts-status-row");
+    var statusText = el("span", "tts-status-text", "正在朗读回复内容…");
+    var statusPct = el("span", "tts-status-pct", "0%");
+    statusRow.appendChild(statusText);
+    statusRow.appendChild(statusPct);
+    progWrap.appendChild(statusRow);
+
+    var track = el("div", "tts-progress-track");
+    track.title = "点击进度条可跳转到对应段落位置朗读";
+    var fill = el("div", "tts-progress-fill");
+    track.appendChild(fill);
+    track.addEventListener("click", function (e) {
+      var rect = track.getBoundingClientRect();
+      if (!rect.width) { return; }
+      var ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+      var targetOffset = Math.floor(ratio * (ttsState.cleanText.length || 0));
+      startTtsFromOffset(targetOffset);
+    });
+    progWrap.appendChild(track);
+    bar.appendChild(progWrap);
+
+    var speedGroup = el("div", "tts-speed-group");
+    speedGroup.appendChild(el("span", "tts-speed-label", "倍速"));
+    var speedBtns = [];
+    TTS_SPEEDS.forEach(function (spd) {
+      var sb = el("button", "tts-speed-btn" + (Math.abs(spd - ttsState.rate) < 0.02 ? " active" : ""), spd + "x");
+      sb.type = "button";
+      sb.setAttribute("data-rate", String(spd));
+      sb.title = "切换朗读语速为 " + spd + " 倍速";
+      sb.addEventListener("click", function () {
+        setTtsPlaybackRate(spd);
+      });
+      speedBtns.push(sb);
+      speedGroup.appendChild(sb);
+    });
+    bar.appendChild(speedGroup);
+
+    var replayBtn = el("button", "tts-ctrl-btn icon-only", "\u21BA");
+    replayBtn.type = "button";
+    replayBtn.title = "从头重新朗读";
+    replayBtn.addEventListener("click", function () {
+      startTtsFromOffset(0);
+    });
+    bar.appendChild(replayBtn);
+
+    var stopBtn = el("button", "tts-ctrl-btn icon-only stop-btn", "\u2715");
+    stopBtn.type = "button";
+    stopBtn.title = "停止朗读并收起控制栏";
+    stopBtn.addEventListener("click", function () {
+      stopTtsPlayback(true);
+    });
+    bar.appendChild(stopBtn);
+
+    var contentBox = wrap.querySelector(".content") || wrap;
+    var actionsBox = wrap.querySelector(".msg-actions");
+    if (actionsBox && actionsBox.nextSibling) {
+      contentBox.insertBefore(bar, actionsBox.nextSibling);
+    } else {
+      contentBox.appendChild(bar);
+    }
+
+    ttsState.barEl = bar;
+    ttsState.playPauseBtn = playPauseBtn;
+    ttsState.statusTextEl = statusText;
+    ttsState.statusPctEl = statusPct;
+    ttsState.progressFillEl = fill;
+    ttsState.speedBtns = speedBtns;
+  }
+
+  function toggleSpeakText(text, btn, wrap) {
+    if (!("speechSynthesis" in window)) {
+      toast("当前浏览器不支持语音朗读 (SpeechSynthesis)", "warn");
+      return;
+    }
+    var targetWrap = wrap || (btn && btn.closest && btn.closest(".msg-asst")) || null;
+    if (ttsState.activeWrap && ttsState.activeWrap === targetWrap && ttsState.barEl) {
+      if (ttsState.playing) {
+        pauseTtsPlayback();
+      } else {
+        resumeTtsPlayback();
+      }
+      return;
+    }
+
+    var cleanText = cleanMarkdownForTts(text);
+    if (!cleanText) {
+      toast("没有可朗读的文本内容", "warn");
+      return;
+    }
+
+    mountInlineTtsBar(targetWrap, btn, cleanText);
+    startTtsFromOffset(0);
+  }
+
+  function extractMarkdownCitations(rawText, existingCitations) {
+    var map = {};
+    var list = [];
+    (existingCitations || []).forEach(function (c, i) {
+      var idx = c.index || (i + 1);
+      map[idx] = c;
+      list.push(c);
+    });
+    var regex = /\[(\d+)\]\s*[:：]?\s*\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g;
+    var m;
+    while ((m = regex.exec(String(rawText || ""))) !== null) {
+      var idxNum = parseInt(m[1], 10);
+      if (!map[idxNum]) {
+        var dom = "web";
+        try { dom = new URL(m[3]).hostname.replace(/^www\./, ""); } catch (e) {}
+        var entry = { index: idxNum, title: m[2], url: m[3], domain: dom, snippet: "" };
+        map[idxNum] = entry;
+        list.push(entry);
+      }
+    }
+    return list;
+  }
+
+  function decorateCitationsInMessage(handle) {
+    if (!handle || !handle.body || !handle.wrap) { return; }
+    var citations = extractMarkdownCitations(handle.raw, handle.wrap._citations);
+    if (!citations.length) { return; }
+    handle.wrap._citations = citations;
+
+    var citeMap = {};
+    citations.forEach(function (c) { citeMap[c.index] = c; });
+
+    // 将正文中的 [1] [2] 转换为可点击的角标胶囊
+    handle.body.innerHTML = handle.body.innerHTML.replace(/\[(\d+)\](?!\()/g, function (full, numStr) {
+      var n = parseInt(numStr, 10);
+      var c = citeMap[n];
+      if (!c) { return full; }
+      var safeUrl = String(c.url || "#").replace(/"/g, "&quot;");
+      var safeTitle = String((c.title || "") + (c.snippet ? " — " + c.snippet : "")).replace(/"/g, "&quot;");
+      return '<a class="cite-badge" href="' + safeUrl + '" target="_blank" rel="noopener noreferrer" title="' + safeTitle + '">' + n + '</a>';
+    });
+
+    var oldStrip = handle.wrap.querySelector(".citations-strip");
+    if (oldStrip && oldStrip.parentNode) {
+      oldStrip.parentNode.removeChild(oldStrip);
+    }
+
+    var strip = el("div", "citations-strip");
+    var titleRow = el("div", "citations-strip-title");
+    titleRow.appendChild(icon("i-globe", 13));
+    titleRow.appendChild(el("span", null, "联网检索参考信源 (" + citations.length + ")"));
+    strip.appendChild(titleRow);
+
+    var grid = el("div", "citations-grid");
+    citations.forEach(function (c) {
+      var card = document.createElement("a");
+      card.className = "citation-card";
+      card.href = c.url || "#";
+      card.target = "_blank";
+      card.rel = "noopener noreferrer";
+      var top = el("div", "citation-card-top");
+      top.appendChild(el("span", "citation-idx", String(c.index)));
+      top.appendChild(el("span", "citation-domain", c.domain || "web"));
+      card.appendChild(top);
+      card.appendChild(el("div", "citation-title", c.title || c.url));
+      if (c.snippet) {
+        card.appendChild(el("div", "citation-snippet", c.snippet));
+      }
+      grid.appendChild(card);
+    });
+    strip.appendChild(grid);
+
+    var contentBox = handle.wrap.querySelector(".content") || handle.wrap;
+    contentBox.insertBefore(strip, handle.actions);
+  }
+
+  function switchAssistantBranch(handle, targetIdx) {
+    if (!handle || !handle.wrap || !handle.wrap._asstBranches) { return; }
+    var branches = handle.wrap._asstBranches;
+    if (targetIdx < 0 || targetIdx >= branches.length) { return; }
+    handle.wrap._asstBranchIdx = targetIdx;
+    var b = branches[targetIdx];
+    handle.raw = b.raw || "";
+    handle.wrap._raw = handle.raw;
+    handle.wrap._citations = b.citations || [];
+    flushAssistant(handle, handle.raw, false);
+    addCopyActions(handle);
+    toast("已切换至回复版本 " + (targetIdx + 1) + " / " + branches.length, "info");
+  }
+
   function addCopyActions(handle) {
+    if (!handle || !handle.actions) { return; }
+    clear(handle.actions);
+    if (handle.wrap) {
+      handle.wrap._raw = handle.raw;
+    }
+
+    // 1. 同会话多分支版本切换器 (◀ 1 / 2 ▶)
+    var branches = handle.wrap && handle.wrap._asstBranches;
+    var hasBranches = Boolean(branches && branches.length > 1);
+    if (handle.wrap) {
+      handle.wrap.classList.toggle("has-branches", hasBranches);
+    }
+    if (hasBranches) {
+      var curIdx = typeof handle.wrap._asstBranchIdx === "number" ? handle.wrap._asstBranchIdx : branches.length - 1;
+      var nav = el("div", "msg-branch-nav");
+      nav.title = "切换对比同一提问的不同 AI 回复版本";
+      var prevB = el("button", "branch-arrow", "\u25C0");
+      prevB.type = "button";
+      prevB.title = "上一回复版本";
+      prevB.disabled = curIdx <= 0;
+      prevB.addEventListener("click", function () {
+        switchAssistantBranch(handle, curIdx - 1);
+      });
+      var nextB = el("button", "branch-arrow", "\u25B6");
+      nextB.type = "button";
+      nextB.title = "下一回复版本";
+      nextB.disabled = curIdx >= branches.length - 1;
+      nextB.addEventListener("click", function () {
+        switchAssistantBranch(handle, curIdx + 1);
+      });
+      nav.appendChild(prevB);
+      nav.appendChild(el("span", "branch-indicator", (curIdx + 1) + " / " + branches.length));
+      nav.appendChild(nextB);
+      handle.actions.appendChild(nav);
+    }
+
+    var pinBtn = mkMini("置顶", function () {
+      togglePinMessage(handle.wrap, "assistant", function () { return handle.raw; }, pinBtn);
+    });
+    pinBtn.classList.add("pin-btn");
+    if (handle.wrap) {
+      handle.wrap._pinBtn = pinBtn;
+      updateMessagePinVisual(handle.wrap, pinBtn, isMessagePinned(handle.wrap, handle.raw));
+    }
+    handle.actions.appendChild(pinBtn);
+
+    var ttsBtn = mkMini("朗读", function () {
+      toggleSpeakText(handle.raw, ttsBtn, handle.wrap);
+    });
+    ttsBtn.classList.add("tts-btn");
+    ttsBtn.title = "语音朗读此条 AI 回复（打开内联播放与倍速控制栏）";
+    handle.actions.appendChild(ttsBtn);
+
     handle.actions.appendChild(mkMini("复制", function () { copyText(handle.raw); }));
     handle.actions.appendChild(mkMini("重试", function () { retryLast(handle); }));
 
-    if (handle.wrap && !handle.wrap.querySelector(".followup-row") && (handle.raw || "").trim().length > 20) {
+    decorateCitationsInMessage(handle);
+
+    var oldFollowup = handle.wrap && handle.wrap.querySelector(".followup-row");
+    if (oldFollowup && oldFollowup.parentNode) {
+      oldFollowup.parentNode.removeChild(oldFollowup);
+    }
+    if (handle.wrap && (handle.raw || "").trim().length > 20) {
       var fRow = el("div", "followup-row");
       fRow.appendChild(el("span", "followup-label", "继续追问："));
       buildFollowupPrompts(handle.raw, handle.body).forEach(function (promptText) {
@@ -1085,6 +2006,18 @@
     });
   }
 
+  function finalizeAssistantBranches(asst) {
+    if (!asst || !asst.wrap) { return; }
+    if (asst.wrap._asstBranches && !asst.wrap._branchRecorded) {
+      asst.wrap._branchRecorded = true;
+      asst.wrap._asstBranches.push({
+        raw: asst.raw || "",
+        citations: asst.wrap._citations || []
+      });
+      asst.wrap._asstBranchIdx = asst.wrap._asstBranches.length - 1;
+    }
+  }
+
   function endTurn(state) {
     clearTimeout(state.thoughtTimer);
     if (state.thought) {
@@ -1094,10 +2027,12 @@
     }
     if (state.asst) {
       flushAssistant(state.asst, state.buffer, false);
+      finalizeAssistantBranches(state.asst);
       addCopyActions(state.asst);
     }
     setBusy(false);
     refreshStats();
+    refreshUsageStats();
   }
 
   function handleStreamEvent(ev, state) {
@@ -1129,6 +2064,7 @@
     if (ev.type === "assistant_end") {
       if (state.asst) {
         flushAssistant(state.asst, state.buffer, false);
+        finalizeAssistantBranches(state.asst);
         addCopyActions(state.asst);
       }
       state.asst = null;
@@ -1138,6 +2074,7 @@
     if (ev.type === "tool_start") {
       if (state.asst) {
         flushAssistant(state.asst, state.buffer, false);
+        finalizeAssistantBranches(state.asst);
         addCopyActions(state.asst);
         state.asst = null;
         state.buffer = "";
@@ -1185,8 +2122,12 @@
     if (ev.type === "success") { addNotice(ev.text, "ok"); return; }
     if (ev.type === "session") {
       if (ev.id) {
+        var prevKey = S.sessionKey;
         S.sessionKey = ev.id;
         try { localStorage.setItem(LS_SESSION, ev.id); } catch (e) { }
+        if (!prevKey && S.pinnedMessages && S.pinnedMessages.length) {
+          savePinnedForCurrentSession();
+        }
       }
       refreshSessions();
       return;
@@ -1214,6 +2155,33 @@
     if (S.history[S.history.length - 1] !== text) { S.history.push(text); }
     S.histIdx = -1;
     addUserMessage(text, files);
+
+    if (S.webSearch && text) {
+      getJSON("/api/web-search?q=" + encodeURIComponent(text.slice(0, 120))).then(function (res) {
+        var cites = (res && res.results) || [];
+        S.pendingCitations = cites;
+        var citeBlock = "";
+        if (cites.length) {
+          var lines = cites.map(function (c) {
+            return "[" + c.index + "] " + c.title + " (" + c.url + ") — " + (c.snippet || "");
+          }).join("\n");
+          citeBlock = "[联网实时搜索参考信源 (Web Search Citations) — 请结合以下检索结果回答，并在正文中引用对应事实时使用内联角标如 [1]、[2]：\n" + lines + "]\n\n";
+        }
+        runTurn({
+          message: citeBlock + applyStyleInstruction(text),
+          attachments: files.map(stripPreview),
+          sessionKey: S.sessionKey
+        });
+      }).catch(function () {
+        runTurn({
+          message: applyStyleInstruction(text),
+          attachments: files.map(stripPreview),
+          sessionKey: S.sessionKey
+        });
+      });
+      return;
+    }
+
     runTurn({
       message: applyStyleInstruction(text),
       attachments: files.map(stripPreview),
@@ -1238,6 +2206,12 @@
   function retryLast(handle) {
     if (S.busy) { toast("请等待当前回复结束", "warn"); return; }
     if (!S.lastUserText) { toast("没有可重试的内容", "warn"); return; }
+    if (handle && handle.wrap) {
+      var prevBranches = handle.wrap._asstBranches
+        ? handle.wrap._asstBranches.slice()
+        : [{ raw: handle.raw || "", citations: handle.wrap._citations || [] }];
+      S._pendingRetryBranches = prevBranches;
+    }
     var root = logRoot();
     var node = handle && handle.wrap;
     while (node && node.classList && !node.classList.contains("msg-user")) {
@@ -1245,7 +2219,7 @@
       if (node.parentNode === root) { root.removeChild(node); }
       node = prev;
     }
-    runTurn({ message: S.lastUserText, retry: true, sessionKey: S.sessionKey });
+    runTurn({ message: applyStyleInstruction(S.lastUserText), retry: true, sessionKey: S.sessionKey });
   }
 
   function stopGeneration() {
@@ -1407,6 +2381,7 @@
     if (!body) { return; }
     clear(body);
     renderSessionSection(body);
+    renderUsageInspectorSection(body);
     renderProjectSection(body);
     renderRoutingSection(body);
     renderTodoSection(body);
@@ -2436,9 +3411,11 @@
    */
   function replayTranscript(messages) {
     var root = logRoot();
+    msgSeqCounter = 0;
     S.artifacts = [];
     S.activeArtifactId = null;
     updateArtifactBadge();
+    loadPinnedForCurrentSession();
     Array.prototype.slice.call(root.querySelectorAll(".msg, .tool, .tool-group, .notice, .ask, .thought")).forEach(function (n) {
       if (n.parentNode === root) { root.removeChild(n); }
     });
@@ -2484,6 +3461,7 @@
     });
 
     if (!had) { restoreWelcome(); }
+    syncPinnedDomNodes();
     renderTopMeta();
     scrollStream(true);
   }
@@ -2607,10 +3585,15 @@
   function newChat() {
     if (S.busy) { return; }
     postJSON("/api/reset", {}).then(function () {
+      msgSeqCounter = 0;
       S.sessionKey = null;
       S.todos = [];
       S.artifacts = [];
       S.activeArtifactId = null;
+      S.pinnedMessages = [];
+      S.pinnedExpanded = false;
+      try { localStorage.removeItem(LS_PINNED_PREFIX + "draft"); } catch (e) {}
+      renderPinnedBar();
       updateArtifactBadge();
       if (S.inspTab === "artifact") { switchInspectorTab("info"); }
       S.stats = { messages: 0, turns: 0, tokens: 0, inputTokens: 0, outputTokens: 0, contextLimit: 0, contextUsed: 0 };
@@ -3044,6 +4027,7 @@
     { k: "/config", d: "查看当前配置", fn: function () { runCommand("/config"); } },
     { k: "/sessions", d: "历史会话", fn: function () { openSessions(); } },
     { k: "/files", d: "浏览工作目录", fn: function () { openFiles(); } },
+    { k: "/prompts", d: "打开提示词与系统指令库（Prompt Library）", fn: function () { openPromptLibraryModal(); } },
     { k: "/tasks", d: "后台任务", fn: function () { openTasks(); } },
     { k: "/settings", d: "设置", fn: function () { openSettings(); } },
     { k: "/voice", d: "开启/关闭免费中文语音转文字（Alt+V）", fn: function () { toggleVoiceInput(); } },
@@ -3056,7 +4040,10 @@
     var arg = parts.join(" ").trim();
     switch (cmd) {
       case "help":
-        addNotice("命令：/help /new /model /mode /tools /config /sessions /files /tasks /settings /voice /theme", "info");
+        addNotice("命令：/help /new /model /mode /prompts /tools /config /sessions /files /tasks /settings /voice /theme", "info");
+        break;
+      case "prompts":
+        openPromptLibraryModal();
         break;
       case "new":
         newChat();
@@ -3373,6 +4360,7 @@
 
     var depth = 0;
     window.addEventListener("dragenter", function (e) {
+      if ($("projects-modal") && !$("projects-modal").hidden) { return; }
       if (Array.prototype.indexOf.call(e.dataTransfer.types || [], "Files") >= 0) { depth++; document.body.classList.add("dragging"); }
     });
     window.addEventListener("dragleave", function () { if (--depth <= 0) { depth = 0; document.body.classList.remove("dragging"); } });
@@ -3384,12 +4372,17 @@
       e.preventDefault();
       depth = 0;
       document.body.classList.remove("dragging");
+      if ($("projects-modal") && !$("projects-modal").hidden) {
+        handleProjectLocalFilesUpload(e.dataTransfer.files);
+        return;
+      }
       addFiles(e.dataTransfer.files);
     });
 
     document.addEventListener("click", function (e) {
       var t = e.target;
       if (t && t.getAttribute && t.getAttribute("data-close")) { closeModal(); }
+      if (t && t.getAttribute && t.getAttribute("data-proj-close")) { closeProjectModal(); }
     });
 
     document.addEventListener("keydown", function (e) {
@@ -3397,12 +4390,15 @@
       var typing = tag === "INPUT" || tag === "TEXTAREA" || (e.target && e.target.isContentEditable);
       var mod = e.ctrlKey || e.metaKey;
       if (e.key === "Escape") {
+        if ($("projects-modal") && !$("projects-modal").hidden) { closeProjectModal(); return; }
         if (!$("modal").hidden) { closeModal(); return; }
         if (!$("cmd").hidden) { closeCmd(); return; }
         if ($("model-menu") && !$("model-menu").hidden) { closeModelMenuSmoothly(); return; }
         if (S.busy) { stopGeneration(); return; }
       }
       if (e.altKey && e.key.toLowerCase() === "v") { e.preventDefault(); toggleVoiceInput(); return; }
+      if (mod && e.shiftKey && e.key.toLowerCase() === "p") { e.preventDefault(); openProjectModal("files"); return; }
+      if (mod && e.shiftKey && e.key.toLowerCase() === "l") { e.preventDefault(); openPromptLibraryModal(); return; }
       if (mod && e.key.toLowerCase() === "k") { e.preventDefault(); openCmd(); return; }
       if (mod && e.key === ",") { e.preventDefault(); openSettings(); return; }
       if (mod && e.key.toLowerCase() === "b") { e.preventDefault(); toggleRail(); return; }
@@ -3425,9 +4421,17 @@
         } else if (e.key === "Escape") { e.preventDefault(); closeCmd(); }
       });
     }
+
+    var resizeTimer = null;
+    window.addEventListener("resize", function () {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(function () {
+        moveModeThumb();
+      }, 60);
+    });
   }
 
-  function isNarrow() { return window.innerWidth <= 900; }
+  function isNarrow() { return window.innerWidth <= 960; }
 
   function toggleRail() {
     var app = $("app");
@@ -3481,16 +4485,30 @@
 
   function applyStyleInstruction(userText) {
     var parts = [];
-    // 1. 项目专属指令与常驻知识库（首轮自动挂载知识文件上下文）
-    if (S.project && S.project.instructions && S.project.instructions.trim()) {
-      parts.push("[项目专属指令 (Project Instructions)：\n" + S.project.instructions.trim() + "]");
+    // 1. 项目专属指令 / 提示词库激活的系统提示词与已启用的常驻/本地上传知识库文件
+    var sysInst = (S.project && S.project.instructions && S.project.instructions.trim()) || "";
+    if (!sysInst && promptLibraryState.activePromptId) {
+      var activePrm = (promptLibraryState.prompts || []).filter(function (x) {
+        return x.id === promptLibraryState.activePromptId;
+      })[0];
+      if (activePrm && activePrm.content) {
+        sysInst = activePrm.content.trim();
+      }
     }
+    if (sysInst) {
+      parts.push("[系统提示词与项目专属指令 (System Prompt / Instructions - " + ((S.project && S.project.name) || "当前项目") + ")：\n" + sysInst + "]");
+    }
+    var enabledKnowledge = ((S.project && S.project.knowledge) || []).filter(function (k) {
+      return k && k.enabled !== false;
+    });
     var isFirstTurn = !S.stats || !S.stats.messages;
-    if (isFirstTurn && S.project && Array.isArray(S.project.knowledge) && S.project.knowledge.length) {
-      var kText = S.project.knowledge.map(function (k) {
-        return "--- 知识库文件: " + k.rel + " ---\n" + (k.content || "").slice(0, 6000);
+    if ((isFirstTurn || S._projectContextDirty) && enabledKnowledge.length) {
+      S._projectContextDirty = false;
+      var kText = enabledKnowledge.map(function (k) {
+        var srcLabel = k.source === "upload" ? "本地上传文件" : (k.source === "snippet" ? "项目片段" : "工作区文件");
+        return "--- [" + srcLabel + "] " + (k.rel || k.name) + " (" + (k.lines || 0) + " lines) ---\n" + (k.content || "").slice(0, 8000);
       }).join("\n\n");
-      parts.push("[项目常驻知识库 (Project Knowledge)：\n" + kText + "]");
+      parts.push("[Projects 项目上下文文件列表 (供 AI 参考的代码与文档)：\n" + kText + "]");
     }
     // 2. 深度思考模式（Extended Thinking）
     if (S.thinking) {
@@ -3526,7 +4544,418 @@
     toast(S.thinking ? "已开启「深度思考 (Extended Thinking)」模式" : "已关闭深度思考模式", S.thinking ? "ok" : "info");
   }
 
-  /* ---- Claude Projects：项目知识库与专属指令 ---- */
+  function renderWebSearchButton() {
+    var btn = $("btn-web-search");
+    var lbl = $("web-search-label");
+    if (btn) {
+      btn.classList.toggle("active", !!S.webSearch);
+      btn.title = S.webSearch
+        ? "联网搜索已开启（Web Search & Citations）：自动检索实时信源并生成内联角标 [1][2] 与底部来源卡片（点击关闭）"
+        : "开启联网搜索与内联信源角标引用（Web Search & Citations）";
+    }
+    if (lbl) {
+      lbl.textContent = S.webSearch ? "联网搜索 · 开" : "联网搜索";
+    }
+  }
+
+  function toggleWebSearchMode() {
+    S.webSearch = !S.webSearch;
+    try { localStorage.setItem(LS_WEB_SEARCH, S.webSearch ? "1" : "0"); } catch (e) {}
+    renderWebSearchButton();
+    toast(S.webSearch ? "已开启「联网搜索与内联角标引用」模式" : "已关闭联网搜索模式", S.webSearch ? "ok" : "info");
+  }
+
+  /* ---- Claude Projects & Prompt Library（项目文件上下文 + 常用系统提示词库） ---- */
+  var projModalDraft = {
+    mode: "files", // "files" | "prompts"
+    name: "当前项目",
+    instructions: "",
+    files: [],
+    disabledFiles: [],
+    uploadedFiles: [],
+    workspaceMeta: {},
+    sourceFilter: "all",
+    searchQuery: "",
+    previewTargetId: null,
+    bound: false
+  };
+
+  var promptLibraryState = {
+    prompts: [],
+    activePromptId: "",
+    catFilter: "all",
+    searchQuery: "",
+    editingId: null
+  };
+
+  var PROMPT_CAT_LABELS = {
+    system: "系统角色",
+    coding: "编程规范",
+    review: "审查重构",
+    docs: "文档撰写",
+    custom: "自定义"
+  };
+
+  function refreshPromptLibrary() {
+    return getJSON("/api/prompts").then(function (j) {
+      if (j && j.ok) {
+        promptLibraryState.prompts = j.prompts || [];
+        promptLibraryState.activePromptId = j.activePromptId || "";
+        updatePromptLibraryBadges();
+        renderPromptQuickChips();
+        if ($("projects-modal") && !$("projects-modal").hidden) {
+          renderPromptLibraryPane();
+        }
+      }
+      return promptLibraryState;
+    }).catch(function () {});
+  }
+
+  function updatePromptLibraryBadges() {
+    var cnt = (promptLibraryState.prompts || []).length;
+    var railBadge = $("prompt-lib-count");
+    if (railBadge) { railBadge.textContent = String(cnt); }
+    var tabCnt = $("proj-lib-tab-cnt");
+    if (tabCnt) { tabCnt.textContent = String(cnt); }
+
+    var hasActiveSys = Boolean(
+      (S.project && S.project.instructions && S.project.instructions.trim()) ||
+      promptLibraryState.activePromptId
+    );
+    var composerBtn = $("btn-prompt-lib");
+    if (composerBtn) {
+      composerBtn.classList.toggle("active", hasActiveSys);
+      composerBtn.title = hasActiveSys
+        ? "提示词库（Prompt Library）：当前已启用系统提示词，点击切换或管理常用提示词"
+        : "打开提示词库（Prompt Library）：保存并复用常用系统提示词或指令";
+    }
+  }
+
+  function renderPromptQuickChips() {
+    var bar = $("proj-prompt-quick-bar");
+    if (!bar) { return; }
+    clear(bar);
+    var list = promptLibraryState.prompts || [];
+    if (!list.length) { return; }
+
+    bar.appendChild(el("span", "proj-prompt-quick-label", "常用模板一键填入："));
+    var curInst = (($("proj-inst-ta") && $("proj-inst-ta").value) || projModalDraft.instructions || "").trim();
+
+    list.slice(0, 6).forEach(function (prm) {
+      var isMatched = curInst && curInst === String(prm.content || "").trim();
+      var chip = el("button", "proj-prompt-chip" + (isMatched ? " active" : ""));
+      chip.type = "button";
+      chip.title = prm.title + "（点击填入下方系统指令，按住 Shift 点击可追加）：\n" + prm.content;
+      if (prm.pinned) {
+        chip.appendChild(el("span", "proj-prompt-chip-pin", "\u2605"));
+      }
+      chip.appendChild(el("span", null, prm.title));
+      chip.addEventListener("click", function (e) {
+        var ta = $("proj-inst-ta");
+        if (!ta) { return; }
+        if (e.shiftKey && ta.value.trim()) {
+          ta.value = ta.value.trim() + "\n\n" + prm.content;
+          toast("已追加提示词「" + prm.title + "」", "ok");
+        } else {
+          ta.value = prm.content;
+          toast("已填入提示词「" + prm.title + "」", "ok");
+        }
+        projModalDraft.instructions = ta.value;
+        postJSON("/api/prompts", { action: "setActive", id: prm.id }).then(function (res) {
+          if (res && res.ok) {
+            promptLibraryState.activePromptId = res.activePromptId || prm.id;
+            promptLibraryState.prompts = res.prompts || promptLibraryState.prompts;
+            renderPromptQuickChips();
+            renderProjectsModalContent();
+          }
+        }).catch(function () {});
+        renderPromptQuickChips();
+        renderProjectsModalContent();
+      });
+      bar.appendChild(chip);
+    });
+  }
+
+  function switchProjectModalMode(mode) {
+    projModalDraft.mode = mode === "prompts" ? "prompts" : "files";
+    var isPrompts = projModalDraft.mode === "prompts";
+    var filesPane = $("proj-files-pane");
+    var promptsPane = $("proj-prompts-pane");
+    var tabFiles = $("tab-proj-mode-files");
+    var tabPrompts = $("tab-proj-mode-prompts");
+    var btnToggleAll = $("btn-proj-toggle-all");
+    var btnClearUp = $("btn-proj-clear-uploads");
+
+    if (filesPane) { filesPane.hidden = isPrompts; }
+    if (promptsPane) { promptsPane.hidden = !isPrompts; }
+    if (tabFiles) { tabFiles.classList.toggle("active", !isPrompts); }
+    if (tabPrompts) { tabPrompts.classList.toggle("active", isPrompts); }
+    if (btnToggleAll) { btnToggleAll.hidden = isPrompts; }
+    if (btnClearUp) { btnClearUp.hidden = isPrompts; }
+
+    if (isPrompts) {
+      renderPromptLibraryPane();
+    } else {
+      renderPromptQuickChips();
+      renderProjectsModalContent();
+    }
+  }
+
+  function openPromptEditor(item, prefillContent) {
+    var editor = $("plib-editor");
+    var headTitle = $("plib-editor-title");
+    var inpTitle = $("plib-form-title");
+    var selCat = $("plib-form-category");
+    var inpTag = $("plib-form-tag");
+    var taContent = $("plib-form-content");
+    var chkApply = $("plib-form-apply-now");
+    if (!editor || !inpTitle || !taContent) { return; }
+
+    if (item && item.id) {
+      promptLibraryState.editingId = item.id;
+      if (headTitle) { headTitle.textContent = "编辑提示词模板：" + item.title; }
+      inpTitle.value = item.title || "";
+      if (selCat) { selCat.value = item.category || "custom"; }
+      if (inpTag) { inpTag.value = item.tag || ""; }
+      taContent.value = item.content || "";
+      if (chkApply) { chkApply.checked = false; }
+    } else {
+      promptLibraryState.editingId = null;
+      if (headTitle) { headTitle.textContent = "新建系统提示词 / 常用指令"; }
+      inpTitle.value = "";
+      if (selCat) { selCat.value = "system"; }
+      if (inpTag) { inpTag.value = ""; }
+      taContent.value = prefillContent || "";
+      if (chkApply) { chkApply.checked = true; }
+    }
+    editor.hidden = false;
+    setTimeout(function () { inpTitle.focus(); }, 20);
+  }
+
+  function applyPromptItemAsSystemInstruction(item, appendMode) {
+    if (!item || !item.content) { return; }
+    var instTa = $("proj-inst-ta");
+    var base = (instTa ? instTa.value : projModalDraft.instructions) || "";
+    var nextInst = (appendMode && base.trim())
+      ? (base.trim() + "\n\n" + item.content.trim())
+      : item.content.trim();
+
+    projModalDraft.instructions = nextInst;
+    if (instTa) { instTa.value = nextInst; }
+
+    postJSON("/api/prompts", { action: "setActive", id: item.id }).then(function (res) {
+      if (res && res.ok) {
+        promptLibraryState.prompts = res.prompts || promptLibraryState.prompts;
+        promptLibraryState.activePromptId = res.activePromptId || item.id;
+      }
+      return postJSON("/api/project", {
+        name: ($("proj-name-input") && $("proj-name-input").value.trim()) || projModalDraft.name || "当前项目",
+        instructions: nextInst,
+        files: projModalDraft.files,
+        disabledFiles: projModalDraft.disabledFiles,
+        uploadedFiles: projModalDraft.uploadedFiles
+      });
+    }).then(function (projRes) {
+      if (projRes && projRes.ok) {
+        S.project = projRes;
+        S._projectContextDirty = true;
+        updateProjectBadge();
+        updatePromptLibraryBadges();
+        renderPromptQuickChips();
+        renderPromptLibraryPane();
+        renderProjectsModalContent();
+        renderInspector();
+        toast((appendMode ? "已追加「" : "已将「") + item.title + "」设为当前系统提示词并生效", "ok");
+      }
+    }).catch(function (e) {
+      toast("应用提示词失败：" + e.message, "err");
+    });
+  }
+
+  function renderPromptLibraryPane() {
+    var list = promptLibraryState.prompts || [];
+    var counts = { all: list.length, system: 0, coding: 0, review: 0, docs: 0, custom: 0 };
+    list.forEach(function (p) {
+      var c = p.category && counts.hasOwnProperty(p.category) ? p.category : "custom";
+      counts[c] = (counts[c] || 0) + 1;
+    });
+
+    ["all", "system", "coding", "review", "docs", "custom"].forEach(function (k) {
+      var elCnt = $("plib-cnt-" + k);
+      if (elCnt) { elCnt.textContent = String(counts[k] || 0); }
+    });
+
+    var tabsWrap = $("plib-cat-tabs");
+    if (tabsWrap) {
+      Array.prototype.forEach.call(tabsWrap.querySelectorAll(".proj-tab"), function (b) {
+        b.classList.toggle("active", b.getAttribute("data-pcat") === promptLibraryState.catFilter);
+      });
+    }
+
+    // 更新顶部当前生效系统指令横幅
+    var curInst = (($("proj-inst-ta") && $("proj-inst-ta").value) || projModalDraft.instructions || (S.project && S.project.instructions) || "").trim();
+    var banner = $("plib-active-banner");
+    var summaryEl = $("plib-active-summary");
+    var clearBtn = $("btn-plib-clear-active");
+    var matchedPrm = list.filter(function (p) {
+      return curInst && String(p.content || "").trim() === curInst;
+    })[0];
+
+    if (banner) {
+      banner.classList.toggle("has-active", Boolean(curInst));
+    }
+    if (summaryEl) {
+      if (matchedPrm) {
+        summaryEl.textContent = "已启用「" + matchedPrm.title + "」（" + curInst.length + " 字）";
+      } else if (curInst) {
+        summaryEl.textContent = "自定义系统指令生效中（" + curInst.length + " 字）：" + curInst.slice(0, 46) + (curInst.length > 46 ? "…" : "");
+      } else {
+        summaryEl.textContent = "未设置（可从下方提示词库一键设为系统指令，或填入对话输入框）";
+      }
+    }
+    if (clearBtn) {
+      clearBtn.hidden = !curInst;
+    }
+
+    var host = $("plib-list");
+    if (!host) { return; }
+    clear(host);
+
+    var q = String(promptLibraryState.searchQuery || "").trim().toLowerCase();
+    var filtered = list.filter(function (p) {
+      var cat = p.category && counts.hasOwnProperty(p.category) ? p.category : "custom";
+      if (promptLibraryState.catFilter !== "all" && cat !== promptLibraryState.catFilter) {
+        return false;
+      }
+      if (q) {
+        var hay = (String(p.title || "") + " " + String(p.tag || "") + " " + String(p.content || "")).toLowerCase();
+        if (hay.indexOf(q) < 0) { return false; }
+      }
+      return true;
+    });
+
+    if (!filtered.length) {
+      host.appendChild(el("div", "empty-note", list.length
+        ? "没有匹配当前筛选条件的提示词模板"
+        : "提示词库为空，点击右上角「新建提示词模板」添加常用系统提示词。"));
+      return;
+    }
+
+    filtered.forEach(function (item) {
+      var isCurActive = Boolean(curInst && String(item.content || "").trim() === curInst);
+      var card = el("div", "plib-card" + (isCurActive ? " is-active" : ""));
+
+      var top = el("div", "plib-card-top");
+      var titleRow = el("div", "plib-card-title-row");
+
+      var pinBtn = el("button", "plib-pin-btn" + (item.pinned ? " pinned" : ""), item.pinned ? "\u2605" : "\u2606");
+      pinBtn.type = "button";
+      pinBtn.title = item.pinned ? "取消收藏置顶" : "收藏并置顶此提示词";
+      pinBtn.addEventListener("click", function () {
+        postJSON("/api/prompts", { action: "togglePin", id: item.id }).then(function (res) {
+          if (res && res.ok) {
+            promptLibraryState.prompts = res.prompts || [];
+            renderPromptQuickChips();
+            renderPromptLibraryPane();
+          }
+        });
+      });
+      titleRow.appendChild(pinBtn);
+
+      titleRow.appendChild(el("span", "plib-card-title", item.title));
+
+      var catKey = item.category || "custom";
+      var catBadge = el("span", "plib-cat-badge " + catKey, item.tag || PROMPT_CAT_LABELS[catKey] || "自定义");
+      titleRow.appendChild(catBadge);
+
+      if (isCurActive) {
+        titleRow.appendChild(el("span", "plib-active-pill", "当前生效指令"));
+      }
+      top.appendChild(titleRow);
+
+      var metaText = (item.content || "").length + " 字 · ~" + Math.ceil((item.content || "").length / 4) + " tok" + (item.usageCount ? " · 已复用 " + item.usageCount + " 次" : "");
+      top.appendChild(el("span", "plib-card-meta", metaText));
+      card.appendChild(top);
+
+      var bodyPre = el("div", "plib-card-content", item.content || "");
+      card.appendChild(bodyPre);
+
+      var actions = el("div", "plib-card-actions");
+      var actLeft = el("div", "plib-act-left");
+
+      var useSysBtn = el("button", "fb-op-btn use", isCurActive ? "已设为系统指令" : "设为系统指令");
+      useSysBtn.type = "button";
+      useSysBtn.title = "将此模板设为当前项目的常驻系统提示词（System Prompt）";
+      useSysBtn.addEventListener("click", function () {
+        applyPromptItemAsSystemInstruction(item, false);
+      });
+      actLeft.appendChild(useSysBtn);
+
+      var appendBtn = el("button", "fb-op-btn", "+ 追加到指令");
+      appendBtn.type = "button";
+      appendBtn.title = "将此提示词追加到现有项目专属指令末尾，支持多条指令组合";
+      appendBtn.addEventListener("click", function () {
+        applyPromptItemAsSystemInstruction(item, true);
+      });
+      actLeft.appendChild(appendBtn);
+
+      var insertChatBtn = el("button", "fb-op-btn", "填入聊天框");
+      insertChatBtn.type = "button";
+      insertChatBtn.title = "将此提示词直接填入底部对话输入框";
+      insertChatBtn.addEventListener("click", function () {
+        var ta = $("in");
+        if (ta) {
+          ta.value = ta.value ? (ta.value.trim() + "\n\n" + item.content) : item.content;
+          autoGrow(ta);
+        }
+        postJSON("/api/prompts", { action: "incrementUse", id: item.id }).then(function (res) {
+          if (res && res.ok) { promptLibraryState.prompts = res.prompts || promptLibraryState.prompts; }
+        }).catch(function () {});
+        closeProjectModal();
+        toast("已将提示词「" + item.title + "」填入对话输入框", "ok");
+        if (ta) { ta.focus(); }
+      });
+      actLeft.appendChild(insertChatBtn);
+
+      actions.appendChild(actLeft);
+
+      var actRight = el("div", "plib-act-right");
+      var copyBtn = el("button", "fb-op-btn", "复制");
+      copyBtn.type = "button";
+      copyBtn.addEventListener("click", function () {
+        copyText(item.content || "");
+      });
+      actRight.appendChild(copyBtn);
+
+      var editBtn = el("button", "fb-op-btn", "编辑");
+      editBtn.type = "button";
+      editBtn.addEventListener("click", function () {
+        openPromptEditor(item);
+      });
+      actRight.appendChild(editBtn);
+
+      var delBtn = el("button", "fb-op-btn del", "删除");
+      delBtn.type = "button";
+      delBtn.addEventListener("click", function () {
+        postJSON("/api/prompts", { action: "delete", id: item.id }).then(function (res) {
+          if (res && res.ok) {
+            promptLibraryState.prompts = res.prompts || [];
+            promptLibraryState.activePromptId = res.activePromptId || "";
+            updatePromptLibraryBadges();
+            renderPromptQuickChips();
+            renderPromptLibraryPane();
+            toast("已从提示词库移除「" + item.title + "」", "info");
+          }
+        });
+      });
+      actRight.appendChild(delBtn);
+
+      actions.appendChild(actRight);
+      card.appendChild(actions);
+      host.appendChild(card);
+    });
+  }
+
   function refreshProjectKnowledge() {
     return getJSON("/api/project").then(function (j) {
       if (j && j.ok) {
@@ -3541,19 +4970,122 @@
   }
 
   function updateProjectBadge() {
-    var badge = $("project-count");
-    if (!badge) { return; }
     var p = S.project || {};
-    var count = ((p.files && p.files.length) || 0) + (p.instructions && p.instructions.trim() ? 1 : 0);
-    badge.textContent = String(count);
+    var knowledge = p.knowledge || [];
+    var activeFilesCount = knowledge.filter(function (k) { return k && k.enabled !== false; }).length;
+    var totalCount = knowledge.length + (p.instructions && p.instructions.trim() ? 1 : 0);
+
+    var badge = $("project-count");
+    if (badge) {
+      badge.textContent = String(totalCount);
+    }
+    var pillBtn = $("btn-prompt-project");
+    var pillLbl = $("prompt-project-label");
+    var pillCnt = $("prompt-project-count");
+    if (pillLbl) {
+      var pName = (p.name && p.name !== "当前项目") ? p.name : "Projects";
+      pillLbl.textContent = pName.length > 10 ? pName.slice(0, 10) + "…" : pName;
+    }
+    if (pillBtn) {
+      pillBtn.classList.toggle("has-files", activeFilesCount > 0 || ((p.projects || []).length > 1));
+      pillBtn.title = "Projects（当前项目：" + (p.name || "默认项目") + " · 已启用 " + activeFilesCount + " 个上下文文件，点击切换多项目或上传文件）";
+    }
+    if (pillCnt) {
+      pillCnt.hidden = activeFilesCount === 0;
+      pillCnt.textContent = String(activeFilesCount);
+    }
+  }
+
+  function renderProjectSwitcherBar() {
+    var host = $("proj-switcher-pills");
+    var delBtn = $("btn-proj-delete");
+    if (!host) { return; }
+    clear(host);
+    var p = S.project || {};
+    var projects = p.projects || [];
+    var activeId = p.activeProjectId || "proj-default";
+    projects.forEach(function (proj) {
+      var isAct = proj.id === activeId;
+      var pill = el("button", "proj-switcher-pill" + (isAct ? " active" : ""));
+      pill.type = "button";
+      var cnt = (proj.filesCount || 0) + (proj.uploadedCount || 0);
+      pill.appendChild(el("span", null, proj.name || "未命名项目"));
+      if (cnt > 0) {
+        pill.appendChild(el("span", "proj-tab-cnt", String(cnt)));
+      }
+      pill.addEventListener("click", function () {
+        if (isAct) { return; }
+        postJSON("/api/project", { action: "switch", projectId: proj.id }).then(function (res) {
+          if (res && res.ok) {
+            S.project = res;
+            S._projectContextDirty = true;
+            updateProjectBadge();
+            syncDraftFromActiveProject(res);
+            renderProjectSwitcherBar();
+            renderProjectsModalContent();
+            renderInspector();
+            toast("已切换至项目「" + res.name + "」", "ok");
+          }
+        });
+      });
+      host.appendChild(pill);
+    });
+    if (delBtn) {
+      delBtn.disabled = projects.length <= 1;
+    }
+  }
+
+  function syncDraftFromActiveProject(p) {
+    var proj = p || S.project || {};
+    projModalDraft.name = proj.name || "当前项目";
+    projModalDraft.instructions = proj.instructions || "";
+    projModalDraft.files = (proj.files || []).slice();
+    projModalDraft.disabledFiles = (proj.disabledFiles || []).slice();
+    projModalDraft.uploadedFiles = (proj.uploadedFiles || []).map(function (u) {
+      return Object.assign({}, u);
+    });
+    projModalDraft.workspaceMeta = {};
+    (proj.knowledge || []).forEach(function (k) {
+      if (k && k.source === "workspace") {
+        projModalDraft.workspaceMeta[k.rel] = {
+          size: k.size,
+          lines: k.lines,
+          tokens: k.tokens,
+          content: k.content
+        };
+      }
+    });
+    var nameInp = $("proj-name-input");
+    if (nameInp) { nameInp.value = projModalDraft.name; }
+    var instTa = $("proj-inst-ta");
+    if (instTa) { instTa.value = projModalDraft.instructions; }
+  }
+
+  function referenceProjectFileInChat(kItem) {
+    if (!kItem) { return; }
+    var content = kItem.content || "";
+    var name = kItem.rel || kItem.name || "project-file";
+    S.attachments.push({
+      kind: "text",
+      fileRef: true,
+      name: name,
+      mime: "text/plain",
+      size: kItem.size || content.length,
+      lines: kItem.lines || (content ? content.split(/\r?\n/).length : 0),
+      text: "// [Projects Context File] " + name + "\n" + content
+    });
+    renderAttachments();
+    toast("已将项目文件「" + name + "」加入当前提问引用", "ok");
+    var ta = $("in");
+    if (ta) { ta.focus(); }
   }
 
   function renderProjectSection(root) {
     var p = S.project || {};
     var s = section("项目知识库 (Projects)");
     var headBar = el("div", "fb-head-bar");
-    headBar.appendChild(el("span", "empty-note", "专属指令与常驻上下文文件"));
-    var editBtn = el("button", "model-action-btn", "管理知识库");
+    headBar.appendChild(el("span", "empty-note", "上传本地文件与常驻上下文"));
+    var editBtn = el("button", "model-action-btn", "上传 / 管理");
     editBtn.type = "button";
     editBtn.addEventListener("click", openProjectModal);
     headBar.appendChild(editBtn);
@@ -3571,132 +5103,855 @@
     capBox.appendChild(bar);
     s.body.appendChild(capBox);
 
+    var knowledge = p.knowledge || [];
+    var uploadCount = knowledge.filter(function (k) { return k.source === "upload" || k.source === "snippet"; }).length;
+    var wsCount = knowledge.filter(function (k) { return k.source === "workspace"; }).length;
+
     var dl = el("dl", "kv");
+    kv(dl, "项目名称", p.name || "当前项目");
+    kv(dl, "本地上传", uploadCount + " 个文件/片段");
+    kv(dl, "工作区关联", wsCount + " 个文件");
     kv(dl, "项目指令", p.instructions && p.instructions.trim() ? "已配置 (" + p.instructions.trim().length + " 字)" : "未设置");
-    kv(dl, "常驻文件", String((p.files && p.files.length) || 0) + " 个文件");
     s.body.appendChild(dl);
 
-    if (p.knowledge && p.knowledge.length) {
+    if (knowledge.length) {
       var flist = el("div", "proj-files-list");
-      p.knowledge.forEach(function (k) {
-        var row = el("div", "proj-file-item");
-        row.appendChild(el("span", "proj-file-name", k.rel));
-        row.appendChild(el("span", "proj-file-meta", k.lines + " 行"));
+      knowledge.forEach(function (k) {
+        var row = el("div", "proj-file-item" + (k.enabled === false ? " is-disabled" : ""));
+        var left = el("div", "proj-file-left");
+        var srcTag = el("span", "proj-source-tag " + (k.source || "workspace"), k.source === "upload" ? "上传" : (k.source === "snippet" ? "片段" : "工作区"));
+        left.appendChild(srcTag);
+        left.appendChild(el("span", "proj-file-name", k.rel || k.name));
+        row.appendChild(left);
+        var right = el("div", "proj-file-actions");
+        right.appendChild(el("span", "proj-file-meta", (k.lines || 0) + " 行"));
+        var refBtn = el("button", "fb-op-btn", "@引用");
+        refBtn.type = "button";
+        refBtn.title = "将此文件直接加入当前对话输入框附件";
+        refBtn.addEventListener("click", function () {
+          referenceProjectFileInChat(k);
+        });
+        right.appendChild(refBtn);
+        row.appendChild(right);
         flist.appendChild(row);
       });
       s.body.appendChild(flist);
+    } else {
+      s.body.appendChild(el("div", "empty-note", "暂未上传项目文件。点击上方「上传 / 管理」可上传本地代码或文档供 AI 参考。"));
     }
 
     root.appendChild(s.sec);
   }
 
-  function openProjectModal() {
-    refreshProjectKnowledge().then(function () {
-      var p = S.project || { instructions: "", files: [], knowledge: [] };
-      var filesCopy = (p.files || []).slice();
-      openModal("项目知识库与专属指令 · Claude Projects", function (body) {
-        body.appendChild(el("div", "hint", "在这里配置当前项目的专属指令（Custom Instructions）与常驻知识库文件（Project Knowledge）。每次开启新对话时，MyClaude 都会自动遵循这些规范并参考挂载的文件。"));
+  function isTextProjectFile(file) {
+    if (!file || !file.name) { return false; }
+    var name = String(file.webkitRelativePath || file.name);
+    if (/(?:^|\/)(?:node_modules|\.git|dist|build|\.next|coverage|vendor)(?:\/|$)/i.test(name)) {
+      return false;
+    }
+    if (/\.(?:png|jpe?g|gif|webp|ico|pdf|zip|tar|gz|7z|exe|dll|so|dylib|woff2?|ttf|eot|mp3|mp4|mov|avi|wasm|pyc|class)$/i.test(name)) {
+      return false;
+    }
+    if (file.size > 512 * 1024) {
+      return false;
+    }
+    return true;
+  }
 
-        var capBox = el("div", "proj-cap-box");
-        var capTop = el("div", "proj-cap-top");
-        capTop.appendChild(el("span", null, "当前项目知识容量"));
-        var capPctEl = el("span", "proj-cap-pct", (p.capacityPct || 0) + "%（约 " + (p.totalTokens || 0) + " tokens）");
-        capTop.appendChild(capPctEl);
-        capBox.appendChild(capTop);
-        var bar = el("div", "progress");
-        var fill = el("i");
-        fill.style.width = Math.min(100, Math.max(2, p.capacityPct || 0)) + "%";
-        bar.appendChild(fill);
-        capBox.appendChild(bar);
-        body.appendChild(capBox);
+  function buildCombinedDraftFiles() {
+    var list = [];
+    var disabledSet = {};
+    (projModalDraft.disabledFiles || []).forEach(function (rel) { disabledSet[rel] = true; });
 
-        var instTa = el("textarea", "msg-edit-ta");
-        instTa.style.minHeight = "110px";
-        instTa.placeholder = "例如：请始终使用 TypeScript 和中文注释；回答时先给架构简图再给代码；遵循函数式不可变数据风格…";
-        instTa.value = p.instructions || "";
-        body.appendChild(field("项目专属指令（Custom Instructions）", instTa));
+    (projModalDraft.uploadedFiles || []).forEach(function (u) {
+      var content = String(u.content || "");
+      list.push({
+        id: u.id,
+        name: u.name,
+        rel: u.name,
+        source: u.source === "snippet" ? "snippet" : "upload",
+        size: typeof u.size === "number" ? u.size : content.length,
+        lines: content ? content.split(/\r?\n/).length : 0,
+        tokens: Math.ceil(content.length / 4),
+        enabled: u.enabled !== false,
+        content: content,
+        rawRef: u
+      });
+    });
 
-        var fileAddRow = el("div", "fb-head-bar");
-        fileAddRow.style.marginTop = "8px";
-        fileAddRow.appendChild(el("span", "hint", "已挂载的常驻知识库文件："));
-        var addSelect = el("select", "archive-policy-select");
-        addSelect.style.maxWidth = "240px";
-        var defaultOpt = document.createElement("option");
-        defaultOpt.value = "";
-        defaultOpt.textContent = "+ 从工作区选择文件加入知识库…";
-        addSelect.appendChild(defaultOpt);
-        fileAddRow.appendChild(addSelect);
-        body.appendChild(fileAddRow);
+    (projModalDraft.files || []).forEach(function (rel) {
+      var meta = projModalDraft.workspaceMeta[rel] || {};
+      var content = meta.content || "";
+      list.push({
+        id: "ws-" + rel,
+        name: rel.split("/").pop() || rel,
+        rel: rel,
+        source: "workspace",
+        size: meta.size || content.length || 0,
+        lines: meta.lines || (content ? content.split(/\r?\n/).length : 0),
+        tokens: meta.tokens || Math.ceil((content.length || meta.size || 0) / 4),
+        enabled: !disabledSet[rel],
+        content: content
+      });
+    });
 
-        var filesBox = el("div", "proj-files-list");
-        body.appendChild(filesBox);
+    return list;
+  }
 
-        function renderModalFiles() {
-          clear(filesBox);
-          if (!filesCopy.length) {
-            filesBox.appendChild(el("div", "empty-note", "暂未挂载常驻文件。可在上方下拉框中选择 README.md、package.json 或核心源码加入知识库。"));
-            return;
-          }
-          filesCopy.forEach(function (rel, idx) {
-            var row = el("div", "proj-file-item");
-            row.appendChild(el("span", "proj-file-name", rel));
-            var del = el("button", "fb-op-btn del", "移除");
-            del.type = "button";
-            del.addEventListener("click", function () {
-              filesCopy.splice(idx, 1);
-              renderModalFiles();
-            });
-            row.appendChild(del);
-            filesBox.appendChild(row);
+  function renderProjectsModalContent() {
+    var allItems = buildCombinedDraftFiles();
+    var cntAll = $("proj-cnt-all");
+    var cntUp = $("proj-cnt-upload");
+    var cntWs = $("proj-cnt-ws");
+    var cntSnip = $("proj-cnt-snippet");
+
+    var counts = { all: allItems.length, upload: 0, workspace: 0, snippet: 0 };
+    var enabledCount = 0;
+    var instText = ($("proj-inst-ta") && $("proj-inst-ta").value) || projModalDraft.instructions || "";
+    var totalTokens = Math.ceil(instText.length / 4);
+
+    allItems.forEach(function (item) {
+      counts[item.source] = (counts[item.source] || 0) + 1;
+      if (item.enabled !== false) {
+        enabledCount++;
+        totalTokens += (item.tokens || 0);
+      }
+    });
+
+    if (cntAll) { cntAll.textContent = String(counts.all); }
+    if (cntUp) { cntUp.textContent = String(counts.upload); }
+    if (cntWs) { cntWs.textContent = String(counts.workspace); }
+    if (cntSnip) { cntSnip.textContent = String(counts.snippet); }
+
+    var limitTokens = (S.project && S.project.limitTokens) || 128000;
+    var pct = Math.min(100, Math.round((totalTokens / limitTokens) * 1000) / 10);
+    var capSummary = $("proj-cap-summary");
+    var capPct = $("proj-cap-pct");
+    var capBar = $("proj-cap-bar");
+    if (capSummary) {
+      capSummary.textContent = "已启用 " + enabledCount + " / " + allItems.length + " 个上下文文件供 AI 参考";
+    }
+    if (capPct) {
+      capPct.textContent = pct + "% · ~" + totalTokens + " tok";
+    }
+    if (capBar) {
+      capBar.style.width = Math.min(100, Math.max(2, pct)) + "%";
+    }
+
+    var tabsWrap = $("proj-source-tabs");
+    if (tabsWrap) {
+      Array.prototype.forEach.call(tabsWrap.querySelectorAll(".proj-tab"), function (b) {
+        b.classList.toggle("active", b.getAttribute("data-src") === projModalDraft.sourceFilter);
+      });
+    }
+
+    var listHost = $("proj-context-list");
+    if (!listHost) { return; }
+    clear(listHost);
+
+    var q = String(projModalDraft.searchQuery || "").trim().toLowerCase();
+    var filtered = allItems.filter(function (item) {
+      if (projModalDraft.sourceFilter !== "all" && item.source !== projModalDraft.sourceFilter) {
+        return false;
+      }
+      if (q && String(item.rel || item.name).toLowerCase().indexOf(q) < 0) {
+        return false;
+      }
+      return true;
+    });
+
+    if (!filtered.length) {
+      var emptyMsg = allItems.length
+        ? "没有匹配当前筛选条件的项目文件"
+        : "尚未添加项目文件。可点击上方「上传本地文件」、直接拖拽代码文件到此窗口，或从工作区关联文件供 AI 参考。";
+      listHost.appendChild(el("div", "empty-note", emptyMsg));
+      return;
+    }
+
+    filtered.forEach(function (item) {
+      var row = el("div", "proj-file-item" + (item.enabled === false ? " is-disabled" : ""));
+      var left = el("div", "proj-file-left");
+
+      var chk = document.createElement("input");
+      chk.type = "checkbox";
+      chk.className = "proj-file-check";
+      chk.checked = item.enabled !== false;
+      chk.title = "勾选后 AI 将在对话中参考此文件";
+      chk.addEventListener("change", function () {
+        if (item.source === "workspace") {
+          var idx = projModalDraft.disabledFiles.indexOf(item.rel);
+          if (chk.checked && idx >= 0) { projModalDraft.disabledFiles.splice(idx, 1); }
+          else if (!chk.checked && idx < 0) { projModalDraft.disabledFiles.push(item.rel); }
+        } else if (item.rawRef) {
+          item.rawRef.enabled = chk.checked;
+        }
+        renderProjectsModalContent();
+      });
+      left.appendChild(chk);
+
+      var ico = el("span", "proj-file-ico");
+      ico.appendChild(icon("i-file-text", 15));
+      left.appendChild(ico);
+
+      var nameEl = el("span", "proj-file-name", item.rel || item.name);
+      nameEl.title = item.rel || item.name;
+      left.appendChild(nameEl);
+
+      var srcLabel = item.source === "upload" ? "本地上传" : (item.source === "snippet" ? "文本片段" : "工作区");
+      var badge = el("span", "proj-source-tag " + item.source, srcLabel);
+      left.appendChild(badge);
+
+      row.appendChild(left);
+
+      var actions = el("div", "proj-file-actions");
+      actions.appendChild(el("span", "proj-file-meta", bytes(item.size) + " · " + (item.lines || 0) + "行 · ~" + (item.tokens || 0) + " tok"));
+
+      var prevBtn = el("button", "fb-op-btn", item.source === "workspace" ? "预览" : "查看/编辑");
+      prevBtn.type = "button";
+      prevBtn.addEventListener("click", function () {
+        openProjectFilePreview(item);
+      });
+      actions.appendChild(prevBtn);
+
+      var refBtn = el("button", "fb-op-btn use", "@引用");
+      refBtn.type = "button";
+      refBtn.title = "立即将此文件放入聊天输入框作为本次提问附件";
+      refBtn.addEventListener("click", function () {
+        if (item.source === "workspace" && !item.content) {
+          getJSON("/api/fs/file?path=" + encodeURIComponent(item.rel)).then(function (fd) {
+            item.content = (fd && fd.content) || "";
+            referenceProjectFileInChat(item);
+            closeProjectModal();
+          });
+        } else {
+          referenceProjectFileInChat(item);
+          closeProjectModal();
+        }
+      });
+      actions.appendChild(refBtn);
+
+      var delBtn = el("button", "fb-op-btn del", "移除");
+      delBtn.type = "button";
+      delBtn.addEventListener("click", function () {
+        if (item.source === "workspace") {
+          var fIdx = projModalDraft.files.indexOf(item.rel);
+          if (fIdx >= 0) { projModalDraft.files.splice(fIdx, 1); }
+        } else {
+          projModalDraft.uploadedFiles = (projModalDraft.uploadedFiles || []).filter(function (u) {
+            return u.id !== item.id;
           });
         }
-        renderModalFiles();
+        if (projModalDraft.previewTargetId === item.id) {
+          var pbox = $("proj-file-preview");
+          if (pbox) { pbox.hidden = true; }
+          projModalDraft.previewTargetId = null;
+        }
+        renderProjectsModalContent();
+      });
+      actions.appendChild(delBtn);
 
+      row.appendChild(actions);
+      listHost.appendChild(row);
+    });
+  }
+
+  function openProjectFilePreview(item) {
+    var box = $("proj-file-preview");
+    var titleEl = $("proj-preview-title");
+    var ta = $("proj-preview-ta");
+    var saveBtn = $("btn-proj-preview-save");
+    if (!box || !ta || !titleEl) { return; }
+
+    projModalDraft.previewTargetId = item.id;
+    var editable = item.source !== "workspace";
+    titleEl.textContent = (editable ? "查看 / 编辑上传文件：" : "预览工作区文件：") + (item.rel || item.name);
+    ta.readOnly = !editable;
+    if (saveBtn) {
+      saveBtn.hidden = !editable;
+      saveBtn.onclick = function () {
+        if (item.rawRef) {
+          item.rawRef.content = ta.value;
+          item.rawRef.size = ta.value.length;
+          item.rawRef.lines = ta.value.split(/\r?\n/).length;
+          item.rawRef.tokens = Math.ceil(ta.value.length / 4);
+          renderProjectsModalContent();
+          toast("已更新「" + item.name + "」内容，点击底部保存后生效", "ok");
+        }
+      };
+    }
+
+    if (item.source === "workspace" && !item.content) {
+      ta.value = "正在读取文件内容…";
+      box.hidden = false;
+      getJSON("/api/fs/file?path=" + encodeURIComponent(item.rel)).then(function (fd) {
+        var c = (fd && fd.content) || "";
+        item.content = c;
+        if (projModalDraft.workspaceMeta[item.rel]) {
+          projModalDraft.workspaceMeta[item.rel].content = c;
+        }
+        ta.value = c;
+      }).catch(function () {
+        ta.value = "// 读取失败";
+      });
+    } else {
+      ta.value = item.content || "";
+      box.hidden = false;
+    }
+  }
+
+  function handleProjectLocalFilesUpload(fileList) {
+    if (!fileList || !fileList.length) { return; }
+    var validFiles = [];
+    var skipped = 0;
+    Array.prototype.forEach.call(fileList, function (f) {
+      if (isTextProjectFile(f)) {
+        validFiles.push(f);
+      } else {
+        skipped++;
+      }
+    });
+
+    if (!validFiles.length) {
+      toast("未发现可解析的文本/代码文件（已跳过二进制或超大文件）", "warn");
+      return;
+    }
+
+    var jobs = validFiles.slice(0, 35).map(function (file, idx) {
+      return readFileText(file).then(function (txt) {
+        var content = String(txt || "").slice(0, 48000);
+        var relName = String(file.webkitRelativePath || file.name).replace(/\\/g, "/");
+        return {
+          id: "up-" + Date.now() + "-" + idx + "-" + Math.random().toString(36).slice(2, 6),
+          name: relName,
+          source: "upload",
+          size: file.size || content.length,
+          lines: content ? content.split(/\r?\n/).length : 0,
+          tokens: Math.ceil(content.length / 4),
+          enabled: true,
+          updatedAt: new Date().toISOString(),
+          content: content
+        };
+      }).catch(function () { return null; });
+    });
+
+    Promise.all(jobs).then(function (results) {
+      var added = 0;
+      results.forEach(function (entry) {
+        if (!entry) { return; }
+        var existingIdx = -1;
+        for (var i = 0; i < projModalDraft.uploadedFiles.length; i++) {
+          if (projModalDraft.uploadedFiles[i].name === entry.name) {
+            existingIdx = i;
+            break;
+          }
+        }
+        if (existingIdx >= 0) {
+          entry.id = projModalDraft.uploadedFiles[existingIdx].id;
+          projModalDraft.uploadedFiles[existingIdx] = entry;
+        } else {
+          projModalDraft.uploadedFiles.unshift(entry);
+        }
+        added++;
+      });
+      renderProjectsModalContent();
+      toast("已导入 " + added + " 个本地项目文件到列表" + (skipped ? "（跳过 " + skipped + " 个非文本文件）" : ""), "ok");
+    });
+  }
+
+  function bindProjectsModalEventsOnce() {
+    if (projModalDraft.bound) { return; }
+    projModalDraft.bound = true;
+
+    var btnUpFiles = $("btn-proj-upload-files");
+    var inpFiles = $("proj-file-input");
+    if (btnUpFiles && inpFiles) {
+      btnUpFiles.addEventListener("click", function () { inpFiles.click(); });
+      inpFiles.addEventListener("change", function () {
+        handleProjectLocalFilesUpload(inpFiles.files);
+        inpFiles.value = "";
+      });
+    }
+
+    var btnUpDir = $("btn-proj-upload-dir");
+    var inpDir = $("proj-dir-input");
+    if (btnUpDir && inpDir) {
+      btnUpDir.addEventListener("click", function () { inpDir.click(); });
+      inpDir.addEventListener("change", function () {
+        handleProjectLocalFilesUpload(inpDir.files);
+        inpDir.value = "";
+      });
+    }
+
+    var dropzone = $("proj-dropzone");
+    if (dropzone) {
+      dropzone.addEventListener("dragover", function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        dropzone.classList.add("drag-over");
+      });
+      dropzone.addEventListener("dragleave", function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        dropzone.classList.remove("drag-over");
+      });
+      dropzone.addEventListener("drop", function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        dropzone.classList.remove("drag-over");
+        if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) {
+          handleProjectLocalFilesUpload(e.dataTransfer.files);
+        }
+      });
+    }
+
+    var btnToggleSnip = $("btn-proj-toggle-snippet");
+    var snipBox = $("proj-snippet-box");
+    var btnCancelSnip = $("btn-proj-snippet-cancel");
+    var btnAddSnip = $("btn-proj-snippet-add");
+    if (btnToggleSnip && snipBox) {
+      btnToggleSnip.addEventListener("click", function () {
+        snipBox.hidden = !snipBox.hidden;
+        if (!snipBox.hidden && $("proj-snippet-title")) {
+          $("proj-snippet-title").focus();
+        }
+      });
+    }
+    if (btnCancelSnip && snipBox) {
+      btnCancelSnip.addEventListener("click", function () {
+        snipBox.hidden = true;
+      });
+    }
+    if (btnAddSnip && snipBox) {
+      btnAddSnip.addEventListener("click", function () {
+        var tEl = $("proj-snippet-title");
+        var cEl = $("proj-snippet-content");
+        var title = (tEl && tEl.value ? tEl.value.trim() : "") || ("片段-" + (projModalDraft.uploadedFiles.length + 1) + ".md");
+        var content = (cEl && cEl.value) ? cEl.value : "";
+        if (!content.trim()) {
+          toast("请输入文本片段内容", "warn");
+          return;
+        }
+        projModalDraft.uploadedFiles.unshift({
+          id: "snip-" + Date.now(),
+          name: title,
+          source: "snippet",
+          size: content.length,
+          lines: content.split(/\r?\n/).length,
+          tokens: Math.ceil(content.length / 4),
+          enabled: true,
+          updatedAt: new Date().toISOString(),
+          content: content
+        });
+        if (tEl) { tEl.value = ""; }
+        if (cEl) { cEl.value = ""; }
+        snipBox.hidden = true;
+        renderProjectsModalContent();
+        toast("已添加文本片段「" + title + "」", "ok");
+      });
+    }
+
+    var tabsWrap = $("proj-source-tabs");
+    if (tabsWrap) {
+      tabsWrap.addEventListener("click", function (e) {
+        var btn = e.target && e.target.closest ? e.target.closest(".proj-tab") : null;
+        if (!btn) { return; }
+        projModalDraft.sourceFilter = btn.getAttribute("data-src") || "all";
+        renderProjectsModalContent();
+      });
+    }
+
+    var searchInp = $("proj-file-search");
+    if (searchInp) {
+      searchInp.addEventListener("input", function () {
+        projModalDraft.searchQuery = searchInp.value || "";
+        renderProjectsModalContent();
+      });
+    }
+
+    var wsSelect = $("proj-ws-select");
+    if (wsSelect) {
+      wsSelect.addEventListener("change", function () {
+        var rel = wsSelect.value;
+        wsSelect.value = "";
+        if (!rel) { return; }
+        if (projModalDraft.files.indexOf(rel) < 0) {
+          projModalDraft.files.push(rel);
+          getJSON("/api/fs/file?path=" + encodeURIComponent(rel)).then(function (fd) {
+            if (fd && !fd.error) {
+              var c = fd.content || "";
+              projModalDraft.workspaceMeta[rel] = {
+                size: fd.size || c.length,
+                lines: c.split(/\r?\n/).length,
+                tokens: Math.ceil(c.length / 4),
+                content: c
+              };
+              renderProjectsModalContent();
+            }
+          }).catch(function () {});
+        }
+        renderProjectsModalContent();
+      });
+    }
+
+    var btnPrevClose = $("btn-proj-preview-close");
+    if (btnPrevClose) {
+      btnPrevClose.addEventListener("click", function () {
+        var pbox = $("proj-file-preview");
+        if (pbox) { pbox.hidden = true; }
+        projModalDraft.previewTargetId = null;
+      });
+    }
+
+    var instTa = $("proj-inst-ta");
+    if (instTa) {
+      instTa.addEventListener("input", function () {
+        projModalDraft.instructions = instTa.value;
+        renderPromptQuickChips();
+        renderProjectsModalContent();
+      });
+    }
+
+    // 模态框顶部模式切换（项目文件上下文 <-> 提示词库 Prompt Library）
+    var modeTabs = $("proj-modal-mode-tabs");
+    if (modeTabs) {
+      modeTabs.addEventListener("click", function (e) {
+        var btn = e.target && e.target.closest ? e.target.closest(".proj-mode-tab") : null;
+        if (!btn) { return; }
+        switchProjectModalMode(btn.getAttribute("data-proj-mode") || "files");
+      });
+    }
+
+    var btnOpenLib = $("btn-proj-open-lib");
+    if (btnOpenLib) {
+      btnOpenLib.addEventListener("click", function () {
+        switchProjectModalMode("prompts");
+      });
+    }
+
+    var btnSaveInstToLib = $("btn-proj-save-inst-to-lib");
+    if (btnSaveInstToLib) {
+      btnSaveInstToLib.addEventListener("click", function () {
+        var curText = ($("proj-inst-ta") && $("proj-inst-ta").value.trim()) || "";
+        switchProjectModalMode("prompts");
+        openPromptEditor(null, curText);
+        if (!curText) {
+          toast("请填写要保存到提示词库的系统指令标题与内容", "info");
+        }
+      });
+    }
+
+    var btnPlibNew = $("btn-plib-new");
+    if (btnPlibNew) {
+      btnPlibNew.addEventListener("click", function () {
+        var ed = $("plib-editor");
+        if (ed && !ed.hidden && !promptLibraryState.editingId) {
+          ed.hidden = true;
+          return;
+        }
+        openPromptEditor(null, "");
+      });
+    }
+
+    var btnPlibCancel = $("btn-plib-form-cancel");
+    if (btnPlibCancel) {
+      btnPlibCancel.addEventListener("click", function () {
+        var ed = $("plib-editor");
+        if (ed) { ed.hidden = true; }
+        promptLibraryState.editingId = null;
+      });
+    }
+
+    var btnPlibSave = $("btn-plib-form-save");
+    if (btnPlibSave) {
+      btnPlibSave.addEventListener("click", function () {
+        var inpTitle = $("plib-form-title");
+        var selCat = $("plib-form-category");
+        var inpTag = $("plib-form-tag");
+        var taContent = $("plib-form-content");
+        var chkApply = $("plib-form-apply-now");
+
+        var title = (inpTitle && inpTitle.value.trim()) || "";
+        var content = (taContent && taContent.value.trim()) || "";
+        var category = (selCat && selCat.value) || "custom";
+        var tag = (inpTag && inpTag.value.trim()) || PROMPT_CAT_LABELS[category] || "自定义";
+        var applyNow = Boolean(chkApply && chkApply.checked);
+
+        if (!title) {
+          toast("请输入提示词名称", "warn");
+          if (inpTitle) { inpTitle.focus(); }
+          return;
+        }
+        if (!content) {
+          toast("请输入提示词正文内容", "warn");
+          if (taContent) { taContent.focus(); }
+          return;
+        }
+
+        postJSON("/api/prompts", {
+          action: "upsert",
+          setActive: applyNow,
+          prompt: {
+            id: promptLibraryState.editingId || undefined,
+            title: title,
+            category: category,
+            tag: tag,
+            pinned: true,
+            content: content
+          }
+        }).then(function (res) {
+          if (res && res.ok) {
+            promptLibraryState.prompts = res.prompts || [];
+            promptLibraryState.activePromptId = res.activePromptId || "";
+            promptLibraryState.editingId = null;
+            var ed = $("plib-editor");
+            if (ed) { ed.hidden = true; }
+            if (applyNow) {
+              projModalDraft.instructions = content;
+              if ($("proj-inst-ta")) { $("proj-inst-ta").value = content; }
+              postJSON("/api/project", {
+                name: ($("proj-name-input") && $("proj-name-input").value.trim()) || projModalDraft.name || "当前项目",
+                instructions: content,
+                files: projModalDraft.files,
+                disabledFiles: projModalDraft.disabledFiles,
+                uploadedFiles: projModalDraft.uploadedFiles
+              }).then(function (pRes) {
+                if (pRes && pRes.ok) {
+                  S.project = pRes;
+                  S._projectContextDirty = true;
+                  updateProjectBadge();
+                  renderInspector();
+                }
+              });
+            }
+            updatePromptLibraryBadges();
+            renderPromptQuickChips();
+            renderPromptLibraryPane();
+            toast("已保存提示词「" + title + "」到提示词库" + (applyNow ? "并设为当前系统指令" : ""), "ok");
+          }
+        }).catch(function (e) {
+          toast("保存提示词失败：" + e.message, "err");
+        });
+      });
+    }
+
+    var btnPlibClearActive = $("btn-plib-clear-active");
+    if (btnPlibClearActive) {
+      btnPlibClearActive.addEventListener("click", function () {
+        projModalDraft.instructions = "";
+        if ($("proj-inst-ta")) { $("proj-inst-ta").value = ""; }
+        postJSON("/api/prompts", { action: "setActive", id: "" }).then(function (res) {
+          if (res && res.ok) { promptLibraryState.activePromptId = ""; }
+        });
+        postJSON("/api/project", {
+          name: ($("proj-name-input") && $("proj-name-input").value.trim()) || projModalDraft.name || "当前项目",
+          instructions: "",
+          files: projModalDraft.files,
+          disabledFiles: projModalDraft.disabledFiles,
+          uploadedFiles: projModalDraft.uploadedFiles
+        }).then(function (pRes) {
+          if (pRes && pRes.ok) {
+            S.project = pRes;
+            S._projectContextDirty = true;
+            updateProjectBadge();
+            updatePromptLibraryBadges();
+            renderPromptQuickChips();
+            renderPromptLibraryPane();
+            renderProjectsModalContent();
+            renderInspector();
+            toast("已清除当前项目系统指令", "info");
+          }
+        });
+      });
+    }
+
+    var plibCatTabs = $("plib-cat-tabs");
+    if (plibCatTabs) {
+      plibCatTabs.addEventListener("click", function (e) {
+        var btn = e.target && e.target.closest ? e.target.closest(".proj-tab") : null;
+        if (!btn) { return; }
+        promptLibraryState.catFilter = btn.getAttribute("data-pcat") || "all";
+        renderPromptLibraryPane();
+      });
+    }
+
+    var plibSearch = $("plib-search-input");
+    if (plibSearch) {
+      plibSearch.addEventListener("input", function () {
+        promptLibraryState.searchQuery = plibSearch.value || "";
+        renderPromptLibraryPane();
+      });
+    }
+
+    var btnToggleAll = $("btn-proj-toggle-all");
+    if (btnToggleAll) {
+      btnToggleAll.addEventListener("click", function () {
+        var allItems = buildCombinedDraftFiles();
+        var anyDisabled = allItems.some(function (x) { return x.enabled === false; });
+        if (anyDisabled) {
+          projModalDraft.disabledFiles = [];
+          projModalDraft.uploadedFiles.forEach(function (u) { u.enabled = true; });
+        } else {
+          projModalDraft.disabledFiles = projModalDraft.files.slice();
+          projModalDraft.uploadedFiles.forEach(function (u) { u.enabled = false; });
+        }
+        renderProjectsModalContent();
+      });
+    }
+
+    var btnClearUp = $("btn-proj-clear-uploads");
+    if (btnClearUp) {
+      btnClearUp.addEventListener("click", function () {
+        if (!projModalDraft.uploadedFiles.length) {
+          toast("当前没有已上传的本地文件", "info");
+          return;
+        }
+        projModalDraft.uploadedFiles = [];
+        renderProjectsModalContent();
+        toast("已清空上传文件列表（点击保存后生效）", "info");
+      });
+    }
+
+    var btnProjCreate = $("btn-proj-create");
+    if (btnProjCreate) {
+      btnProjCreate.addEventListener("click", function () {
+        var newName = "新项目 #" + (((S.project && S.project.projects && S.project.projects.length) || 1) + 1);
+        var nameInp = $("proj-name-input");
+        if (nameInp && nameInp.value.trim() && nameInp.value.trim() !== S.project.name) {
+          newName = nameInp.value.trim();
+        }
+        postJSON("/api/project", {
+          action: "create",
+          name: newName,
+          instructions: "",
+          files: [],
+          uploadedFiles: []
+        }).then(function (res) {
+          if (res && res.ok) {
+            S.project = res;
+            S._projectContextDirty = true;
+            updateProjectBadge();
+            syncDraftFromActiveProject(res);
+            renderProjectSwitcherBar();
+            renderProjectsModalContent();
+            renderInspector();
+            if ($("proj-name-input")) {
+              $("proj-name-input").focus();
+              $("proj-name-input").select();
+            }
+            toast("已创建并切换到新项目「" + res.name + "」", "ok");
+          }
+        });
+      });
+    }
+
+    var btnProjDelete = $("btn-proj-delete");
+    if (btnProjDelete) {
+      btnProjDelete.addEventListener("click", function () {
+        var p = S.project || {};
+        if (!p.projects || p.projects.length <= 1) {
+          toast("至少需要保留一个项目工作区", "warn");
+          return;
+        }
+        var delName = p.name || "当前项目";
+        postJSON("/api/project", {
+          action: "delete",
+          projectId: p.activeProjectId
+        }).then(function (res) {
+          if (res && res.ok) {
+            S.project = res;
+            S._projectContextDirty = true;
+            updateProjectBadge();
+            syncDraftFromActiveProject(res);
+            renderProjectSwitcherBar();
+            renderProjectsModalContent();
+            renderInspector();
+            toast("已删除项目「" + delName + "」，切换至「" + res.name + "」", "info");
+          }
+        });
+      });
+    }
+
+    var btnSave = $("btn-proj-save");
+    if (btnSave) {
+      btnSave.addEventListener("click", function () {
+        var nameInp = $("proj-name-input");
+        var instInput = $("proj-inst-ta");
+        postJSON("/api/project", {
+          name: (nameInp && nameInp.value.trim()) || projModalDraft.name || "当前项目",
+          instructions: instInput ? instInput.value : projModalDraft.instructions,
+          files: projModalDraft.files,
+          disabledFiles: projModalDraft.disabledFiles,
+          uploadedFiles: projModalDraft.uploadedFiles
+        }).then(function (res) {
+          if (res && res.ok) {
+            S.project = res;
+            S._projectContextDirty = true;
+            updateProjectBadge();
+            updatePromptLibraryBadges();
+            renderProjectSwitcherBar();
+            renderInspector();
+            closeProjectModal();
+            var enabledCnt = (res.knowledge || []).filter(function (k) { return k.enabled !== false; }).length;
+            toast("已保存项目「" + res.name + "」（" + enabledCnt + " 个上下文文件" + (res.instructions ? " + 系统指令已生效" : "") + "）", "ok");
+          }
+        }).catch(function (e) {
+          toast("保存失败：" + e.message, "err");
+        });
+      });
+    }
+  }
+
+  function closeProjectModal() {
+    var m = $("projects-modal");
+    if (m) { m.hidden = true; }
+  }
+
+  function openPromptLibraryModal() {
+    openProjectModal("prompts");
+  }
+
+  function openProjectModal(initialMode) {
+    var targetMode = initialMode === "prompts" ? "prompts" : "files";
+    bindProjectsModalEventsOnce();
+    Promise.all([refreshProjectKnowledge(), refreshPromptLibrary()]).then(function () {
+      var p = S.project || { name: "当前项目", instructions: "", files: [], disabledFiles: [], uploadedFiles: [], knowledge: [] };
+      syncDraftFromActiveProject(p);
+      renderProjectSwitcherBar();
+      projModalDraft.sourceFilter = "all";
+      projModalDraft.searchQuery = "";
+      projModalDraft.previewTargetId = null;
+
+      var searchInp = $("proj-file-search");
+      if (searchInp) { searchInp.value = ""; }
+      var pbox = $("proj-file-preview");
+      if (pbox) { pbox.hidden = true; }
+      var sbox = $("proj-snippet-box");
+      if (sbox) { sbox.hidden = true; }
+      var edBox = $("plib-editor");
+      if (edBox) { edBox.hidden = true; }
+
+      var wsSelect = $("proj-ws-select");
+      if (wsSelect) {
+        clear(wsSelect);
+        var defOpt = document.createElement("option");
+        defOpt.value = "";
+        defOpt.textContent = "+ 关联工作区文件…";
+        wsSelect.appendChild(defOpt);
         getJSON("/api/fs/search?q=").then(function (j) {
           ((j && j.files) || []).forEach(function (f) {
             var opt = document.createElement("option");
             opt.value = f.rel;
             opt.textContent = f.rel + " (" + bytes(f.size) + ")";
-            addSelect.appendChild(opt);
+            wsSelect.appendChild(opt);
           });
         }).catch(function () {});
+      }
 
-        addSelect.addEventListener("change", function () {
-          var v = addSelect.value;
-          addSelect.value = "";
-          if (v && filesCopy.indexOf(v) < 0) {
-            filesCopy.push(v);
-            renderModalFiles();
-          }
-        });
-
-        body._saveProject = function () {
-          postJSON("/api/project", {
-            instructions: instTa.value,
-            files: filesCopy
-          }).then(function (res) {
-            if (res && res.ok) {
-              S.project = res;
-              updateProjectBadge();
-              renderInspector();
-              toast("已保存项目知识库与专属指令", "ok");
-              closeModal();
-            }
-          }).catch(function (e) {
-            toast("保存失败：" + e.message, "err");
-          });
-        };
-      }, [
-        { label: "取消", cls: "ghost", fn: closeModal },
-        {
-          label: "保存项目配置",
-          cls: "primary",
-          fn: function () {
-            var b = $("modal-body");
-            if (b && b._saveProject) { b._saveProject(); }
-          }
-        }
-      ]);
+      switchProjectModalMode(targetMode);
+      var modal = $("projects-modal");
+      if (modal) {
+        modal.hidden = false;
+      }
     });
   }
 
@@ -3758,13 +6013,37 @@
   }
 
   function fetchAtFiles(query) {
+    var q = String(query || "").toLowerCase();
+    var uploadedMatches = ((S.project && S.project.knowledge) || [])
+      .filter(function (k) {
+        return (k.source === "upload" || k.source === "snippet") && (!q || String(k.rel || k.name).toLowerCase().indexOf(q) >= 0);
+      })
+      .map(function (k) {
+        return {
+          rel: k.rel || k.name,
+          size: k.size || 0,
+          isProjectUpload: true,
+          projectItem: k
+        };
+      });
+
     getJSON("/api/fs/search?q=" + encodeURIComponent(query || "")).then(function (j) {
-      atMatches = (j && j.files) || [];
+      var wsFiles = (j && j.files) || [];
+      atMatches = uploadedMatches.concat(wsFiles);
       if (!atMatches.length) { closeAtMenu(); return; }
       atIndex = Math.min(atIndex, atMatches.length - 1);
       atOpen = true;
       drawAtMenu();
-    }).catch(function () { closeAtMenu(); });
+    }).catch(function () {
+      if (uploadedMatches.length) {
+        atMatches = uploadedMatches;
+        atIndex = 0;
+        atOpen = true;
+        drawAtMenu();
+      } else {
+        closeAtMenu();
+      }
+    });
   }
 
   function drawAtMenu() {
@@ -3776,7 +6055,7 @@
       var row = el("button", "slash-item" + (i === atIndex ? " sel" : ""));
       row.type = "button";
       row.appendChild(el("span", "slash-k", "@" + f.rel));
-      row.appendChild(el("span", "slash-d", bytes(f.size)));
+      row.appendChild(el("span", "slash-d", (f.isProjectUpload ? "[Projects 上传] " : "") + bytes(f.size)));
       row.addEventListener("mousedown", function (e) {
         e.preventDefault();
         atIndex = i;
@@ -3803,6 +6082,10 @@
       autoGrow(ta);
     }
     closeAtMenu();
+    if (item.isProjectUpload && item.projectItem) {
+      referenceProjectFileInChat(item.projectItem);
+      return;
+    }
     getJSON("/api/fs/file?path=" + encodeURIComponent(item.path)).then(function (fileData) {
       if (!fileData || fileData.error) {
         toast("无法读取文件：" + ((fileData && fileData.error) || item.rel), "err");
@@ -3833,11 +6116,12 @@
     if (host) { host.hidden = true; clear(host); }
   }
 
-  /* ---- Artifacts 右侧分屏画布与对话内卡片 ---- */
+  /* ---- Artifacts 右侧分屏画布与对话内卡片（支持 HTML/SVG/Mermaid/JSX/CSV/Diff/一键写入文件） ---- */
   function isPreviewableArtifact(lang, code) {
     var l = String(lang || "").toLowerCase();
-    if (/^(html|htm|svg|xml|markdown|md)$/.test(l)) { return true; }
-    if (/^\s*(<!doctype html|<html|<svg)/i.test(code || "")) { return true; }
+    if (/^(html|htm|svg|xml|markdown|md|mermaid|mmd|jsx|tsx|react|csv|tsv)$/.test(l)) { return true; }
+    if (l === "json" && /^\s*\[\s*\{/.test(code || "")) { return true; }
+    if (/^\s*(<!doctype html|<html|<svg|graph\s+|flowchart\s+|sequenceDiagram|classDiagram|stateDiagram|erDiagram|gantt|pie\s+)/i.test(code || "")) { return true; }
     return false;
   }
 
@@ -3851,6 +6135,24 @@
     if (mTitle && mTitle[1]) { return mTitle[1].trim(); }
     var l = String(lang || "code").toUpperCase();
     return l + " 代码工件 #" + idx;
+  }
+
+  function inferArtifactDefaultPath(active) {
+    if (!active) { return "src/artifact.txt"; }
+    var titlePath = String(active.title || "").trim();
+    if (/^[A-Za-z0-9_.\-/]+\.[A-Za-z0-9]+$/.test(titlePath)) {
+      return titlePath;
+    }
+    var l = String(active.lang || "").toLowerCase();
+    var extMap = {
+      html: "html", htm: "html", svg: "svg",
+      mermaid: "mmd", mmd: "mmd",
+      jsx: "jsx", tsx: "tsx", react: "jsx",
+      js: "js", javascript: "js", ts: "ts", typescript: "ts",
+      css: "css", json: "json", csv: "csv", md: "md", markdown: "md", py: "py", python: "py"
+    };
+    var ext = extMap[l] || "txt";
+    return "artifacts/artifact-v" + (active.version || 1) + "." + ext;
   }
 
   function updateArtifactBadge() {
@@ -3879,12 +6181,19 @@
       var lang = (langEl && langEl.textContent) || "text";
       var code = preEl.textContent || "";
       var lines = code.split(/\r?\n/).length;
-      if (lines < 5 && !isPreviewableArtifact(lang, code)) { return; }
+      if (lines < 4 && !isPreviewableArtifact(lang, code)) { return; }
 
       var ver = S.artifacts.length + 1;
       var artId = "art-" + Date.now() + "-" + ver;
       var previewable = isPreviewableArtifact(lang, code);
       var title = inferArtifactTitle(lang, code, ver);
+      var prevSameLang = null;
+      for (var i = S.artifacts.length - 1; i >= 0; i--) {
+        if (S.artifacts[i].lang === lang) {
+          prevSameLang = S.artifacts[i].code;
+          break;
+        }
+      }
       var item = {
         id: artId,
         version: ver,
@@ -3892,6 +6201,7 @@
         lang: lang,
         lines: lines,
         code: code,
+        originalCode: prevSameLang || code,
         previewable: previewable
       };
       S.artifacts.push(item);
@@ -3960,18 +6270,199 @@
     switchInspectorTab("artifact");
   }
 
+  function computeLineDiff(oldStr, newStr) {
+    var oldLines = String(oldStr || "").split(/\r?\n/);
+    var newLines = String(newStr || "").split(/\r?\n/);
+    var rows = [];
+    var added = 0;
+    var removed = 0;
+    var i = 0, j = 0;
+    while (i < oldLines.length || j < newLines.length) {
+      if (i < oldLines.length && j < newLines.length && oldLines[i] === newLines[j]) {
+        rows.push({ type: "ctx", ln: j + 1, sign: " ", text: newLines[j] });
+        i++; j++;
+      } else if (j + 1 < newLines.length && oldLines[i] === newLines[j + 1]) {
+        rows.push({ type: "add", ln: j + 1, sign: "+", text: newLines[j] });
+        added++;
+        j++;
+      } else if (i + 1 < oldLines.length && oldLines[i + 1] === newLines[j]) {
+        rows.push({ type: "del", ln: i + 1, sign: "-", text: oldLines[i] });
+        removed++;
+        i++;
+      } else {
+        if (i < oldLines.length) {
+          rows.push({ type: "del", ln: i + 1, sign: "-", text: oldLines[i] });
+          removed++;
+          i++;
+        }
+        if (j < newLines.length) {
+          rows.push({ type: "add", ln: j + 1, sign: "+", text: newLines[j] });
+          added++;
+          j++;
+        }
+      }
+    }
+    return { rows: rows, added: added, removed: removed };
+  }
+
+  function buildMermaidSandboxHtml(mermaidCode) {
+    var escaped = String(mermaidCode || "").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    return '<!DOCTYPE html><html><head><meta charset="utf-8"><style>' +
+      'body{margin:0;padding:20px;font-family:system-ui,-apple-system,sans-serif;background:#faf8f5;color:#1f1e1b;display:flex;flex-direction:column;align-items:center;min-height:100vh;box-sizing:border-box;}' +
+      '.bar{width:100%;display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;font-size:12px;color:#6e6a63;}' +
+      '.btns button{padding:4px 10px;border-radius:6px;border:1px solid #ded8cf;background:#fff;cursor:pointer;font-size:12px;margin-left:4px;}' +
+      '#stage{flex:1;width:100%;display:flex;align-items:center;justify-content:center;overflow:auto;background:#fff;border:1px solid #e6e1d8;border-radius:12px;padding:20px;box-sizing:border-box;transform-origin:center center;transition:transform .15s ease;}' +
+      '</style></head><body>' +
+      '<div class="bar"><span>Mermaid 架构 / 流程图实时渲染</span><div class="btns"><button onclick="z(0.85)">缩小</button><button onclick="z(1,true)">100%</button><button onclick="z(1.18)">放大</button></div></div>' +
+      '<div id="stage"><pre class="mermaid">' + escaped + '</pre></div>' +
+      '<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>' +
+      '<script>var s=1;function z(f,r){s=r?1:Math.max(0.4,Math.min(2.6,s*f));document.querySelector(".mermaid").style.transform="scale("+s+")";}' +
+      'if(window.mermaid){mermaid.initialize({startOnLoad:true,theme:"default",securityLevel:"loose"});}</script>' +
+      '</body></html>';
+  }
+
+  function buildReactSandboxHtml(jsxCode) {
+    var cleanCode = String(jsxCode || "")
+      .replace(/^\s*import\s+[\s\S]*?from\s+['"][^'"]+['"];?\s*$/gm, "")
+      .replace(/export\s+default\s+function\s+([A-Za-z0-9_]+)/g, "function $1")
+      .replace(/export\s+default\s+/g, "const __DefaultExport = ");
+    return '<!DOCTYPE html><html><head><meta charset="utf-8">' +
+      '<script src="https://cdn.tailwindcss.com"></script>' +
+      '<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>' +
+      '<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>' +
+      '<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>' +
+      '<style>body{margin:0;padding:16px;font-family:system-ui,-apple-system,sans-serif;background:#faf8f5;color:#1f1e1b;}</style>' +
+      '</head><body><div id="root"></div>' +
+      '<script type="text/babel">' +
+      'const { useState, useEffect, useMemo, useRef, useCallback } = React;\n' +
+      cleanCode + '\n' +
+      'const Comp = typeof __DefaultExport !== "undefined" ? __DefaultExport : (typeof App !== "undefined" ? App : (typeof Demo !== "undefined" ? Demo : null));\n' +
+      'if (Comp) { ReactDOM.createRoot(document.getElementById("root")).render(<Comp />); } else { document.getElementById("root").innerHTML = "<div style=\\"padding:16px;color:#666\\">已编译 JSX 组件（请定义 App 或 export default 组件以自动挂载）</div>"; }' +
+      '</script></body></html>';
+  }
+
+  function parseTableDataFromArtifact(lang, code) {
+    var l = String(lang || "").toLowerCase();
+    var raw = String(code || "").trim();
+    if (l === "json") {
+      try {
+        var parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length && typeof parsed[0] === "object") {
+          var cols = Object.keys(parsed[0]);
+          var rows = parsed.map(function (item) {
+            return cols.map(function (k) {
+              var v = item[k];
+              return v == null ? "" : (typeof v === "object" ? JSON.stringify(v) : String(v));
+            });
+          });
+          return { columns: cols, rows: rows };
+        }
+      } catch (e) {}
+      return null;
+    }
+    var sep = l === "tsv" ? "\t" : ",";
+    var lines = raw.split(/\r?\n/).filter(function (x) { return x.trim().length > 0; });
+    if (lines.length < 2) { return null; }
+    var splitLine = function (line) {
+      return line.split(sep).map(function (cell) {
+        return cell.trim().replace(/^"|"$/g, "");
+      });
+    };
+    return {
+      columns: splitLine(lines[0]),
+      rows: lines.slice(1).map(splitLine)
+    };
+  }
+
+  function renderInteractiveTableStage(stage, tableData) {
+    var wrap = el("div", "artifact-table-stage");
+    var bar = el("div", "artifact-table-toolbar");
+    var summary = el("span", null, "共 " + tableData.rows.length + " 行 × " + tableData.columns.length + " 列（点击表头可排序）");
+    var searchInp = el("input", "artifact-table-search");
+    searchInp.type = "text";
+    searchInp.placeholder = "筛选表格数据…";
+    bar.appendChild(summary);
+    bar.appendChild(searchInp);
+    wrap.appendChild(bar);
+
+    var scrollBox = el("div", "artifact-table-scroll");
+    var table = el("table", "artifact-data-table");
+    var thead = document.createElement("thead");
+    var tbody = document.createElement("tbody");
+    table.appendChild(thead);
+    table.appendChild(tbody);
+    scrollBox.appendChild(table);
+    wrap.appendChild(scrollBox);
+    stage.appendChild(wrap);
+
+    var sortCol = -1;
+    var sortAsc = true;
+    var filterQ = "";
+
+    function drawTable() {
+      clear(thead);
+      clear(tbody);
+      var trHead = document.createElement("tr");
+      tableData.columns.forEach(function (colName, cIdx) {
+        var th = document.createElement("th");
+        var arrow = sortCol === cIdx ? (sortAsc ? " ▲" : " ▼") : "";
+        th.textContent = colName + arrow;
+        th.addEventListener("click", function () {
+          if (sortCol === cIdx) { sortAsc = !sortAsc; }
+          else { sortCol = cIdx; sortAsc = true; }
+          drawTable();
+        });
+        trHead.appendChild(th);
+      });
+      thead.appendChild(trHead);
+
+      var rows = tableData.rows.filter(function (r) {
+        if (!filterQ) { return true; }
+        return r.some(function (cell) { return String(cell).toLowerCase().indexOf(filterQ) >= 0; });
+      });
+      if (sortCol >= 0) {
+        rows = rows.slice().sort(function (a, b) {
+          var va = a[sortCol] || "";
+          var vb = b[sortCol] || "";
+          var na = Number(va), nb = Number(vb);
+          var cmp = (!isNaN(na) && !isNaN(nb) && va !== "" && vb !== "")
+            ? (na - nb)
+            : String(va).localeCompare(String(vb), "zh");
+          return sortAsc ? cmp : -cmp;
+        });
+      }
+      summary.textContent = "显示 " + rows.length + " / " + tableData.rows.length + " 行 × " + tableData.columns.length + " 列（点击表头排序）";
+      rows.forEach(function (r) {
+        var tr = document.createElement("tr");
+        tableData.columns.forEach(function (_, cIdx) {
+          var td = document.createElement("td");
+          td.textContent = r[cIdx] != null ? r[cIdx] : "";
+          tr.appendChild(td);
+        });
+        tbody.appendChild(tr);
+      });
+    }
+
+    searchInp.addEventListener("input", function () {
+      filterQ = (searchInp.value || "").trim().toLowerCase();
+      drawTable();
+    });
+    drawTable();
+  }
+
   function renderArtifactStage() {
     var sel = $("artifact-select");
     var stage = $("artifact-stage");
     var btnPrev = $("btn-art-preview");
     var btnCode = $("btn-art-code");
+    var btnDiff = $("btn-art-diff");
     var btnEdit = $("btn-art-edit");
     if (!stage || !sel) { return; }
     clear(sel);
     clear(stage);
 
     if (!S.artifacts.length) {
-      stage.appendChild(el("div", "empty-note", "当前对话尚无 Artifact。让 MyClaude 生成 HTML 页面、SVG 图形或代码模块即可在此分屏预览、在线编辑或局部迭代。"));
+      stage.appendChild(el("div", "empty-note", "当前对话尚无 Artifact。让 MyClaude 生成 HTML 页面、SVG 图形、Mermaid 流程图、React 组件或 CSV 数据表即可在此分屏预览、对比 Diff 或一键写入本地文件。"));
       return;
     }
 
@@ -3991,12 +6482,50 @@
 
     if (btnPrev) { btnPrev.classList.toggle("active", S.artifactView === "preview"); }
     if (btnCode) { btnCode.classList.toggle("active", S.artifactView === "code"); }
+    if (btnDiff) { btnDiff.classList.toggle("active", S.artifactView === "diff"); }
     if (btnEdit) { btnEdit.classList.toggle("active", S.artifactView === "edit"); }
+
+    if (S.artifactView === "diff") {
+      var prevVerArtifact = null;
+      for (var i = 0; i < S.artifacts.length; i++) {
+        if (S.artifacts[i].id === active.id && i > 0) {
+          prevVerArtifact = S.artifacts[i - 1];
+          break;
+        }
+      }
+      var baseCode = active.originalCode !== active.code
+        ? active.originalCode
+        : (prevVerArtifact ? prevVerArtifact.code : active.originalCode);
+      var diffRes = computeLineDiff(baseCode, active.code);
+
+      var diffWrap = el("div", "artifact-diff-wrap");
+      var diffHead = el("div", "artifact-diff-head");
+      diffHead.appendChild(el("span", null, prevVerArtifact && active.originalCode === active.code
+        ? "对比上一版本 (v" + prevVerArtifact.version + " → v" + active.version + ")"
+        : "对比初始版本与当前修改差异"));
+      var statBadges = el("div", "diff-stat-badges");
+      statBadges.appendChild(el("span", "diff-stat-add", "+" + diffRes.added + " 行"));
+      statBadges.appendChild(el("span", "diff-stat-del", "-" + diffRes.removed + " 行"));
+      diffHead.appendChild(statBadges);
+      diffWrap.appendChild(diffHead);
+
+      var linesBox = el("div", "artifact-diff-lines");
+      diffRes.rows.forEach(function (r) {
+        var row = el("div", "diff-row " + r.type);
+        row.appendChild(el("span", "diff-ln", String(r.ln)));
+        row.appendChild(el("span", "diff-sign", r.sign));
+        row.appendChild(el("span", "diff-code", r.text || " "));
+        linesBox.appendChild(row);
+      });
+      diffWrap.appendChild(linesBox);
+      stage.appendChild(diffWrap);
+      return;
+    }
 
     if (S.artifactView === "edit") {
       var wrap = el("div", "artifact-editor-wrap");
       var head = el("div", "artifact-editor-head");
-      head.appendChild(el("span", null, "在线编辑代码 · 修改后点击右侧应用即可实时刷新预览（Ctrl+Enter）"));
+      head.appendChild(el("span", null, "在线编辑代码 · 修改后点击右侧应用即可实时刷新预览或查看 Diff（Ctrl+Enter）"));
       var applyBtn = el("button", "artifact-apply-btn", "应用并刷新预览");
       applyBtn.type = "button";
       var ta = el("textarea", "artifact-editor-ta");
@@ -4007,7 +6536,7 @@
         active.lines = active.code.split(/\r?\n/).length;
         S.artifactView = "preview";
         renderArtifactStage();
-        toast("已更新 Artifact 代码并刷新预览", "ok");
+        toast("已更新 Artifact 代码并刷新预览（可点击「对比 Diff」查看改动）", "ok");
       }
       applyBtn.addEventListener("click", commitEdit);
       ta.addEventListener("keydown", function (e) {
@@ -4026,20 +6555,41 @@
 
     if (S.artifactView === "preview") {
       var l = String(active.lang || "").toLowerCase();
-      if (l === "html" || l === "htm" || l === "svg" || l === "xml" || /^\s*(<!doctype html|<html|<svg)/i.test(active.code)) {
+      var rawCode = active.code || "";
+      if (l === "mermaid" || l === "mmd" || /^\s*(graph\s+|flowchart\s+|sequenceDiagram|classDiagram|stateDiagram|erDiagram|gantt|pie\s+)/i.test(rawCode)) {
+        var mFrame = document.createElement("iframe");
+        mFrame.className = "artifact-iframe";
+        mFrame.setAttribute("sandbox", "allow-scripts");
+        mFrame.srcdoc = buildMermaidSandboxHtml(rawCode);
+        stage.appendChild(mFrame);
+      } else if (l === "jsx" || l === "tsx" || l === "react") {
+        var rFrame = document.createElement("iframe");
+        rFrame.className = "artifact-iframe";
+        rFrame.setAttribute("sandbox", "allow-scripts allow-modals");
+        rFrame.srcdoc = buildReactSandboxHtml(rawCode);
+        stage.appendChild(rFrame);
+      } else if (l === "csv" || l === "tsv" || (l === "json" && /^\s*\[\s*\{/.test(rawCode))) {
+        var tableData = parseTableDataFromArtifact(l, rawCode);
+        if (tableData) {
+          renderInteractiveTableStage(stage, tableData);
+        } else {
+          var jPre = el("pre", "artifact-code-view");
+          jPre.textContent = rawCode;
+          stage.appendChild(jPre);
+        }
+      } else if (l === "html" || l === "htm" || l === "svg" || l === "xml" || /^\s*(<!doctype html|<html|<svg)/i.test(rawCode)) {
         var iframe = document.createElement("iframe");
         iframe.className = "artifact-iframe";
         iframe.setAttribute("sandbox", "allow-scripts allow-modals");
-        iframe.srcdoc = active.code;
+        iframe.srcdoc = rawCode;
         stage.appendChild(iframe);
       } else if (l === "md" || l === "markdown") {
         var mdBox = el("div", "artifact-md-preview md");
-        mdBox.innerHTML = MD.render(active.code);
+        mdBox.innerHTML = MD.render(rawCode);
         stage.appendChild(mdBox);
       } else {
-        // 对于普通代码，在预览模式下提供带行数与语法高亮的清爽阅读画布
         var pre = el("pre", "artifact-code-view");
-        pre.textContent = active.code;
+        pre.textContent = rawCode;
         stage.appendChild(pre);
       }
     } else {
@@ -4076,6 +6626,244 @@
     }
   }
 
+  /* ---- 导出与分享当前会话（Markdown / 独立 HTML 报告 / PDF 打印 / 复制） ---- */
+  function collectConversationMessages() {
+    var root = logRoot();
+    if (!root) { return []; }
+    var items = [];
+    Array.prototype.forEach.call(root.children, function (node) {
+      if (node.classList.contains("msg-user")) {
+        items.push({ role: "user", text: node._text || (node.querySelector(".bubble") && node.querySelector(".bubble").textContent) || "" });
+      } else if (node.classList.contains("msg-asst")) {
+        items.push({ role: "assistant", text: node._raw || (node.querySelector(".md") && node.querySelector(".md").innerText) || "" });
+      }
+    });
+    return items;
+  }
+
+  function exportCurrentConversation(fmt) {
+    var msgs = collectConversationMessages();
+    if (!msgs.length) {
+      toast("当前对话尚无消息可导出", "warn");
+      return;
+    }
+    var title = ($("top-title") && $("top-title").textContent.trim()) || "MyClaude-对话记录";
+    var safeFileTitle = title.replace(/[\\/:*?"<>|\s]+/g, "-").slice(0, 40) || "conversation";
+    var nowStr = new Date().toLocaleString("zh-CN");
+
+    var mdLines = ["# " + title, "", "> 导出时间：" + nowStr + " · 模型：" + ((S.config && S.config.model) || "默认"), ""];
+    msgs.forEach(function (m) {
+      mdLines.push(m.role === "user" ? "### 👤 用户提问" : "### ✦ MyClaude 回复");
+      mdLines.push("");
+      mdLines.push(m.text || "");
+      mdLines.push("");
+      mdLines.push("---");
+      mdLines.push("");
+    });
+    var mdContent = mdLines.join("\n");
+
+    if (fmt === "copy") {
+      copyText(mdContent);
+      toast("已将完整对话 Markdown 复制到剪贴板", "ok");
+      return;
+    }
+
+    if (fmt === "md") {
+      var blobMd = new Blob([mdContent], { type: "text/markdown;charset=utf-8" });
+      var urlMd = URL.createObjectURL(blobMd);
+      var aMd = document.createElement("a");
+      aMd.href = urlMd;
+      aMd.download = safeFileTitle + ".md";
+      document.body.appendChild(aMd);
+      aMd.click();
+      document.body.removeChild(aMd);
+      setTimeout(function () { URL.revokeObjectURL(urlMd); }, 1000);
+      toast("已导出 Markdown 文档 (" + safeFileTitle + ".md)", "ok");
+      return;
+    }
+
+    var htmlBlocks = msgs.map(function (m) {
+      var roleTag = m.role === "user" ? '<div class="role user">用户提问</div>' : '<div class="role asst">✦ MyClaude 回复</div>';
+      var bodyHtml = m.role === "assistant" ? MD.render(m.text || "") : '<div class="user-txt">' + String(m.text || "").replace(/</g, "&lt;").replace(/\n/g, "<br>") + '</div>';
+      return '<section class="turn ' + m.role + '">' + roleTag + '<div class="body">' + bodyHtml + '</div></section>';
+    }).join("\n");
+
+    var reportHtml = '<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><title>' + title + ' - MyClaude 报告</title>' +
+      '<style>body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#faf8f5;color:#1f1e1b;max-width:820px;margin:0 auto;padding:40px 24px;line-height:1.65;}' +
+      'h1{font-size:24px;margin:0 0 6px;} .meta{color:#7a756c;font-size:13px;margin-bottom:28px;padding-bottom:14px;border-bottom:1px solid #e6e1d8;}' +
+      '.turn{margin-bottom:22px;padding:18px 20px;border-radius:14px;background:#fff;border:1px solid #e6e1d8;}' +
+      '.turn.user{background:#f3efe8;} .role{font-size:12px;font-weight:700;color:#c96442;margin-bottom:8px;text-transform:uppercase;letter-spacing:.04em;}' +
+      'pre{background:#1e1e1e;color:#f8f8f2;padding:14px;border-radius:8px;overflow:auto;font-size:12.5px;} code{font-family:monospace;}</style>' +
+      '</head><body><h1>' + title + '</h1><div class="meta">导出时间：' + nowStr + ' · 模型：' + ((S.config && S.config.model) || "默认") + ' · 共 ' + msgs.length + ' 条消息</div>' +
+      htmlBlocks + '</body></html>';
+
+    if (fmt === "print") {
+      var printFrame = document.createElement("iframe");
+      printFrame.style.position = "fixed";
+      printFrame.style.right = "0";
+      printFrame.style.bottom = "0";
+      printFrame.style.width = "0";
+      printFrame.style.height = "0";
+      printFrame.style.border = "0";
+      document.body.appendChild(printFrame);
+      var doc = printFrame.contentWindow.document;
+      doc.open();
+      doc.write(reportHtml);
+      doc.close();
+      setTimeout(function () {
+        printFrame.contentWindow.focus();
+        printFrame.contentWindow.print();
+        setTimeout(function () { document.body.removeChild(printFrame); }, 2000);
+      }, 250);
+      toast("已打开打印 / 另存为 PDF 视图", "info");
+      return;
+    }
+
+    var blobHtml = new Blob([reportHtml], { type: "text/html;charset=utf-8" });
+    var urlHtml = URL.createObjectURL(blobHtml);
+    var aHtml = document.createElement("a");
+    aHtml.href = urlHtml;
+    aHtml.download = safeFileTitle + ".html";
+    document.body.appendChild(aHtml);
+    aHtml.click();
+    document.body.removeChild(aHtml);
+    setTimeout(function () { URL.revokeObjectURL(urlHtml); }, 1000);
+    toast("已导出独立 HTML 报告 (" + safeFileTitle + ".html)", "ok");
+  }
+
+  /* ---- 侧边栏近 7 天用量统计视图 (Usage Statistics with Recharts) ---- */
+  var usageStatsState = {
+    open: true,
+    metric: "tokens", // "tokens" | "requests"
+    chartType: "area", // "area" | "bar"
+    days: [],
+    totalTokens7d: 0,
+    totalRequests7d: 0,
+    avgDailyTokens: 0,
+    peakTokens: 0,
+    peakRequests: 0
+  };
+
+  function formatCompactMetric(n, isTokens) {
+    var v = Number(n || 0);
+    if (!isTokens) { return v + " 次"; }
+    if (v >= 1000000) { return (v / 1000000).toFixed(1) + "M"; }
+    if (v >= 1000) { return (v / 1000).toFixed(1) + "k"; }
+    return String(v);
+  }
+
+  function refreshUsageStats() {
+    return getJSON("/api/usage-stats").then(function (j) {
+      if (j && j.ok) {
+        usageStatsState.days = j.days || [];
+        usageStatsState.totalTokens7d = j.totalTokens7d || 0;
+        usageStatsState.totalRequests7d = j.totalRequests7d || 0;
+        usageStatsState.avgDailyTokens = j.avgDailyTokens || 0;
+        usageStatsState.peakTokens = j.peakTokens || 0;
+        usageStatsState.peakRequests = j.peakRequests || 0;
+        renderSidebarUsageView();
+        var inspChart = $("insp-recharts-root");
+        if (inspChart && typeof window.renderUsageStatisticsChart === "function") {
+          window.renderUsageStatisticsChart(inspChart, {
+            data: usageStatsState.days,
+            metric: usageStatsState.metric,
+            chartType: usageStatsState.chartType,
+            height: 152
+          });
+        }
+      }
+      return usageStatsState;
+    }).catch(function () {});
+  }
+
+  function renderSidebarUsageView() {
+    var view = $("rail-usage-view");
+    var btnNav = $("btn-usage-stats");
+    var badge = $("rail-usage-badge");
+    if (btnNav) {
+      btnNav.classList.toggle("active", !!usageStatsState.open);
+    }
+    if (badge && usageStatsState.totalTokens7d > 0) {
+      badge.textContent = formatCompactMetric(usageStatsState.totalTokens7d, true);
+    }
+    if (!view) { return; }
+    view.hidden = !usageStatsState.open;
+    if (!usageStatsState.open) { return; }
+
+    var isTokens = usageStatsState.metric !== "requests";
+    var btnTok = $("btn-usage-metric-tokens");
+    var btnReq = $("btn-usage-metric-reqs");
+    var btnType = $("btn-usage-chart-type");
+    if (btnTok) { btnTok.classList.toggle("active", isTokens); }
+    if (btnReq) { btnReq.classList.toggle("active", !isTokens); }
+    if (btnType) {
+      btnType.textContent = usageStatsState.chartType === "area" ? "柱状" : "趋势";
+    }
+
+    var kpiTotal = $("rail-kpi-total");
+    var kpiAvg = $("rail-kpi-avg");
+    var kpiPeak = $("rail-kpi-peak");
+    if (kpiTotal) {
+      kpiTotal.textContent = isTokens
+        ? formatCompactMetric(usageStatsState.totalTokens7d, true)
+        : usageStatsState.totalRequests7d + " 次";
+    }
+    if (kpiAvg) {
+      kpiAvg.textContent = isTokens
+        ? formatCompactMetric(usageStatsState.avgDailyTokens, true) + "/日"
+        : Math.round((usageStatsState.totalRequests7d || 0) / 7) + " 次/日";
+    }
+    if (kpiPeak) {
+      kpiPeak.textContent = isTokens
+        ? formatCompactMetric(usageStatsState.peakTokens, true)
+        : (usageStatsState.peakRequests || 0) + " 次";
+    }
+
+    var chartHost = $("rail-recharts-root");
+    if (chartHost && typeof window.renderUsageStatisticsChart === "function") {
+      window.renderUsageStatisticsChart(chartHost, {
+        data: usageStatsState.days,
+        metric: usageStatsState.metric,
+        chartType: usageStatsState.chartType,
+        height: 112
+      });
+    }
+  }
+
+  function renderUsageInspectorSection(root) {
+    var s = section("用量统计 (近 7 天 · Recharts)");
+    var headBar = el("div", "fb-head-bar");
+    var isTokens = usageStatsState.metric !== "requests";
+    headBar.appendChild(el("span", "empty-note", isTokens ? "近 7 日每日 Token 消耗" : "近 7 日每日请求频次"));
+    var actWrap = el("div", "fb-head-actions");
+    var mBtn = el("button", "model-action-btn", isTokens ? "切换为请求频次" : "切换为 Token 量");
+    mBtn.type = "button";
+    mBtn.addEventListener("click", function () {
+      usageStatsState.metric = isTokens ? "requests" : "tokens";
+      renderSidebarUsageView();
+      renderInspector();
+    });
+    actWrap.appendChild(mBtn);
+    headBar.appendChild(actWrap);
+    s.body.appendChild(headBar);
+
+    var chartBox = el("div", "rail-recharts-host");
+    chartBox.id = "insp-recharts-root";
+    s.body.appendChild(chartBox);
+
+    root.appendChild(s.sec);
+    if (typeof window.renderUsageStatisticsChart === "function" && usageStatsState.days.length) {
+      setTimeout(function () {
+        window.renderUsageStatisticsChart(chartBox, {
+          data: usageStatsState.days,
+          metric: usageStatsState.metric,
+          chartType: usageStatsState.chartType,
+          height: 152
+        });
+      }, 0);
+    }
+  }
+
   function initClaudeFeatures() {
     try {
       var savedStyle = localStorage.getItem(LS_STYLE);
@@ -4084,11 +6872,52 @@
       if (savedArchive) { S.archivePolicy = savedArchive; }
       var savedThinking = localStorage.getItem(LS_THINKING);
       if (savedThinking === "1") { S.thinking = true; }
+      var savedWebSearch = localStorage.getItem(LS_WEB_SEARCH);
+      if (savedWebSearch === "1") { S.webSearch = true; }
     } catch (e) {}
     renderStyleButton();
     renderThinkingButton();
+    renderWebSearchButton();
     renderArchivePolicyButton();
     refreshProjectKnowledge();
+    refreshPromptLibrary();
+    refreshUsageStats();
+
+    var btnUsageNav = $("btn-usage-stats");
+    if (btnUsageNav) {
+      btnUsageNav.addEventListener("click", function () {
+        usageStatsState.open = !usageStatsState.open;
+        renderSidebarUsageView();
+        if (usageStatsState.open) {
+          var v = $("rail-usage-view");
+          if (v && v.scrollIntoView) { v.scrollIntoView({ behavior: "smooth", block: "nearest" }); }
+        }
+      });
+    }
+    var btnMetricTok = $("btn-usage-metric-tokens");
+    var btnMetricReq = $("btn-usage-metric-reqs");
+    var btnChartType = $("btn-usage-chart-type");
+    if (btnMetricTok) {
+      btnMetricTok.addEventListener("click", function () {
+        usageStatsState.metric = "tokens";
+        renderSidebarUsageView();
+        if ($("app") && $("app").classList.contains("insp-open") && S.inspTab === "info") { renderInspector(); }
+      });
+    }
+    if (btnMetricReq) {
+      btnMetricReq.addEventListener("click", function () {
+        usageStatsState.metric = "requests";
+        renderSidebarUsageView();
+        if ($("app") && $("app").classList.contains("insp-open") && S.inspTab === "info") { renderInspector(); }
+      });
+    }
+    if (btnChartType) {
+      btnChartType.addEventListener("click", function () {
+        usageStatsState.chartType = usageStatsState.chartType === "area" ? "bar" : "area";
+        renderSidebarUsageView();
+        if ($("app") && $("app").classList.contains("insp-open") && S.inspTab === "info") { renderInspector(); }
+      });
+    }
 
     var btnThinking = $("btn-thinking");
     if (btnThinking) {
@@ -4098,10 +6927,57 @@
       });
     }
 
+    var btnWebSearch = $("btn-web-search");
+    if (btnWebSearch) {
+      btnWebSearch.addEventListener("click", function (e) {
+        e.stopPropagation();
+        toggleWebSearchMode();
+      });
+    }
+
+    var btnExportChat = $("btn-export-chat");
+    var exportMenu = $("export-menu");
+    if (btnExportChat && exportMenu) {
+      btnExportChat.addEventListener("click", function (e) {
+        e.stopPropagation();
+        exportMenu.hidden = !exportMenu.hidden;
+      });
+      exportMenu.addEventListener("click", function (e) {
+        var opt = e.target && e.target.closest ? e.target.closest("[data-export-fmt]") : null;
+        if (!opt) { return; }
+        e.stopPropagation();
+        exportMenu.hidden = true;
+        exportCurrentConversation(opt.getAttribute("data-export-fmt") || "md");
+      });
+      document.addEventListener("click", function (e) {
+        if (!exportMenu.hidden && !exportMenu.contains(e.target) && e.target !== btnExportChat) {
+          exportMenu.hidden = true;
+        }
+      });
+    }
+
     var btnProject = $("btn-project");
     if (btnProject) {
       btnProject.addEventListener("click", function () {
-        openProjectModal();
+        openProjectModal("files");
+      });
+    }
+    var btnPromptProject = $("btn-prompt-project");
+    if (btnPromptProject) {
+      btnPromptProject.addEventListener("click", function () {
+        openProjectModal("files");
+      });
+    }
+    var btnPromptLibRail = $("btn-prompt-library");
+    if (btnPromptLibRail) {
+      btnPromptLibRail.addEventListener("click", function () {
+        openPromptLibraryModal();
+      });
+    }
+    var btnPromptLibBar = $("btn-prompt-lib");
+    if (btnPromptLibBar) {
+      btnPromptLibBar.addEventListener("click", function () {
+        openPromptLibraryModal();
       });
     }
 
@@ -4186,6 +7062,7 @@
     }
     var btnPrev = $("btn-art-preview");
     var btnCode = $("btn-art-code");
+    var btnDiff = $("btn-art-diff");
     var btnEdit = $("btn-art-edit");
     if (btnPrev) {
       btnPrev.addEventListener("click", function () {
@@ -4199,12 +7076,68 @@
         renderArtifactStage();
       });
     }
+    if (btnDiff) {
+      btnDiff.addEventListener("click", function () {
+        S.artifactView = "diff";
+        renderArtifactStage();
+      });
+    }
     if (btnEdit) {
       btnEdit.addEventListener("click", function () {
         S.artifactView = "edit";
         renderArtifactStage();
       });
     }
+
+    var btnArtApplyFile = $("btn-art-apply-file");
+    var artApplyBar = $("artifact-apply-bar");
+    var artApplyPath = $("artifact-apply-path");
+    var btnArtApplyConfirm = $("btn-art-apply-confirm");
+    var btnArtApplyCancel = $("btn-art-apply-cancel");
+    if (btnArtApplyFile && artApplyBar) {
+      btnArtApplyFile.addEventListener("click", function () {
+        var active = S.artifacts.filter(function (a) { return a.id === S.activeArtifactId; })[0] || S.artifacts[S.artifacts.length - 1];
+        if (!active) {
+          toast("当前没有可写入工作区的 Artifact", "warn");
+          return;
+        }
+        artApplyBar.hidden = !artApplyBar.hidden;
+        if (!artApplyBar.hidden && artApplyPath) {
+          if (!artApplyPath.value.trim()) {
+            artApplyPath.value = inferArtifactDefaultPath(active);
+          }
+          artApplyPath.focus();
+          artApplyPath.select();
+        }
+      });
+    }
+    if (btnArtApplyCancel && artApplyBar) {
+      btnArtApplyCancel.addEventListener("click", function () {
+        artApplyBar.hidden = true;
+      });
+    }
+    if (btnArtApplyConfirm && artApplyBar && artApplyPath) {
+      btnArtApplyConfirm.addEventListener("click", function () {
+        var active = S.artifacts.filter(function (a) { return a.id === S.activeArtifactId; })[0] || S.artifacts[S.artifacts.length - 1];
+        var targetRel = (artApplyPath.value || "").trim();
+        if (!active || !targetRel) {
+          toast("请填写要写入的相对文件路径", "warn");
+          return;
+        }
+        postJSON("/api/fs/write", {
+          path: targetRel,
+          content: active.code || ""
+        }).then(function (res) {
+          if (res && res.ok) {
+            artApplyBar.hidden = true;
+            toast("已将 Artifact 写入工作区文件：" + res.path + " (" + res.lines + " 行)", "ok");
+          }
+        }).catch(function (e) {
+          toast("写入文件失败：" + e.message, "err");
+        });
+      });
+    }
+
     var btnReloadArt = $("btn-art-reload");
     if (btnReloadArt) {
       btnReloadArt.addEventListener("click", function () {

@@ -7,17 +7,34 @@
  * `node bin/myclaude.js --gui` keeps reading the files from disk, so this step
  * only matters for the standalone binary.
  */
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
+import * as esbuild from "esbuild";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const ASSETS = join(root, "src", "ui", "assets.js");
+
+const chartEntry = join(root, "src", "ui", "web", "js", "usage-chart.jsx");
+const chartOut = join(root, "src", "ui", "web", "js", "usage-chart.js");
+if (existsSync(chartEntry)) {
+  esbuild.buildSync({
+    entryPoints: [chartEntry],
+    outfile: chartOut,
+    bundle: true,
+    format: "iife",
+    platform: "browser",
+    target: ["es2020"],
+    minify: true,
+    define: { "process.env.NODE_ENV": '"production"' }
+  });
+}
 
 const FILES = {
   page: "src/ui/web/page.html",
   styles: "src/ui/web/css/styles.css",
   markdown: "src/ui/web/js/markdown.js",
+  usageChart: "src/ui/web/js/usage-chart.js",
   app: "src/ui/web/js/app.js",
 };
 
