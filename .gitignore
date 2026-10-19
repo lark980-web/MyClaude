@@ -1,8 +1,9 @@
 # 依赖
 node_modules/
 
-# 构建产物（可用 npm run build 重新生成，82MB）
+# 构建产物（可用 node scripts/bundle-gui.mjs 重新生成）
 dist/
+src/ui/web/js/usage-chart.js
 
 # 本地配置与运行时数据
 *.log
