@@ -2333,7 +2333,8 @@
 
   /** 短标签用于分段器与顶栏；完整说明见设置页。 */
   function modeName(mode) {
-    var names = { ask: "询问", acceptEdits: "接受编辑", auto: "自动", dontAsk: "不再提问", plan: "计划", bypassPermissions: "全部放行" };
+    var names = { ask: "询问", acceptEdits: "接受编辑", auto: "自动", dontAsk: "不再提问", plan: "计划", bypassPermissions: "全部放行" ,
+      fullAccess: "完全放行" };
     return names[mode] || "询问";
   }
 
@@ -3764,7 +3765,8 @@
         { id: "auto", zh: "自动", desc: "不再询问任何工具" },
         { id: "dontAsk", zh: "不再提问", desc: "需要确认的一律拒绝" },
         { id: "plan", zh: "计划", desc: "只读，先给方案" },
-        { id: "bypassPermissions", zh: "全部放行", desc: "跳过确认，慎用" }
+        { id: "bypassPermissions", zh: "全部放行", desc: "跳过确认，慎用" },
+        { id: "fullAccess", zh: "完全放行", desc: "跳过确认与 deny 规则，完全按指令执行" },
       ]).map(function (o) { return [o.id, o.zh + "：" + o.desc]; })).forEach(function (o) {
         var opt = document.createElement("option");
         opt.value = o[0];

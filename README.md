@@ -183,6 +183,7 @@ node bin/myclaude.js
 -v, --version     版本
 -p, --print TEXT  一次性执行后退出
 --auto, --yes     自动批准所有工具调用
+--full-access     完全放行（跳过确认与 deny 规则）
 --plan            只读模式，拒绝所有写操作
 --gui, --web      启动 Web GUI（默认端口 7788）
 --port N          指定 GUI 端口
@@ -386,7 +387,7 @@ MYCLAUDE_PROVIDER
 /model gpt-4o
 ```
 
-## 权限模式（6 种）
+## 权限模式（7 种）
 
 | 模式 | 别名 | 行为 |
 |---|---|---|
@@ -396,6 +397,7 @@ MYCLAUDE_PROVIDER
 | `dontAsk` | `dont-ask` | 需要确认的一律**自动拒绝**（不再打断你） |
 | `plan` | | 只读：探索放行，改动拒绝；`ExitPlanMode` 审批后自动切回 `ask` |
 | `bypassPermissions` | `bypass`、`yolo` | 跳过确认，慎用 |
+| `fullAccess` | `full`、`god`、`root` | 跳过确认**与 deny 规则**，完全按指令执行 |
 
 **任何模式下的固定规则**：
 - `deny` 规则优先级最高，`bypassPermissions` 也拦不住它

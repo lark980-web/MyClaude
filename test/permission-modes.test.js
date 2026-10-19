@@ -1,9 +1,10 @@
 /**
- * Permission mode tests: the six modes and their decision tables.
+ * Permission mode tests: the permission modes and their decision tables.
  */
 import test from "node:test";
 import assert from "node:assert/strict";
 import { Agent } from "../src/agent/agent.js";
+import { PermissionEngine } from "../src/agent/permissions.js";
 import { normalizeMode, isMode, modeInfo, isCommonFileCommand, isDestructiveCommand, MODE_IDS } from "../src/agent/modes.js";
 
 const provider = { baseUrl: "http://x/v1", apiKey: "k", model: "m", config: {}, async streamChat() { return { text: "ok", toolCalls: [] }; } };
@@ -21,8 +22,8 @@ function makeAgent(permissionMode) {
   return { agent, asked };
 }
 
-test("the registry exposes all six modes", () => {
-  assert.deepEqual(MODE_IDS, ["ask", "acceptEdits", "auto", "dontAsk", "plan", "bypassPermissions"]);
+test("the registry exposes every mode", () => {
+  assert.deepEqual(MODE_IDS, ["ask", "acceptEdits", "auto", "dontAsk", "plan", "bypassPermissions", "fullAccess"]);
   assert.equal(isMode("plan"), true);
   assert.equal(isMode("nope"), false);
 });
@@ -122,4 +123,44 @@ test("isDestructiveCommand flags removal and force shapes", () => {
   assert.equal(isDestructiveCommand("git clean -fdx"), true);
   assert.equal(isDestructiveCommand("ls -la"), false);
   assert.equal(isDestructiveCommand("npm test"), false);
+});
+
+test("fullAccess ignores deny rules that bypassPermissions still honours", async () => {
+  const provider = { async streamChat() { return { text: "", toolCalls: [] }; } };
+  const mk = (mode, permissions) => {
+    const config = { provider: "openai", baseUrl: "http://x/v1", apiKey: "k", model: "m",
+      maxTokens: 100, temperature: 0, permissionMode: mode, maxTurns: 4,
+      contextWindow: 100000, compactThreshold: 0.8, vision: true };
+    const log = { warn: [], info: [] };
+    const ui = {
+      log, streamText() {}, endStream() {}, success() {}, error() {},
+      info: (m) => log.info.push(String(m)),
+      warn: (m) => log.warn.push(String(m)),
+      toolStart() {}, toolEnd() {}, confirmTool: async () => true,
+    };
+    const agent = new Agent({ provider, config, ui, tools: [] });
+    agent.config.permissions = permissions;
+    agent.permissions = new PermissionEngine(permissions);
+    return agent;
+  };
+  const rules = { deny: ["Bash(rm -rf:*)", "Read(.env)"] };
+
+  const bypass = mk("bypassPermissions", rules);
+  assert.equal(await bypass.askPermission("Bash", { command: "rm -rf /" }), false,
+    "bypassPermissions must still respect the deny list");
+  assert.equal(await bypass.askPermission("Read", { file_path: ".env" }), false);
+
+  const full = mk("fullAccess", rules);
+  assert.equal(await full.askPermission("Bash", { command: "rm -rf /" }), true,
+    "fullAccess is the explicit override and skips the rule engine");
+  assert.equal(await full.askPermission("Read", { file_path: ".env" }), true);
+  assert.equal(await full.askPermission("Write", { file_path: "anything" }), true);
+});
+
+test("fullAccess is accepted by setMode and by every alias", () => {
+  const { agent } = makeAgent("ask");
+  assert.equal(agent.setMode("full"), "fullAccess");
+  assert.equal(agent.setMode("full-access"), "fullAccess");
+  assert.equal(agent.setMode("god"), "fullAccess");
+  assert.equal(normalizeMode("fullaccess"), "fullAccess");
 });

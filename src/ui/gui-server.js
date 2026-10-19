@@ -26,7 +26,7 @@ import { loadCommands, findCommand, expandCommand } from "../commands.js";
 import { normalizeMode, PERMISSION_MODES } from "../agent/modes.js";
 import { vendorFromUrl, endpointLabel } from "../vendors.js";
 
-const VERSION = "0.16.0";
+const VERSION = "0.17.0";
 const MAX_FILE_BYTES = 1024 * 1024;
 
 /** Paths the file browser must never expose. */

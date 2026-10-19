@@ -29,6 +29,7 @@ Usage:
 
 Options:
   --auto, --yes            auto-approve every tool call
+--full-access            full access: skip prompts and deny rules
   --plan                   read-only; deny all tool calls
   --gui [--port N]         start the local web UI (default port 7788)
   --no-open                with --gui, do not open a browser
@@ -49,7 +50,7 @@ Commands (interactive):
   /provider [name]   show or set provider
   /base [url]        show or set base URL
   /key [key]         show or set API key
-  /mode [ask|auto|plan]  permission mode
+  /mode [模式]          切换权限模式（ask/acceptEdits/auto/dontAsk/plan/bypassPermissions/fullAccess）
   /attach <path...>  attach images/text files to the next message
   /attachments       list pending attachments
   /detach            drop pending attachments
@@ -73,6 +74,7 @@ function parseArgs(argv) {
     noOpen: argv.includes("--no-open"),
     port: Number(process.env.PORT) || 7788,
     auto: argv.includes("--auto") || argv.includes("--yes"),
+    fullAccess: argv.includes("--full-access") || argv.includes("--god"),
     plan: argv.includes("--plan"),
     oneShot: null,
     help: argv.includes("--help") || argv.includes("-h"),
@@ -505,7 +507,7 @@ async function main() {
     return;
   }
   if (opts.version) {
-    console.log("myclaude 0.16.0");
+    console.log("myclaude 0.17.0");
     return;
   }
   if (opts.configPath) {
@@ -516,6 +518,9 @@ async function main() {
   const config = loadConfig();
   if (opts.auto) config.permissionMode = "auto";
   if (opts.plan) config.permissionMode = "plan";
+  // Checked last so it wins over --auto when both are given: it is the
+  // deliberately broadest mode and silently ignoring it would be confusing.
+  if (opts.fullAccess) config.permissionMode = "fullAccess";
 
   const provider = createProvider(config);
 

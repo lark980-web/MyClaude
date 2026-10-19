@@ -216,6 +216,12 @@ export class Agent {
   async askPermission(toolName, args) {
     const mode = this.config.permissionMode;
 
+    // fullAccess short-circuits before the rule engine: it is the explicit "run
+    // whatever the model asks for" choice, so a stale deny rule must not silently
+    // override what the user just selected. bypassPermissions keeps the rules —
+    // that is the difference between the two.
+    if (mode === "fullAccess") return true;
+
     const verdict = this.permissions.evaluate(toolName, args);
     if (verdict === "deny") {
       this.ui.warn(`denied by permission rule: ${toolName}`);

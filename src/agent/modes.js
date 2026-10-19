@@ -13,6 +13,7 @@ export const PERMISSION_MODES = [
   { id: "dontAsk", label: "don't ask", zh: "不再提问", desc: "需要确认的一律拒绝" },
   { id: "plan", label: "plan mode", zh: "计划", desc: "只读：探索放行，改动拒绝" },
   { id: "bypassPermissions", label: "bypass permissions", zh: "全部放行", desc: "跳过确认（deny 规则仍然生效）" },
+  { id: "fullAccess", label: "full access", zh: "完全放行", desc: "跳过确认与 deny 规则，完全按指令执行" },
 ];
 
 export const MODE_IDS = PERMISSION_MODES.map((m) => m.id);
@@ -30,7 +31,12 @@ const ALIASES = {
   "bypass-permissions": "bypassPermissions",
   bypasspermissions: "bypassPermissions",
   bypass: "bypassPermissions",
-  yolo: "bypassPermissions"
+  yolo: "bypassPermissions",
+  "full-access": "fullAccess",
+  fullaccess: "fullAccess",
+  full: "fullAccess",
+  root: "fullAccess",
+  god: "fullAccess"
 };
 
 /** True when the value names a real mode. */

@@ -11,6 +11,27 @@
 ### Added
 - `CHANGELOG.md`：建立变更记录制度。
 
+## [0.17.0] - 2026-10-19
+
+新增 fullAccess 权限模式：完全按指令执行。
+
+### Added
+- 第 7 种权限模式 `fullAccess`（`full` / `full-access` / `god` / `root` 均为别名）
+  - 跳过所有工具调用确认
+  - **同时跳过 deny 规则**——这是它与 `bypassPermissions` 的唯一区别
+  - 适用场景：自有软件、可信环境、批量无人值守执行
+- CLI 参数 `--full-access`（别名 `--god`），优先级高于 `--auto`
+- `/mode` 帮助文本列出全部 7 种模式
+- 设置页下拉与前端模式名映射同步支持
+- `test/permission-modes.test.js` 新增 2 项：验证 fullAccess 确实无视 deny 规则、
+  而 bypassPermissions 仍然遵守（两者差异有测试锁定）
+
+### Changed
+- 模式总数 6 → 7；`setMode()` 报错信息随之更新
+
+### Verified
+- 178 项测试全部通过
+
 ## [0.16.0] - 2026-10-19
 
 供应商按 baseUrl 判定，模型菜单加搜索与滚动。
