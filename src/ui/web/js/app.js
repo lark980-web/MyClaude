@@ -1026,7 +1026,9 @@
     var c = S.config || {};
     var s = section("会话");
     var dl = el("dl", "kv");
-    kv(dl, "模型", c.model || "-", true);
+    var ep = c.endpoint || {};
+    var modelVendor = ep.vendor || vendorFromUrl(c.baseUrl, c.model);
+    kv(dl, "模型", c.model || "-", true, modelVendor);
     kv(dl, "模式", modeName(c.permissionMode || "ask"));
     kv(dl, "轮次", String(S.stats.turns || 0));
     kv(dl, "消息", String(S.stats.messages || 0));
@@ -1065,16 +1067,24 @@
       s.body.appendChild(now);
     }
 
-    // 按供应商分栏展示备用池。
-    groupByVendor(pool.map(function (f) { return f.model; })).forEach(function (g) {
+    // 按 baseUrl 判定的供应商分栏展示备用池。
+    var fbGroups = {};
+    pool.forEach(function (f) {
+      var v = f.vendor || vendorFromUrl(f.baseUrl || c.baseUrl, f.model);
+      if (!fbGroups[v]) { fbGroups[v] = []; }
+      fbGroups[v].push(f);
+    });
+    Object.keys(fbGroups).forEach(function (v) {
       var gwrap = el("div", "model-group");
-      gwrap.appendChild(el("div", "model-group-head", g.zh));
+      var ghead = el("div", "model-group-head", v + " · " + fbGroups[v].length);
+      gwrap.appendChild(ghead);
       var list = el("div", "model-group-list");
-      g.models.forEach(function (name) {
+      fbGroups[v].forEach(function (f) {
         var row = el("div", "mcp-row");
-        row.appendChild(el("b", null, name));
+        var b = el("b", null, f.model);
+        row.appendChild(b);
         var right = el("span", "mcp-right");
-        var probe = fallbackProbe && fallbackProbe[name];
+        var probe = fallbackProbe && fallbackProbe[f.model];
         right.appendChild(el("span", "pill run", live ? "待命" : "未检测"));
         if (probe) {
           right.lastChild.textContent = probe.ok ? "可用 " + probe.ms + "ms" : "不可用";
@@ -1088,32 +1098,6 @@
       s.body.appendChild(gwrap);
     });
 
-    if (S.routing && S.routing.switches) {
-      var meta = [];
-      meta.push("已切换 " + S.routing.switches + " 次");
-      if (S.routing.switchedAt) { meta.push(relTime(S.routing.switchedAt)); }
-      s.body.appendChild(el("div", "empty-note", meta.join(" · ")));
-    }
-    if (S.routing && S.routing.lastError) {
-      var err = el("div", "empty-note", "上次失败：" + S.routing.lastError);
-      err.style.color = "var(--crit)";
-      s.body.appendChild(err);
-    }
-
-    var probeBtn = el("button", "btn ghost", fallbackProbe ? "重新检测" : "检测可用性");
-    probeBtn.type = "button";
-    probeBtn.addEventListener("click", function () {
-      probeBtn.disabled = true;
-      probeBtn.textContent = "检测中…";
-      postJSON("/api/fallbacks/test", {}).then(function (j) {
-        fallbackProbe = {};
-        (j.results || []).forEach(function (r2) { fallbackProbe[r2.model] = r2; });
-        renderInspector();
-        var bad = (j.results || []).filter(function (r2) { return !r2.ok; }).length;
-        toast(bad ? bad + " 个备用模型不可用" : "全部备用模型可用", bad ? "warn" : "ok");
-      }).catch(function (e) { toast("检测失败：" + e.message, "err"); });
-    });
-    s.body.appendChild(probeBtn);
     root.appendChild(s.sec);
   }
 
@@ -1223,10 +1207,22 @@
     });
   }
 
-  function kv(dl, k, v, mono) {
+  /**
+   * One key/value row in an inspector section.
+   *
+   * @param {HTMLElement} dl
+   * @param {string} k label
+   * @param {string} v value
+   * @param {boolean} [mono] render the value in the mono font
+   * @param {string} [suffix] dim trailing label, e.g. a vendor name
+   */
+  function kv(dl, k, v, mono, suffix) {
     var row = el("div", "kv-row");
     row.appendChild(el("dt", null, k));
-    row.appendChild(el("dd", mono ? "mono" : null, v));
+    var dd = el("dd", mono ? "mono" : null);
+    dd.appendChild(el("span", null, v));
+    if (suffix) { dd.appendChild(el("span", "kv-suffix", suffix)); }
+    row.appendChild(dd);
     dl.appendChild(row);
   }
 
@@ -1403,6 +1399,46 @@
    * 供应商信息只在名字里，所以这里集中做一次识别，
    * 避免每处展示各写一套判断。
    */
+  /** 与后端 src/vendors.js 同规则的 baseUrl → 供应商判定（前端兜底用）。 */
+  var HOST_VENDORS = [
+    [/(^|\.)api\.deepseek\.com/i, "DeepSeek"],
+    [/(^|\.)open\.bigmodel\.cn/i, "智谱"],
+    [/(^|\.)dashscope\.aliyuncs\.com/i, "阿里通义"],
+    [/(^|\.)api\.moonshot\.cn/i, "月之暗面"],
+    [/(^|\.)api\.baichuan-ai\.com/i, "百川"],
+    [/(^|\.)qianfan\.baidubce\.com/i, "百度"],
+    [/(^|\.)api\.anthropic\.com/i, "Anthropic"],
+    [/(^|\.)generativelanguage\.googleapis\.com/i, "Google"],
+    [/(^|\.)api\.mistral\.ai/i, "Mistral"],
+    [/(^|\.)api\.x\.ai/i, "xAI"],
+    [/(^|\.)integrate\.api\.nvidia\.com/i, "NVIDIA"],
+    [/(^|\.)openrouter\.ai/i, "OpenRouter"],
+    [/(^|\.)api\.openai\.com/i, "OpenAI"],
+    [/(^|\.)api\.groq\.com/i, "Groq"],
+    [/(^|\.)api\.together\.ai/i, "Together"],
+    [/(^|\.)api\.fireworks\.ai/i, "Fireworks"],
+    [/(^|\.)api\.siliconflow\.cn/i, "硅基流动"],
+    [/(^|\.)api\.minimax\.chat/i, "MiniMax"]
+  ];
+
+  function isLocalUrl(u) {
+    return /(^|\/\/)(127\.|0\.0\.0\.0|localhost|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/i.test(String(u || ""));
+  }
+
+  function vendorFromUrl(baseUrl, model) {
+    var url = String(baseUrl || "");
+    // 只在主机名上匹配，避免 baseUrl 尾部的路径（/v1 等）影响结果。
+    var host = (url.match(/^https?:\/\/([^/]+)/i) || [null, url])[1].replace(/:\d+$/, "");
+    for (var i = 0; i < HOST_VENDORS.length; i++) {
+      if (HOST_VENDORS[i][0].test(host)) { return HOST_VENDORS[i][1]; }
+    }
+    // 本地网关背后往往是多家供应商，先按模型名识别，识别不出才归网关本身。
+    var byName = vendorOf(model).zh;
+    if (byName !== "其他") { return byName; }
+    if (isLocalUrl(url)) { return "本地网关"; }
+    return byName;
+  }
+
   function vendorOf(name) {
     var s = String(name || "").trim();
     if (!s) { return { id: "other", zh: "其他" }; }
@@ -1699,16 +1735,24 @@
 
       function renderModelList() {
         clear(modelList);
-        // 按供应商分栏：模型名相似看不出差别，供应商才是选择依据。
-        groupByVendor(models.slice()).forEach(function (g) {
+        // 按 baseUrl 判定的供应商分栏（后端提供 vendor 字段），模型名只作后备。
+        var groups = {};
+        models.forEach(function (m) {
+          var v = m.vendor || vendorFromUrl(m.baseUrl, m.id);
+          if (!groups[v]) { groups[v] = []; }
+          groups[v].push(m);
+        });
+        Object.keys(groups).forEach(function (v) {
           var gwrap = el("div", "model-group");
-          gwrap.appendChild(el("div", "model-group-head", g.zh));
+          gwrap.appendChild(el("div", "model-group-head", v + " · " + groups[v].length));
           var list = el("div", "model-group-list");
-          g.models.forEach(function (name) {
+          groups[v].forEach(function (m) {
+            var name = m.id;
             var b = el("button", "opt");
             b.type = "button";
             b.appendChild(el("span", "opt-mark", "\u2713"));
             b.appendChild(el("span", "opt-label", name));
+            if (name !== c.model) { b.appendChild(el("span", "model-opt-vendor", v)); }
             if (name === c.model) { b.classList.add("picked"); }
             b.addEventListener("click", function () {
               modelInput.value = name;
@@ -2386,6 +2430,9 @@
     }
   }
 
+  /** 模型菜单的搜索关键词。 */
+  var modelQuery = "";
+
   function drawModelMenu() {
     var menu = $("model-menu");
     if (!menu) { return; }
@@ -2402,32 +2449,83 @@
       return;
     }
 
-    // 按供应商分栏，让"这个模型来自哪家"一眼可见。
-    groupByVendor(modelCache.slice()).forEach(function (g) {
-      var gwrap = el("div", "model-group");
-      gwrap.appendChild(el("div", "model-group-head", g.zh));
-      var list = el("div", "model-group-list");
-      g.models.forEach(function (name) {
-        var b = el("button", "model-opt" + (name === cur ? " on" : ""));
-        b.type = "button";
-        b.appendChild(el("span", "model-opt-name", name));
-        if (name === cur) { b.appendChild(el("span", "model-opt-check", "\u2713")); }
-        b.addEventListener("click", function () {
-          menu.hidden = true;
-          if (name === cur) { return; }
-          postJSON("/api/config", { model: name }).then(function (j) {
-            if (S.config) { S.config.model = j.model || name; }
-            renderTopMeta();
-            renderInspector();
-            toast("已切换到 " + (j.model || name), "ok");
-          }).catch(function (e) { toast("切换失败：" + e.message, "err"); });
-        });
-        list.appendChild(b);
-      });
-      gwrap.appendChild(list);
-      menu.appendChild(gwrap);
+    // 搜索框：模型多的时候靠翻页找不到，直接过滤最快。
+    var search = el("input", "model-search");
+    search.type = "text";
+    search.placeholder = "搜索模型…";
+    search.value = modelQuery;
+    search.addEventListener("input", function () {
+      modelQuery = search.value;
+      drawModelMenu();
+      var again = menu.querySelector(".model-search");
+      if (again) { again.focus(); again.setSelectionRange(again.value.length, again.value.length); }
     });
+    // 阻止按键冒泡到全局快捷键。
+    search.addEventListener("keydown", function (e) { e.stopPropagation(); });
+    menu.appendChild(search);
+
+    // 结构化条目：{ id, baseUrl, vendor }；兼容旧数组。
+    var entries = modelCache.map(function (m) {
+      return typeof m === "string" ? { id: m, baseUrl: (S.config && S.config.baseUrl) || "", vendor: "" } : m;
+    });
+    var q = modelQuery.trim().toLowerCase();
+    if (q) {
+      entries = entries.filter(function (m) {
+        return String(m.id).toLowerCase().indexOf(q) >= 0 || String(m.vendor).toLowerCase().indexOf(q) >= 0;
+      });
+    }
+
+    if (!entries.length) {
+      menu.appendChild(el("div", "empty-note", "没有匹配「" + modelQuery + "」的模型"));
+    } else {
+      // 按供应商分栏，供应商来自 baseUrl（后端判定），模型名只作后备。
+      var groups = {};
+      entries.forEach(function (m) {
+        var v = m.vendor || vendorFromUrl(m.baseUrl, m.id);
+        if (!groups[v]) { groups[v] = []; }
+        groups[v].push(m);
+      });
+      var keys = Object.keys(groups);
+      var order = (S.config && S.config.endpoint && S.config.endpoint.vendor) || "";
+      keys.sort(function (a, b) {
+        if (a === order) { return -1; }
+        if (b === order) { return 1; }
+        return String(a).localeCompare(String(b), "zh");
+      });
+
+      // 滚动容器：模型多的时候不会溢出到屏幕外。
+      var box = el("div", "model-menu-list");
+      keys.forEach(function (v) {
+        var gwrap = el("div", "model-group");
+        gwrap.appendChild(el("div", "model-group-head", v + " · " + groups[v].length));
+        var list = el("div", "model-group-list");
+        groups[v].forEach(function (m) {
+          var name = m.id;
+          var b = el("button", "model-opt" + (name === cur ? " on" : ""));
+          b.type = "button";
+          b.appendChild(el("span", "model-opt-name", name));
+          if (name !== cur) { b.appendChild(el("span", "model-opt-vendor", v)); }
+          if (name === cur) { b.appendChild(el("span", "model-opt-check", "\u2713")); }
+          b.addEventListener("click", function () {
+            menu.hidden = true;
+            modelQuery = "";
+            if (name === cur) { return; }
+            postJSON("/api/config", { model: name }).then(function (j) {
+              if (S.config) { S.config.model = j.model || name; }
+              renderTopMeta();
+              renderInspector();
+              toast("已切换到 " + (j.model || name), "ok");
+            }).catch(function (e) { toast("切换失败：" + e.message, "err"); });
+          });
+          list.appendChild(b);
+        });
+        gwrap.appendChild(list);
+        box.appendChild(gwrap);
+      });
+      menu.appendChild(box);
+    }
   }
+
 
 
   var cmdIndex = 0;

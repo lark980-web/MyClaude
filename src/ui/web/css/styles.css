@@ -1563,3 +1563,54 @@ body.no-motion *, body.no-motion *::before, body.no-motion *::after { animation:
 .model-group-list { display: flex; flex-direction: column; gap: 2px; }
 .model-group .mcp-row { margin-left: 4px; }
 .model-group .model-opt { margin-left: 4px; }
+
+/* 模型菜单：可滚动的容器，模型多时不会溢出屏幕 */
+#model-menu .model-menu-list, .model-menu-list {
+  max-height: min(52vh, 420px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-strong) transparent;
+}
+.model-menu-list::-webkit-scrollbar { width: 8px; }
+.model-menu-list::-webkit-scrollbar-thumb { border-radius: 8px; background: var(--line-strong); }
+.model-menu-list::-webkit-scrollbar-track { background: transparent; }
+
+/* 模型菜单搜索框 */
+.model-search {
+  width: calc(100% - 16px);
+  margin: 4px 8px 6px;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-3);
+  color: var(--fg);
+  font: 400 12.5px/1.4 var(--sans);
+  outline: none;
+  transition: border-color 160ms var(--ease), background 160ms var(--ease);
+}
+.model-search::placeholder { color: var(--fg-4); }
+.model-search:focus { border-color: var(--accent); background: var(--bg); }
+
+/* 模型项右侧的供应商标签（淡色，参考模型选择器的供应商后缀） */
+.model-opt-vendor {
+  margin-left: auto;
+  padding-left: 10px;
+  color: var(--fg-4);
+  font: 400 10.5px/1 var(--sans);
+  white-space: nowrap;
+  opacity: 0.85;
+}
+.model-group .opt .model-opt-vendor {
+  flex: 1;
+  text-align: right;
+}
+
+/* 键值行后缀（如供应商名），淡色 */
+.kv-suffix {
+  margin-left: 7px;
+  color: var(--fg-4);
+  font-size: 11px;
+  font-weight: 400;
+  white-space: nowrap;
+}

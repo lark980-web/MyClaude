@@ -22,6 +22,7 @@ import {
 import { loadGuiAssets } from "./assets.js";
 import { loadCommands, findCommand, expandCommand } from "../commands.js";
 import { normalizeMode, PERMISSION_MODES } from "../agent/modes.js";
+import { vendorFromUrl, endpointLabel } from "../vendors.js";
 
 const VERSION = "0.15.0";
 const MAX_FILE_BYTES = 1024 * 1024;
@@ -323,8 +324,14 @@ export async function startGui({ config: initialConfig, port = 7788, open = true
           vision: config.vision !== false,
           cwd,
           permissions: config.permissions || {},
-          fallbacks: (config.fallbacks || []).map((f) => ({ name: f.name || f.model, model: f.model })),
+          fallbacks: (config.fallbacks || []).map((f) => ({
+            name: f.name || f.model,
+            model: f.model,
+            baseUrl: f.baseUrl || config.baseUrl,
+            vendor: vendorFromUrl(f.baseUrl || config.baseUrl, f.model)
+          })),
           modes: PERMISSION_MODES.map((m) => ({ id: m.id, zh: m.zh, desc: m.desc })),
+          endpoint: { vendor: vendorFromUrl(config.baseUrl, config.model), label: endpointLabel(config.baseUrl), baseUrl: config.baseUrl },
           routing: agent ? agent.routingStatus?.() : null,
           tools: toolList(),
           ...statsOf(agent)
@@ -392,10 +399,17 @@ export async function startGui({ config: initialConfig, port = 7788, open = true
         return;
       }
 
-      /* ---- 模型列表（供设置页选择）---- */
+      /* ---- 模型列表（供设置页选择）----
+       * 返回结构化条目：模型名、来源 baseUrl、按 baseUrl 判定的供应商。
+       * 供应商以接口地址为准，模型名只作后备信号。 */
       if (path === "/api/models" && req.method === "GET") {
         try {
-          const models = await provider.listModels();
+          const ids = await provider.listModels();
+          const models = ids.map((id) => ({
+            id,
+            baseUrl: provider.baseUrl,
+            vendor: vendorFromUrl(provider.baseUrl, id)
+          }));
           sendJson(res, 200, { ok: true, models });
         } catch (e) {
           sendJson(res, 200, { ok: false, models: [], error: String(e?.message || e) });
@@ -408,7 +422,7 @@ export async function startGui({ config: initialConfig, port = 7788, open = true
         const results = [];
         for (const fb of config.fallbacks || []) {
           const started = Date.now();
-          let state = { name: fb.name || fb.model, model: fb.model, ok: false, ms: 0, error: null };
+          let state = { name: fb.name || fb.model, model: fb.model, vendor: vendorFromUrl(fb.baseUrl, fb.model), ok: false, ms: 0, error: null };
           try {
             const probe = createProvider({
               ...config,
