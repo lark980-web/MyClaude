@@ -1734,8 +1734,13 @@ export async function startGui({ config: initialConfig, port = 7788, open = true
       if (path === "/api/reset" && req.method === "POST") {
         const body = await readJson(req);
         const key = keyOf(body);
-        savers.get(key)?.dispose?.();
-        savers.delete(key);
+        // Drop the cached saver without writing: dispose() flushed once, which
+        // created a duplicate file every time the user started a new chat.
+        const old = savers.get(key);
+        if (old) {
+          try { old.discard?.(); } catch {}
+          savers.delete(key);
+        }
         const agent = sessions.get(key);
         if (agent) {
           agent.messages = [];

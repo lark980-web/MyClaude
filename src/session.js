@@ -44,6 +44,11 @@ export function newSessionId() {
  * @param {object} [meta] extra fields such as cwd, model, turnCount
  */
 export function saveSession(id, messages, meta = {}) {
+  // A session with no messages is not worth a file. New-chat used to write one
+  // per reset, which is where the pile of 2-message duplicates came from.
+  if (!Array.isArray(messages) || messages.length === 0) {
+    return null;
+  }
   ensureSessionsDir();
   const file = join(SESSIONS_DIR, `${id}.json`);
   const tmp = `${file}.${process.pid}.tmp`;
@@ -211,6 +216,19 @@ export function createAutoSaver({ id, getMessages, getMeta, intervalMs = DEFAULT
     return write();
   }
 
+  /**
+   * Stop the saver without writing.
+   *
+   * dispose() flushes first, which is right when the process is shutting down and
+   * wrong when the conversation is being discarded: that flush is what left a
+   * duplicate file behind on every "new chat".
+   */
+  function discard() {
+    disposed = true;
+    clearTimer();
+    return lastFile;
+  }
+
   function dispose() {
     const file = write();
     disposed = true;
@@ -241,6 +259,7 @@ export function createAutoSaver({ id, getMessages, getMeta, intervalMs = DEFAULT
     save,
     flush,
     dispose,
+    discard,
     rotate,
   };
 }
