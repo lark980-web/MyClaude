@@ -115,6 +115,20 @@ test("Grep returns empty marker when no match", async () => {
   rmSync(dir, { recursive: true, force: true });
 });
 
+test("Grep output format is identical with and without ripgrep", async () => {
+  // The bundled ripgrep writes "path:line:content" while the JS fallback wrote
+  // "path:line: content". Both paths must agree, or callers break depending on
+  // whether rg happens to be installed.
+  const dir = tmp();
+  writeFileSync(join(dir, "fmt.js"), "one\ntwo needle\nthree\n");
+  const r = await grepTool.run({ pattern: "needle", path: dir });
+  assert.equal(r.ok, true);
+  // Exactly one space after the column separator, always.
+  assert.match(r.content, /fmt\.js:2: two needle/);
+  assert.ok(!/:2:two/.test(r.content), "no missing space after the line number");
+  rmSync(dir, { recursive: true, force: true });
+});
+
 test("Bash captures stdout", async () => {
   const r = await bashTool.run({ command: "echo hello-from-bash" });
   assert.equal(r.ok, true);

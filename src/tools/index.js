@@ -1,11 +1,12 @@
 import { readFile, writeFile, mkdir, readdir, stat, access } from "node:fs/promises";
-import { exec, spawn } from "node:child_process";
+import { exec, spawn, spawnSync } from "node:child_process";
 import { basename, dirname, extname, resolve, join, relative, isAbsolute } from "node:path";
-import { constants } from "node:fs";
+import { constants, existsSync } from "node:fs";
 import { createRequire } from "node:module";
 import { startBackground, killTask, readTaskOutput, waitTask, taskSummaries } from "./tasks.js";
 import { todoWriteTool, webFetchTool } from "./extra.js";
 import { GIT_TOOLS } from "./git.js";
+
 
 const require = createRequire(import.meta.url);
 
@@ -285,6 +286,126 @@ async function globWalk(root, pattern) {
   return out;
 }
 
+/** Cached result of looking for the ripgrep binary. */
+let ripgrepPath = null;
+let ripgrepChecked = false;
+
+/**
+ * Locate ripgrep once per process.
+ *
+ * The pure-JS fallback reads every file it walks, which is fine for a small
+ * tree and painfully slow on a real repository. ripgrep respects .gitignore,
+ * skips binaries and searches in parallel, so it is preferred whenever the
+ * binary is on PATH.
+ */
+function findRipgrep() {
+  if (ripgrepChecked) { return ripgrepPath; }
+  ripgrepChecked = true;
+
+  // 1) PATH: a user-installed ripgrep should win, it may be newer.
+  const names = process.platform === "win32" ? ["rg.exe", "rg"] : ["rg"];
+  for (const name of names) {
+    try {
+      const probe = spawnSync(name, ["--version"], { encoding: "utf8", timeout: 5000, windowsHide: true });
+      if (probe.status === 0) { ripgrepPath = name; return ripgrepPath; }
+    } catch {
+      // keep looking
+    }
+  }
+
+  // 2) The bundled binary, as a sibling of the app. A compiled single-file
+  //    build has no node_modules, so the path is resolved relative to the
+  //    executable directory first and only then through require.resolve.
+  const bundled = [
+    join(dirname(process.execPath), "rg.exe"),
+    join(dirname(process.execPath), "bin", "rg.exe"),
+  ];
+  for (const candidate of bundled) {
+    try {
+      if (existsSync(candidate)) {
+        const probe = spawnSync(candidate, ["--version"], { encoding: "utf8", timeout: 5000, windowsHide: true });
+        if (probe.status === 0) { ripgrepPath = candidate; return ripgrepPath; }
+      }
+    } catch {
+      // keep looking
+    }
+  }
+
+  // 3) The npm package, when running from source.
+  try {
+    const platformPkg = `@vscode/ripgrep-${process.platform}-${process.arch}`;
+    const binName = process.platform === "win32" ? "rg.exe" : "rg";
+    const resolved = require.resolve(`${platformPkg}/bin/${binName}`);
+    const probe = spawnSync(resolved, ["--version"], { encoding: "utf8", timeout: 5000, windowsHide: true });
+    if (probe.status === 0) { ripgrepPath = resolved; return ripgrepPath; }
+  } catch {
+    // package not installed
+  }
+
+  ripgrepPath = null;
+  return ripgrepPath;
+}
+
+/**
+ * Run a ripgrep search and shape its output like the JS fallback.
+ *
+ * @returns {{ok: boolean, content: string}|null} null when ripgrep is absent
+ *   or failed in a way the fallback should handle instead.
+ */
+function ripgrepSearch({ pattern, path, glob, type, output_mode, i, n, A, B, C, max_results }) {
+  const rg = findRipgrep();
+  if (!rg) { return null; }
+
+  const args = ["--no-heading", "--color", "never"];
+  if (i) { args.push("-i"); }
+  if (glob) { args.push("--glob", glob); }
+  if (type) { args.push("--type", type); }
+  const before = Math.max(B, C);
+  const after = Math.max(A, C);
+  if (before > 0) { args.push("-B", String(before)); }
+  if (after > 0) { args.push("-A", String(after)); }
+  if (output_mode === "files_with_matches") { args.push("--files-with-matches"); }
+  else if (output_mode === "count") { args.push("--count"); }
+  else { if (n) { args.push("--line-number"); } }
+  args.push("--", pattern, path);
+
+  let out;
+  try {
+    out = spawnSync(rg, args, { encoding: "utf8", timeout: 60000, windowsHide: true, maxBuffer: 16 * 1024 * 1024 });
+  } catch {
+    return null;
+  }
+  // Exit 1 means "no matches" — a valid empty result, not a failure.
+  if (out.status !== 0 && out.status !== 1) { return null; }
+  const text = String(out.stdout || "").replace(/\r\n/g, "\n").trimEnd();
+  if (!text) { return { ok: true, content: "(no matches)" }; }
+  if (output_mode === "files_with_matches") {
+    const files = text.split("\n").filter(Boolean);
+    return { ok: true, content: truncate(files.slice(0, 500).join("\n")) };
+  }
+  if (output_mode === "count") {
+    // --count prints "path:count"; sum them for a total line the model can read.
+    const rows = text.split("\n").filter(Boolean);
+    let total = 0;
+    for (const row of rows) {
+      const m = /:(\d+)$/.exec(row);
+      if (m) { total += Number(m[1]); }
+    }
+    return { ok: true, content: truncate(`total ${total} matches in ${rows.length} file(s)\n` + rows.join("\n")) };
+  }
+  // ripgrep writes "path:line:content" while the JS fallback writes
+  // "path:line: content". Normalise to the spaced form so callers (and the
+  // tests) see one format regardless of which engine ran.
+  const normalised = text.split("\n").map((row) => {
+    const m = /^(.+?:\d+):(?! )/.exec(row);
+    return m ? m[1] + ": " + row.slice(m[1].length + 1) : row;
+  }).join("\n");
+  const linesOut = normalised.split("\n");
+  const capped = linesOut.slice(0, max_results).join("\n");
+  const note = linesOut.length > max_results ? `\n… ${linesOut.length - max_results} more line(s)` : "";
+  return { ok: true, content: truncate(capped + note) };
+}
+
 export const grepTool = {
   name: "Grep",
   description:
@@ -326,6 +447,10 @@ export const grepTool = {
     max_results = 200,
   }) {
     try {
+      // Prefer ripgrep when installed: it honours .gitignore and is far faster
+      // on large trees. Falls through to the JS scan below when unavailable.
+      const rgResult = ripgrepSearch({ pattern, path, glob, type, output_mode, i, n, A, B, C, max_results });
+      if (rgResult) { return rgResult; }
       let flags = "m";
       if (i) flags += "i";
       const re = new RegExp(pattern, flags);
