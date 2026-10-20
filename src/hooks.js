@@ -35,10 +35,10 @@ const SHELLS = {
 };
 
 /** Events that may carry a per-hook matcher. */
-const TOOL_EVENTS = new Set(["PreToolUse", "PostToolUse"]);
+export const TOOL_EVENTS = new Set(["PreToolUse", "PostToolUse"]);
 
 export const HOOK_EVENTS = [
-  "UserPromptSubmit", "PreToolUse", "PostToolUse", "Notification", "Stop"
+  "UserPromptSubmit", "PreToolUse", "PostToolUse", "Notification", "Stop", "PreCompact", "SubagentStop"
 ];
 
 /**

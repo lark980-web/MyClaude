@@ -52,7 +52,12 @@ const HANGING_HOOK = script("setTimeout(() => {}, 30000)");
 /* ------------------------------------------------------------------ units */
 
 test("HOOK_EVENTS lists the supported events", () => {
-  assert.deepEqual(HOOK_EVENTS, ["UserPromptSubmit", "PreToolUse", "PostToolUse", "Notification", "Stop"]);
+  // PreCompact and SubagentStop were declared by Claude but never listed here,
+  // so no hook could subscribe to them.
+  assert.deepEqual(HOOK_EVENTS, [
+    "UserPromptSubmit", "PreToolUse", "PostToolUse", "Notification",
+    "Stop", "PreCompact", "SubagentStop",
+  ]);
 });
 
 test("matcherMatches: empty, star, regex and equality", () => {

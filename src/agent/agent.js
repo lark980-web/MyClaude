@@ -568,6 +568,25 @@ export class Agent {
     const limit = window * (this.config.compactThreshold || 0.8);
     if (approxTokens < limit) { return null; }
 
+    // PreCompact fires before the history is rewritten, so a hook can archive
+    // or annotate the full transcript while it still exists.
+    if (this.hooks.has("PreCompact")) {
+      try {
+        const hv = await this.hooks.run("PreCompact", {
+          trigger: "auto",
+          approx_tokens: approxTokens,
+          messages: this.messages.length,
+        });
+        if (hv.systemMessage) { this.ui.warn(hv.systemMessage); }
+        if (hv.block) {
+          this.ui.warn("compaction skipped by PreCompact hook: " + (hv.reason || ""));
+          return null;
+        }
+      } catch {
+        // A failing hook must not break compaction.
+      }
+    }
+
     // Split on a turn boundary. A blind slice can start the kept tail with a
     // tool result whose assistant tool_calls were just dropped, and upstream
     // rejects that pairing with a 400.

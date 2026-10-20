@@ -21,6 +21,9 @@ import { loadCommands, findCommand, expandCommand } from "./commands.js";
 import { normalizeMode, PERMISSION_MODES } from "./agent/modes.js";
 import { VERSION } from "./version.js";
 import { findModel, GATEWAY_KEY_ENV } from "./models.js";
+import { inspectProject, renderProjectMemory, renderTranscriptMarkdown } from "./project-memory.js";
+import { writeFileSync, existsSync } from "node:fs";
+import { join } from "node:path";
 
 const HELP = `MyClaude — terminal AI coding agent
 
@@ -315,6 +318,37 @@ async function handleCommand(raw, ctx) {
     case "stats": {
       const s = agent.stats();
       ui.info(`messages=${s.messages} turns=${s.turns}`);
+      return {};
+    }
+    case "init": {
+      // Summarise the project into MYCLAUDE.md, which loadMemory() then feeds
+      // back into the system prompt on every start. Written from facts on disk
+      // rather than by asking the model, so it works offline and cannot invent
+      // commands that do not exist.
+      const root = process.cwd();
+      const target = join(root, "MYCLAUDE.md");
+      if (existsSync(target) && !/\bforce\b/.test(arg)) {
+        ui.warn("MYCLAUDE.md already exists — run /init force to regenerate");
+        return {};
+      }
+      const info = inspectProject(root);
+      const body = renderProjectMemory(info);
+      writeFileSync(target, body, "utf8");
+      ui.success(`wrote ${target}`);
+      for (const line of body.split("\n").filter((l) => l.startsWith("# ") || l.startsWith("## "))) {
+        ui.info("  " + line);
+      }
+      agent.reloadMemory();
+      ui.info("project memory reloaded");
+      return {};
+    }
+    case "export": {
+      // Dump the conversation as Markdown so it can be pasted into a doc or an
+      // issue. The GUI has its own export; this is the terminal equivalent.
+      const out = arg || join(process.cwd(), "myclaude-export-" + Date.now() + ".md");
+      const md = renderTranscriptMarkdown(agent, config);
+      writeFileSync(out, md, "utf8");
+      ui.success(`exported ${agent.messages.length} messages → ${out}`);
       return {};
     }
     case "cost": {

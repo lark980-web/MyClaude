@@ -28,6 +28,7 @@ import { vendorFromUrl, endpointLabel } from "../vendors.js";
 import { MODELS, PROVIDER_PRESETS, findModel, supportsVision, contextWindowOf } from "../models.js";
 
 import { VERSION } from "../version.js";
+import { HOOK_EVENTS, TOOL_EVENTS } from "../hooks.js";
 const MAX_FILE_BYTES = 1024 * 1024;
 
 /** Paths the file browser must never expose. */
@@ -630,6 +631,65 @@ function buildConfirmDiff(name, args) {
           if (agent.permissions) agent.permissions = new (agent.permissions.constructor)(perms);
         }
         sendJson(res, 200, { ok: true, permissions: perms });
+        return;
+      }
+
+      /* ---- hooks ----
+       * 钩子配置的读写接口。事件名与 hooks.js 的 HOOK_EVENTS 保持一致。
+       * 前端只需展示事件列表与增删条目，命令本身的执行语义由后端负责。 */
+      if (path === "/api/hooks" && req.method === "GET") {
+        sendJson(res, 200, {
+          hooks: config.hooks || {},
+          events: HOOK_EVENTS,
+          toolEvents: [...TOOL_EVENTS],
+        });
+        return;
+      }
+      if (path === "/api/hooks" && req.method === "POST") {
+        const body = await readJson(req);
+        const hooks = { ...(config.hooks || {}) };
+
+        // 整体替换某个事件：{ set: { PreToolUse: [ {matcher, hooks:[{type,command}]} ] } }
+        if (body.set && typeof body.set === "object") {
+          for (const [event, groups] of Object.entries(body.set)) {
+            if (!HOOK_EVENTS.includes(event)) { continue; }
+            if (!Array.isArray(groups) || groups.length === 0) { delete hooks[event]; }
+            else { hooks[event] = groups; }
+          }
+        }
+
+        // 追加一条：{ add: { event: "PreToolUse", matcher: "Bash", command: "..." } }
+        if (body.add && typeof body.add === "object") {
+          const event = String(body.add.event || "");
+          const command = String(body.add.command || "").trim();
+          if (HOOK_EVENTS.includes(event) && command) {
+            const matcher = body.add.matcher === undefined ? "" : String(body.add.matcher);
+            const group = { matcher, hooks: [{ type: "command", command }] };
+            hooks[event] = Array.isArray(hooks[event]) ? hooks[event] : [];
+            hooks[event].push(group);
+          }
+        }
+
+        // 删除某事件的第 N 条：{ remove: { event: "PreToolUse", index: 0 } }
+        if (body.remove && typeof body.remove === "object") {
+          const event = String(body.remove.event || "");
+          const index = Number(body.remove.index);
+          if (HOOK_EVENTS.includes(event) && Array.isArray(hooks[event]) && Number.isInteger(index)) {
+            hooks[event].splice(index, 1);
+            if (!hooks[event].length) { delete hooks[event]; }
+          }
+        }
+
+        config.hooks = hooks;
+        saveConfig({ hooks });
+        // 让已存在的 agent 立刻生效，不必重启会话。
+        for (const agent of sessions.values()) {
+          try {
+            if (agent.hooks && typeof agent.hooks.reload === "function") { agent.hooks.reload(hooks); }
+            else if (agent.hooks) { agent.hooks.config = { ...(agent.hooks.config || {}), hooks }; }
+          } catch {}
+        }
+        sendJson(res, 200, { ok: true, hooks });
         return;
       }
 
