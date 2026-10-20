@@ -1795,6 +1795,30 @@ function buildConfirmDiff(name, args) {
         return;
       }
 
+      if (path === "/api/undo" && req.method === "POST") {
+        const body = await readJson(req);
+        const key = keyOf(body);
+        const agent = sessions.get(key);
+        if (!agent) {
+          sendJson(res, 404, { error: "no active session" });
+          return;
+        }
+        // Undo the last turn AND put the files back. The GUI retry path rewinds
+        // the conversation only, because retrying means "answer again", not
+        // "forget what was changed". This endpoint is the explicit undo.
+        const res2 = agent.rewind(undefined, { restoreFiles: true });
+        const files = res2.files || { restored: [], deleted: [], failed: [] };
+        try { saverFor(key, agent).save({ force: true }); } catch {}
+        sendJson(res, 200, {
+          ok: true,
+          rewound: res2.rewound,
+          restored: files.restored,
+          deleted: files.deleted,
+          failed: files.failed,
+        });
+        return;
+      }
+
       if (path === "/api/reset" && req.method === "POST") {
         const body = await readJson(req);
         const key = keyOf(body);

@@ -7,6 +7,7 @@ import { buildUserContent, buildToolAttachmentContent, resolveAttachments } from
 import { setQuestionPresenter } from "../tools/extended.js";
 import { HookRunner } from "../hooks.js";
 import { stripReasoning } from "./think.js";
+import { CheckpointStore } from "./checkpoint.js";
 import { contextWindowOf, maxTokensOf, supportsVision, findModel } from "../models.js";
 
 /** Tools that never touch the filesystem, so they never need approval. */
@@ -43,6 +44,8 @@ export class Agent {
     this.contextWindow = contextWindowOf(config.model);
     this.maxTokens = maxTokensOf(config.model);
     this.turnCount = 0;
+    // Files touched by the current turn, so /rewind can put them back.
+    this.checkpoints = new CheckpointStore();
     // Guards the Stop hook so it can only extend a run once.
     this.stopHookUsed = false;
     // Session identity comes from the caller: the GUI keeps one agent per tab,
@@ -176,24 +179,29 @@ export class Agent {
   }
 
   /**
-   * Drop the trailing assistant/tool exchange so the last user message can be
-   * answered again. Used by the GUI "Retry" action.
+   * Roll the conversation back to the last user message.
    *
-   * @param {string} [text] replace the last user message with this text (edit & resend)
-   * @returns {{ rewound: number, lastUser: object|null }}
+   * When `restoreFiles` is on, files captured by CheckpointStore are also put
+   * back. Without that, rewinding left the workspace holding whichever edits
+   * the discarded turns had already made.
    */
-  rewind(text) {
+  rewind(text, { restoreFiles = false } = {}) {
+    let files = null;
+    if (restoreFiles) {
+      try { files = this.checkpoints.restoreAll(); } catch { files = null; }
+    }
+
     let lastUser = -1;
     for (let i = this.messages.length - 1; i >= 0; i--) {
       if (this.messages[i].role === "user") { lastUser = i; break; }
     }
-    if (lastUser < 0) return { rewound: 0, lastUser: null };
+    if (lastUser < 0) return { rewound: 0, lastUser: null, files };
     const dropped = this.messages.length - lastUser - 1;
     this.messages = this.messages.slice(0, lastUser + 1);
     if (typeof text === "string" && text.trim()) {
       this.messages[lastUser] = { role: "user", content: text };
     }
-    return { rewound: dropped, lastUser: this.messages[lastUser] };
+    return { rewound: dropped, lastUser: this.messages[lastUser], files };
   }
 
   abort() {
@@ -435,6 +443,10 @@ export class Agent {
           continue;
         }
 
+        // Snapshot the target before it is touched: /rewind needs the previous
+        // bytes, and a conversation-only rewind leaves the broken file behind.
+        const targetPath = call.arguments && (call.arguments.file_path || call.arguments.notebook_path);
+        if (targetPath) { this.checkpoints.capture(targetPath); }
         approvedCalls.push({ call, tool });
       }
 

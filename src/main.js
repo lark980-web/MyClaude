@@ -20,6 +20,7 @@ import { resolveAttachments, describeAttachment } from "./attachments.js";
 import { loadCommands, findCommand, expandCommand } from "./commands.js";
 import { normalizeMode, PERMISSION_MODES } from "./agent/modes.js";
 import { VERSION } from "./version.js";
+import { findModel, GATEWAY_KEY_ENV } from "./models.js";
 
 const HELP = `MyClaude — terminal AI coding agent
 
@@ -31,7 +32,7 @@ Usage:
 
 Options:
   --auto, --yes            auto-approve every tool call
---full-access            full access: skip prompts and deny rules
+  --full-access          full access: skip prompts and deny rules
   --plan                   read-only; deny all tool calls
   --gui [--port N]         start the local web UI (default port 7788)
   --no-open                with --gui, do not open a browser
@@ -48,6 +49,10 @@ Commands (interactive):
   /help              show command list
   /exit, /quit       exit
   /clear             clear conversation history
+  /rewind            undo the last turn and restore the files it changed
+  /compact           force context compaction now
+  /cost              show token usage and estimated spend for this session
+  /doctor            check config, gateway, tools and permissions
   /model [name]      show or set model
   /provider [name]   show or set provider
   /base [url]        show or set base URL
@@ -122,6 +127,48 @@ async function handleCommand(raw, ctx) {
     case "help":
       ui.info(HELP);
       return {};
+    case "rewind": {
+      // Roll back the last turn, including the files it changed. The file part
+      // is what makes this a real undo: the conversation alone would rewind
+      // while the workspace kept the half-finished edit.
+      const keepFiles = /\bkeep-files\b/.test(arg);
+      const res = agent.rewind(undefined, { restoreFiles: !keepFiles });
+      if (!res.rewound) {
+        ui.warn("nothing to rewind");
+        return {};
+      }
+      if (res.files && (res.files.restored.length || res.files.deleted.length)) {
+        ui.success(
+          `rewound ${res.rewound} messages · restored ${res.files.restored.length} file(s)` +
+          (res.files.deleted.length ? `, removed ${res.files.deleted.length} created file(s)` : "")
+        );
+        for (const f of res.files.restored) { ui.info("  restored " + f); }
+        for (const f of res.files.deleted) { ui.info("  removed  " + f); }
+        if (res.files.failed.length) {
+          ui.warn(`${res.files.failed.length} file(s) could not be restored`);
+          for (const f of res.files.failed) { ui.warn("  " + f.path + ": " + f.error); }
+        }
+      } else {
+        ui.success(`rewound ${res.rewound} messages` + (keepFiles ? " (files kept)" : ", no files changed"));
+      }
+      ctx.autoSaver?.save({ force: true });
+      return {};
+    }
+    case "compact": {
+      // Force a compaction now instead of waiting for the threshold.
+      const before = agent.messages.length;
+      const r = await agent.maybeCompact();
+      if (!r) {
+        ui.info(`nothing to compact (${before} messages, under the threshold)`);
+      } else {
+        ui.success(
+          `compacted: dropped ${r.dropped} messages (${before} → ${agent.messages.length})` +
+          (r.summarised ? ", summarised by the model" : ", truncated")
+        );
+      }
+      ctx.autoSaver?.save({ force: true });
+      return {};
+    }
     case "clear":
       agent.reset();
       ctx.autoSaver?.rotate();
@@ -268,6 +315,56 @@ async function handleCommand(raw, ctx) {
     case "stats": {
       const s = agent.stats();
       ui.info(`messages=${s.messages} turns=${s.turns}`);
+      return {};
+    }
+    case "cost": {
+      // Rough spend estimate from the token counters the agent already keeps.
+      // Prices vary per model, so the estimate uses the catalogue when it has a
+      // rate and otherwise reports tokens only.
+      const inTok = agent.totalInputTokens || 0;
+      const outTok = agent.totalOutputTokens || 0;
+      const model = findModel(config.model);
+      ui.info(`model      ${config.model}`);
+      ui.info(`input      ${inTok.toLocaleString()} tokens`);
+      ui.info(`output     ${outTok.toLocaleString()} tokens`);
+      ui.info(`total      ${(inTok + outTok).toLocaleString()} tokens`);
+      if (model && typeof model.inputPrice === "number" && typeof model.outputPrice === "number") {
+        const usd = (inTok / 1e6) * model.inputPrice + (outTok / 1e6) * model.outputPrice;
+        ui.info(`estimated  $${usd.toFixed(4)}`);
+      } else {
+        ui.info("estimated  n/a (no price in the model catalogue)");
+      }
+      return {};
+    }
+    case "doctor": {
+      // A quick environment check: every line answers "is this wired up?".
+      const row = (ok, label, detail) => {
+        const mark = ok === true ? "ok  " : ok === "warn" ? "warn" : "FAIL";
+        const line = `${mark}  ${label.padEnd(16)} ${detail || ""}`.trimEnd();
+        if (ok === false) ui.error(line); else if (ok === "warn") ui.warn(line); else ui.info(line);
+      };
+      ui.info(`MyClaude ${VERSION}`);
+      ui.info("");
+      row(Boolean(config.model), "model", String(config.model || "(unset)"));
+      row(Boolean(config.baseUrl), "baseUrl", String(config.baseUrl || "(unset)"));
+      const keySet = Boolean(config.apiKey) || Boolean(process.env[GATEWAY_KEY_ENV]);
+      row(keySet ? true : "warn", "apiKey", keySet ? "(set)" : "not set (gateway may not need one)");
+      row(Boolean(config.permissionMode), "mode", String(config.permissionMode || "ask"));
+      row(true, "tools", `${agent.tools.length} registered`);
+      row(Boolean(config.mcpServers && Object.keys(config.mcpServers).length) ? true : "warn",
+        "mcp", config.mcpServers ? `${Object.keys(config.mcpServers).length} server(s)` : "none configured");
+      row(Boolean(config.hooks) ? true : "warn", "hooks",
+        config.hooks ? `${Object.keys(config.hooks).length} event(s)` : "none configured");
+      row(agent.checkpoints.size > 0 ? true : "warn", "checkpoints",
+        agent.checkpoints.size > 0 ? `${agent.checkpoints.size} file(s) captured` : "nothing captured this turn");
+      row(true, "sessions", ctx.autoSaver ? `current ${ctx.autoSaver.id}` : "not saving");
+      ui.info("");
+      try {
+        const models = await provider.listModels();
+        row(true, "gateway", `reachable, ${models.length} model(s)`);
+      } catch (e) {
+        row(false, "gateway", String(e.message || e).slice(0, 80));
+      }
       return {};
     }
     case "config":
