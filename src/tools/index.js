@@ -1,5 +1,5 @@
 import { readFile, writeFile, mkdir, readdir, stat, access } from "node:fs/promises";
-import { exec } from "node:child_process";
+import { exec, spawn } from "node:child_process";
 import { basename, dirname, extname, resolve, join, relative, isAbsolute } from "node:path";
 import { constants } from "node:fs";
 import { createRequire } from "node:module";
@@ -516,23 +516,52 @@ export const bashTool = {
       );
     }
     return new Promise((resolvePromise) => {
-      const shell = process.platform === "win32" ? "powershell.exe" : "/bin/sh";
-      const args =
-        process.platform === "win32" ? ["-NoProfile", "-Command", command] : ["-c", command];
-      exec(
-        `${shell} ${args.map((a) => `"${a.replace(/"/g, '\\"')}"`).join(" ")}`,
-        { cwd, timeout: timeout_ms, maxBuffer: 10 * 1024 * 1024, windowsHide: true },
-        (error, stdout, stderr) => {
-          const parts = [];
-          if (stdout) parts.push(stdout);
-          if (stderr) parts.push(`[stderr]\n${stderr}`);
-          if (error) {
-            parts.push(`[exit ${error.code ?? "?"}]${error.killed ? " (timeout)" : ""}`);
+      // Pass the command as one argv element: building a single string and
+      // handing it to exec() makes the shell parse it twice, so a Windows
+      // command containing quotes or "&" (git commit -m "fix: a & b") breaks
+      // with "string is missing the terminator".
+      // Windows: cmd.exe with windowsVerbatimArguments, not PowerShell.
+      // - argv is passed through untouched, so a command containing quotes or
+      //   "&" (git commit -m "fix: a & b") no longer breaks: building one
+      //   string for exec() made the shell parse it twice.
+      // - cmd.exe starts in ~80ms; powershell.exe takes 3-8s per call, which
+      //   made every Bash tool invocation feel like a hang.
+      const isWin = process.platform === "win32";
+      const shell = isWin ? "cmd.exe" : "/bin/sh";
+      const args = isWin ? ["/d", "/s", "/c", command] : ["-c", command];
+      const child = spawn(shell, args, { cwd, windowsHide: true, windowsVerbatimArguments: isWin });
+      let stdout = "";
+      let stderr = "";
+      let timedOut = false;
+      const timer = setTimeout(() => {
+        timedOut = true;
+        try {
+          if (process.platform === "win32" && child.pid) {
+            spawn("taskkill", ["/pid", String(child.pid), "/T", "/F"], { windowsHide: true, stdio: "ignore" });
+          } else {
+            child.kill("SIGKILL");
           }
-          const out = truncate(parts.join("\n") || "(no output)");
-          resolvePromise({ ok: !error, content: out });
-        }
-      );
+        } catch {}
+      }, Math.max(1000, timeout_ms));
+      child.stdout.on("data", (c) => {
+        if (stdout.length < 10 * 1024 * 1024) { stdout += c; }
+      });
+      child.stderr.on("data", (c) => {
+        if (stderr.length < 10 * 1024 * 1024) { stderr += c; }
+      });
+      const finish = (code) => {
+        clearTimeout(timer);
+        const parts = [];
+        if (stdout) parts.push(stdout);
+        if (stderr) parts.push(`[stderr]\n${stderr}`);
+        if (code !== 0) parts.push(`[exit ${code ?? "?"}]${timedOut ? " (timeout)" : ""}`);
+        resolvePromise({ ok: code === 0, content: truncate(parts.join("\n") || "(no output)") });
+      };
+      child.on("error", (e) => {
+        clearTimeout(timer);
+        resolvePromise({ ok: false, content: `failed to start shell: ${e.message}` });
+      });
+      child.on("close", (code) => finish(code));
     });
   },
 };

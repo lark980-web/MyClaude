@@ -1,3 +1,4 @@
+import { VERSION } from "../version.js";
 import readline from "node:readline";
 import { stdin, stdout } from "node:process";
 
@@ -91,7 +92,7 @@ export class TerminalUI {
       `${this.c.claude} ████████████`,
       `${this.c.claude}  ██ ████ ██`,
       ``,
-      `${this.c.claude}${this.c.bold}Welcome to MyClaude${this.c.reset} ${this.c.gray}v0.2.0${this.c.reset}`,
+      `${this.c.claude}${this.c.bold}Welcome to MyClaude${this.c.reset} ${this.c.gray}v${VERSION}${this.c.reset}`,
       `${this.c.gray}model ${config.model} · mode ${config.permissionMode} · ${process.cwd()}${this.c.reset}`,
       `${this.c.gray}/help for commands${this.c.reset}`,
     ];

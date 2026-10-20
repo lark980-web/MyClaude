@@ -149,6 +149,21 @@ export class ProviderRouter {
     return this.run((provider) => provider.streamChat(args));
   }
 
+  /**
+   * Single non-streaming completion, used for summaries and other internal
+   * one-shot prompts.
+   *
+   * maybeCompact() called this and swallowed the resulting TypeError, so the
+   * "summarise with the model" path never actually ran and every compaction
+   * fell back to plain truncation.
+   */
+  complete(args) {
+    return this.run((provider) => {
+      if (typeof provider.complete === "function") { return provider.complete(args); }
+      throw new Error("provider does not implement complete()");
+    });
+  }
+
   /** listModels across candidates. */
   listModels() {
     return this.run((provider) => provider.listModels());

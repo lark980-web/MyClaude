@@ -208,8 +208,18 @@ export const MODELS = [
   { id: "qoder-cn/gfmodel", name: "GfModel · Qoder CN", contextWindow: 200000, maxTokens: 32000, input: ["text", "image"], providerKey: "gateway", vendor: "Qoder", badge: "网关" }
 ];
 
-/** Default model: claude-3-7-sonnet or gemini-2.5-flash if gemini key is available */
-export const DEFAULT_MODEL = process.env.GEMINI_API_KEY ? "gemini-2.5-flash" : "claude-3-7-sonnet";
+/** Default model: the local gateway, usable without any third-party key. */
+export const DEFAULT_MODEL = "qoder-cn/gfmodel";
+
+/**
+ * The preset whose endpoint is configured out of the box. PROVIDER_PRESETS
+ * carries optional third-party endpoints (Anthropic / Gemini / OpenAI) that a
+ * user can enable with their own key, but the shipped default must point at
+ * the local gateway: a fresh install has no third-party key, so defaulting to
+ * "claude-3-7-sonnet" made the very first message fail with
+ * 404 "magpie knows no model".
+ */
+export const DEFAULT_PROVIDER_KEY = "gateway";
 
 /** Look up a catalogue entry by id, or null. */
 export function findModel(id) {

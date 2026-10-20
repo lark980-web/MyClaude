@@ -27,7 +27,7 @@ import { normalizeMode, PERMISSION_MODES } from "../agent/modes.js";
 import { vendorFromUrl, endpointLabel } from "../vendors.js";
 import { MODELS, PROVIDER_PRESETS, findModel, supportsVision, contextWindowOf } from "../models.js";
 
-const VERSION = "0.18.0";
+import { VERSION } from "../version.js";
 const MAX_FILE_BYTES = 1024 * 1024;
 
 /** Paths the file browser must never expose. */
@@ -1859,8 +1859,11 @@ export async function startGui({ config: initialConfig, port = 7788, open = true
   });
 
   await new Promise((resolve, reject) => {
-    server.once("error", reject);
-    server.listen(port, "0.0.0.0", resolve);
+    // Loopback by default: the server can read files and run commands, so
+    // binding 0.0.0.0 exposed all of that to anyone on the LAN. Opt in
+    // explicitly with MYCLAUDE_HOST when a container or phone needs access.
+    const host = process.env.MYCLAUDE_HOST || "127.0.0.1";
+    server.listen(port, host, resolve);
   });
 
   server.on("close", () => {

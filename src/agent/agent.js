@@ -232,21 +232,20 @@ export class Agent {
     // that is the difference between the two.
     if (mode === "fullAccess") return true;
 
+    // Plan mode is read-only, and that outranks a permissive allow rule: the
+    // old order returned true on verdict === "allow" before this check, so
+    // configuring allow: ["Write(**)"] silently disabled plan mode.
+    if (mode === "plan" && !Agent.READ_ONLY_TOOLS.has(toolName)) {
+      this.ui.warn(`plan mode: ${toolName} is blocked until the plan is approved`);
+      return false;
+    }
+
     const verdict = this.permissions.evaluate(toolName, args);
     if (verdict === "deny") {
       this.ui.warn(`denied by permission rule: ${toolName}`);
       return false;
     }
     if (verdict === "allow") return true;
-
-    if (mode === "plan") {
-      // Plan mode is read-only: exploration is free (handled below), mutations
-      // are refused until the plan is approved.
-      if (!Agent.READ_ONLY_TOOLS.has(toolName)) {
-        this.ui.warn(`plan mode: ${toolName} is blocked until the plan is approved`);
-        return false;
-      }
-    }
 
     // Pure bookkeeping tools (todo list, clarification prompts, reading
     // background output) cannot touch the workspace, so prompting for them only
@@ -524,18 +523,29 @@ export class Agent {
       const c = typeof m.content === "string" ? m.content : JSON.stringify(m.content ?? "");
       return sum + c.length + 20;
     }, 0);
-    const approxTokens = Math.ceil(approxChars / 4);
-    const limit = this.config.contextWindow * this.config.compactThreshold;
+    // CJK text is roughly one token per character, Latin text nearer four.
+    // A flat /4 estimate under-counts Chinese by ~4x, so compaction fired far
+    // too late and the request hit the upstream 400 first.
+    const approxTokens = estimateTokens(this.messages);
+    // Use the window resolved from the model catalogue, not the global config:
+    // a 200k model must not be compacted on a 1M model schedule.
+    const window = this.contextWindow || this.config.contextWindow;
+    const limit = window * (this.config.compactThreshold || 0.8);
     if (approxTokens < limit) { return null; }
 
-    const keep = this.messages.slice(-6);
-    const middle = this.messages.slice(0, this.messages.length - keep.length);
+    // Split on a turn boundary. A blind slice can start the kept tail with a
+    // tool result whose assistant tool_calls were just dropped, and upstream
+    // rejects that pairing with a 400.
+    const keepFrom = findKeepBoundary(this.messages, 6);
+    if (keepFrom <= 0) { return null; }
+    const middle = this.messages.slice(0, keepFrom);
+    const keep = this.messages.slice(keepFrom);
     if (!middle.length) { return null; }
 
     let summary = null;
     try {
       summary = await this.summarise(middle);
-    } catch (e) {
+    } catch {
       summary = null; // fall through to truncation
     }
 
@@ -545,6 +555,7 @@ export class Agent {
     this.messages = [{ role: "user", content: opening }, ...keep];
     return { dropped: middle.length, approxTokens: approxTokens, summarised: !!summary };
   }
+
 
   /** Ask the model to condense a range of messages into a short brief. */
   async summarise(messages) {
@@ -580,4 +591,45 @@ export class Agent {
       memory: this.memory ? true : false,
     };
   }
+}
+
+
+/**
+ * Rough token estimate that accounts for CJK.
+ *
+ * Latin text averages ~4 characters per token, CJK closer to 1. A flat /4
+ * under-counted Chinese by roughly 4x, so a conversation about to overflow
+ * looked comfortably small and compaction never fired in time.
+ */
+function estimateTokens(messages) {
+  let tokens = 0;
+  for (const m of messages) {
+    const text = typeof m.content === "string" ? m.content : JSON.stringify(m.content ?? "");
+    // Count CJK characters separately: they are ~1 token each.
+    const cjk = (text.match(/[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\u3040-\u30ff\uac00-\ud7af]/g) || []).length;
+    const rest = text.length - cjk;
+    tokens += cjk + Math.ceil(rest / 4) + 8;
+    // Tool call payloads are JSON and cost tokens too.
+    if (Array.isArray(m.tool_calls)) {
+      tokens += Math.ceil(JSON.stringify(m.tool_calls).length / 4);
+    }
+  }
+  return tokens;
+}
+
+/**
+ * Index at which the kept tail may start so the cut never separates an
+ * assistant tool_calls message from the tool results that answer it.
+ *
+ * Walks backwards from the desired keep length until it lands on a message
+ * that is safe to start on (anything except a tool result).
+ */
+function findKeepBoundary(messages, want) {
+  let idx = Math.max(0, messages.length - want);
+  while (idx < messages.length && messages[idx] && messages[idx].role === "tool") {
+    idx++;
+  }
+  // Dropping everything would make compaction pointless.
+  if (idx >= messages.length) { return -1; }
+  return idx;
 }

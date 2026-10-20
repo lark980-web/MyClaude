@@ -6,7 +6,7 @@ import Spinner from "ink-spinner";
 const h = React.createElement;
 
 const CLAUDE = "#d97757";
-const VERSION = "0.18.0";
+import { VERSION } from "../version.js";
 
 function ToolArgs({ args, max = 3, width = 72 }) {
   const parts = [];

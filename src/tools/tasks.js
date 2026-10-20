@@ -73,8 +73,12 @@ export async function startBackground({ command, cwd = process.cwd(), timeout_ms
   const out = createWriteStream(outputPath, { flags: "w" });
   streams.add(out);
 
-  const shell = process.platform === "win32" ? "powershell.exe" : "/bin/sh";
-  const args = process.platform === "win32" ? ["-NoProfile", "-Command", command] : ["-c", command];
+  // Same reasoning as the foreground Bash tool: cmd.exe starts in ~80ms while
+  // powershell.exe takes seconds, and windowsVerbatimArguments keeps quotes and
+  // "&" intact instead of letting the shell parse the string twice.
+  const isWin = process.platform === "win32";
+  const shell = isWin ? "cmd.exe" : "/bin/sh";
+  const args = isWin ? ["/d", "/s", "/c", command] : ["-c", command];
 
   /** @type {Task} */
   const task = {
@@ -93,7 +97,7 @@ export async function startBackground({ command, cwd = process.cwd(), timeout_ms
   tasks.set(id, task);
 
   return new Promise((resolve) => {
-    const child = spawn(shell, args, { cwd, windowsHide: true, detached: false });
+  const child = spawn(shell, args, { cwd, windowsHide: true, detached: false, windowsVerbatimArguments: isWin });
     task.pid = child.pid ?? null;
     procs.set(id, child);
 

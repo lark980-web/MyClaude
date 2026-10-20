@@ -18,6 +18,8 @@ import {
 } from "./session.js";
 import { resolveAttachments, describeAttachment } from "./attachments.js";
 import { loadCommands, findCommand, expandCommand } from "./commands.js";
+import { normalizeMode, PERMISSION_MODES } from "./agent/modes.js";
+import { VERSION } from "./version.js";
 
 const HELP = `MyClaude — terminal AI coding agent
 
@@ -103,7 +105,7 @@ function sessionMeta(agent, config) {
     provider: config.provider,
     permissionMode: agent.mode ?? config.permissionMode,
     turnCount: agent.turnCount,
-    version: "0.2.0",
+    version: VERSION,
   };
 }
 
@@ -507,7 +509,7 @@ async function main() {
     return;
   }
   if (opts.version) {
-    console.log("myclaude 0.18.0");
+    console.log("myclaude " + VERSION);
     return;
   }
   if (opts.configPath) {

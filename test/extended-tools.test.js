@@ -101,9 +101,10 @@ test("Grep is case-sensitive unless i is set", async () => {
 
 test("background Bash task runs, streams output and can be killed", async () => {
   const started = await startBackground({
+    // cmd.exe has no Start-Sleep; a self-ping is the portable way to pause.
     command:
       process.platform === "win32"
-        ? "Write-Output 'bg-hello'; Start-Sleep -Seconds 5"
+        ? "echo bg-hello & ping -n 6 127.0.0.1 > nul"
         : "echo bg-hello; sleep 5",
     cwd: process.cwd(),
     timeout_ms: 20000,
@@ -111,7 +112,7 @@ test("background Bash task runs, streams output and can be killed", async () => 
   assert.equal(started.ok, true);
   assert.match(started.id, /^task_/);
 
-  // Poll instead of a fixed sleep: PowerShell buffers its stdout for a while.
+  // Poll instead of a fixed sleep: shell stdout buffering makes timing unreliable.
   let output = "";
   for (let i = 0; i < 20 && !/bg-hello/.test(output); i++) {
     await new Promise((r) => setTimeout(r, 400));
@@ -150,9 +151,9 @@ test("Bash run_in_background returns a task id", async () => {
 });
 
 test("Bash still runs in the foreground by default", async () => {
-  const r = await bashTool.run({
-    command: process.platform === "win32" ? "Write-Output 'fg-ok'" : "echo fg-ok",
-  });
+  // echo exists in cmd.exe and /bin/sh alike; the shell is an implementation
+  // detail, so the assertion must not depend on PowerShell's Write-Output.
+  const r = await bashTool.run({ command: "echo fg-ok" });
   assert.equal(r.ok, true);
   assert.match(r.content, /fg-ok/);
 });
