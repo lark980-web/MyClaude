@@ -393,14 +393,16 @@ export class Agent {
         })),
       });
 
+      // Phase 1 — authorise every call in order.
+      //
+      // Permission prompts are interactive, so they must stay sequential:
+      // asking about three tools at once would stack dialogs the user cannot
+      // answer coherently. Only the execution phase runs concurrently.
+      const approvedCalls = [];
       for (const call of toolCalls) {
         const tool = findTool(call.name);
         if (!tool) {
-          this.messages.push({
-            role: "tool",
-            tool_call_id: call.id,
-            content: `ERROR: unknown tool "${call.name}"`,
-          });
+          approvedCalls.push({ call, error: `ERROR: unknown tool "${call.name}"` });
           this.ui.error(`unknown tool: ${call.name}`);
           continue;
         }
@@ -416,11 +418,7 @@ export class Agent {
           hookPermission = hv.permission;
           if (hv.systemMessage) { this.ui.warn(hv.systemMessage); }
           if (hv.block) {
-            this.messages.push({
-              role: "tool",
-              tool_call_id: call.id,
-              content: "ERROR: blocked by hook: " + hv.reason,
-            });
+            approvedCalls.push({ call, error: "ERROR: blocked by hook: " + hv.reason });
             this.ui.warn(`blocked by hook: ${call.name} — ${hv.reason}`);
             continue;
           }
@@ -432,17 +430,30 @@ export class Agent {
             ? false
             : await this.askPermission(call.name, call.arguments);
         if (!approved) {
-          this.messages.push({
-            role: "tool",
-            tool_call_id: call.id,
-            content: "ERROR: permission denied by user",
-          });
+          approvedCalls.push({ call, error: "ERROR: permission denied by user" });
           this.ui.warn(`denied: ${call.name}`);
           continue;
         }
 
-        this.ui.toolStart(call.name, call.arguments);
-        const started = Date.now();
+        approvedCalls.push({ call, tool });
+      }
+
+      // Phase 2 — run the approved calls concurrently.
+      //
+      // Independent reads dominate a multi-tool turn, and awaiting them one by
+      // one made "read these five files" five round trips. Results are still
+      // recorded in the original order below, because the provider requires
+      // each tool result to answer its own tool_call id in sequence.
+      for (let k = 0; k < approvedCalls.length; k++) {
+        const entry = approvedCalls[k];
+        if (entry.error) { continue; }
+        entry.started = Date.now();
+        this.ui.toolStart(entry.call.name, entry.call.arguments);
+      }
+
+      await Promise.all(approvedCalls.map(async (entry) => {
+        if (entry.error) { return; }
+        const { call, tool } = entry;
         let out;
         try {
           out = tool.mcp
@@ -452,7 +463,19 @@ export class Agent {
         } catch (e) {
           out = { ok: false, content: `tool threw: ${e.message}` };
         }
-        const elapsed = Date.now() - started;
+        entry.out = out;
+        entry.elapsed = Date.now() - entry.started;
+      }));
+
+      // Phase 3 — record results in order, then run the post-tool hooks.
+      for (const entry of approvedCalls) {
+        const { call } = entry;
+        if (entry.error) {
+          this.messages.push({ role: "tool", tool_call_id: call.id, content: entry.error });
+          continue;
+        }
+
+        const out = entry.out;
         // The 5th argument carries structured payloads (git diffs, task ids)
         // for UIs that can render more than plain text.
         const extra = {};
@@ -460,7 +483,7 @@ export class Agent {
         if (out.git) { extra.git = out.git; }
         if (Array.isArray(out.diff)) { extra.diff = out.diff; }
         if (out.taskId) { extra.taskId = out.taskId; }
-        this.ui.toolEnd(call.name, out.ok, elapsed, out.content, extra);
+        this.ui.toolEnd(call.name, out.ok, entry.elapsed, out.content, extra);
 
         // PostToolUse sees the result, so it can lint, scan or audit it. A block
         // here cannot undo the call, but its reason is fed back to the model.
@@ -485,21 +508,17 @@ export class Agent {
           this.ui.success("方案已批准 — 已切回询问模式");
         }
 
-        this.messages.push({
-          role: "tool",
-          tool_call_id: call.id,
-          content: out.content,
-        });
+        this.messages.push({ role: "tool", tool_call_id: call.id, content: out.content });
 
         // Tool output can carry images (Read on a .png). The tool role only
         // accepts text, so images are queued and sent as a user message.
         if (Array.isArray(out.attachments) && out.attachments.length) {
-          const extra = out.attachments
+          const imgs = out.attachments
             .map((a) => (a?.type === "image" && a.source?.data
               ? { kind: "image", name: a.source.media_type || "image", mime: a.source.media_type, data: a.source.data }
               : null))
             .filter(Boolean);
-          if (extra.length) pendingImages.push(...extra);
+          if (imgs.length) pendingImages.push(...imgs);
         }
       }
 

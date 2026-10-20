@@ -1578,7 +1578,9 @@ export async function startGui({ config: initialConfig, port = 7788, open = true
           } else {
             await agent.run(String(body.message || ""), { attachments: body.attachments });
           }
-          agent.maybeCompact?.();
+          // Await it: without this the save and the "done" event raced the
+          // compaction, so the stored history could keep the pre-compaction tail.
+          await agent.maybeCompact?.();
         } catch (e) {
           ui.error(`agent error: ${e.message}`);
         }

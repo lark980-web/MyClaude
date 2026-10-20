@@ -192,7 +192,7 @@ test("PreToolUse block skips the tool and reports the reason to the model", asyn
 test("PreToolUse allow bypasses a confirmTool that would deny", async () => {
   const provider = {
     async streamChat() {
-      return { text: "", toolCalls: [{ id: "c1", name: "Write", arguments: { file_path: "hooked.txt", content: "hello" } }] };
+      return { text: "", toolCalls: [{ id: "c1", name: "Write", arguments: { file_path: join(sandbox, "hooked.txt"), content: "hello" } }] };
     },
   };
   const command = emit("{ hookSpecificOutput: { permissionDecision: 'allow' } }");
