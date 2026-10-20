@@ -22,6 +22,7 @@ import { normalizeMode, PERMISSION_MODES } from "./agent/modes.js";
 import { VERSION } from "./version.js";
 import { findModel, GATEWAY_KEY_ENV } from "./models.js";
 import { inspectProject, renderProjectMemory, renderTranscriptMarkdown } from "./project-memory.js";
+import { withCommandScope } from "./command-scope.js";
 import { writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 
@@ -116,6 +117,7 @@ function sessionMeta(agent, config) {
     version: VERSION,
   };
 }
+
 
 async function handleCommand(raw, ctx) {
   const { agent, config, provider, ui } = ctx;
@@ -504,7 +506,7 @@ async function handleCommand(raw, ctx) {
         ui.warn(`unknown command: /${cmd}`);
         return {};
       }
-      return { customPrompt: expandCommand(custom, arg), customName: cmd };
+      return { customPrompt: expandCommand(custom, arg), customName: cmd, custom };
     }
   }
 }
@@ -533,7 +535,9 @@ async function runPlain({ config, provider, agent, autoSaver, ui }) {
       if (r.customPrompt) {
         ui.info(`执行自定义命令 /${r.customName}\n`);
         const files = ctx.pendingAttachments.splice(0);
-        await agent.run(r.customPrompt, { attachments: files });
+        await withCommandScope(agent, config, provider, r.custom || {}, async () => {
+          agent.run(r.customPrompt, { attachments: files });
+        });
         const compact = await agent.maybeCompact();
         if (compact) ui.info(`context compacted (dropped ${compact.dropped} messages)`);
         autoSaver?.save();
@@ -594,7 +598,9 @@ async function runTui({ config, provider, agent, autoSaver }) {
         const files = pendingAttachments.splice(0);
         bridge.setAttachments(pendingAttachments);
         try {
-          await agent.run(r.customPrompt, { attachments: files });
+          await withCommandScope(agent, config, provider, r.custom || {}, async () => {
+            agent.run(r.customPrompt, { attachments: files });
+          });
           const compact = await agent.maybeCompact();
           if (compact) bridge.info(`context compacted (dropped ${compact.dropped} messages)`);
         } finally {

@@ -149,6 +149,67 @@ class StdioTransport {
  *   { command, args, env, cwd }  -> stdio child process
  *   { url }                      -> Streamable HTTP, falling back to SSE
  */
+/**
+ * Expand ${ENV_NAME} references inside a config value.
+ *
+ * Secrets belong in the environment, not in a committed config file, so an
+ * MCP entry can reference them. A missing variable is reported rather than
+ * silently turned into an empty header, which would fail with a bare 401 later
+ * and give no hint about the real cause.
+ */
+function expandEnv(value) {
+  if (typeof value !== "string") { return value; }
+  return value.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g, (whole, name) => {
+    const v = process.env[name];
+    if (v === undefined || v === "") {
+      throw new Error(`MCP config references \${${name}} but that environment variable is not set`);
+    }
+    return v;
+  });
+}
+
+/**
+ * Build the request headers for an HTTP MCP server.
+ *
+ * Accepts three shapes so the common cases stay short:
+ *   headers: { Authorization: "Bearer x" }   explicit, used as-is
+ *   bearer: "x"                              shorthand for Authorization
+ *   apiKey: "x", apiKeyHeader: "X-API-Key"   custom key header
+ * Explicit headers win over the shorthands. Values may reference env vars.
+ */
+export function buildAuthHeaders(spec = {}) {
+  const out = {};
+  if (spec.bearer) {
+    out["Authorization"] = "Bearer " + expandEnv(String(spec.bearer));
+  }
+  if (spec.apiKey) {
+    const header = spec.apiKeyHeader ? String(spec.apiKeyHeader) : "X-API-Key";
+    out[header] = expandEnv(String(spec.apiKey));
+  }
+  // An explicit headers block is applied last so it can override either shorthand.
+  if (spec.headers && typeof spec.headers === "object") {
+    for (const [k, v] of Object.entries(spec.headers)) {
+      if (v === undefined || v === null) { continue; }
+      out[k] = expandEnv(String(v));
+    }
+  }
+  return out;
+}
+
+/**
+ * Turn an HTTP failure into a message that names the server and the cause.
+ *
+ * The raw response body is deliberately not included: it may echo the
+ * credential back, and it is noise for the model.
+ */
+function describeHttpFailure(serverName, status) {
+  if (status === 401 || status === 403) {
+    return `MCP server "${serverName}" rejected the credentials (${status}). ` +
+      "Check the bearer / apiKey / headers in your config.";
+  }
+  return `MCP server "${serverName}" returned HTTP ${status}.`;
+}
+
 export function createTransport(name, spec) {
   if (spec.command) {
     return new StdioTransport({
@@ -163,9 +224,9 @@ export function createTransport(name, spec) {
     // transport: "sse" forces the legacy split protocol; "http" forces the
     // modern one; omit to let the client negotiate (see McpClient.connect).
     if (spec.transport === "sse") {
-      return new SseHttpTransport({ url: spec.url, headers: spec.headers, timeoutMs: spec.timeoutMs });
+      return new SseHttpTransport({ url: spec.url, headers: buildAuthHeaders(spec), timeoutMs: spec.timeoutMs });
     }
-    return new StreamableHttpTransport({ url: spec.url, headers: spec.headers, timeoutMs: spec.timeoutMs });
+    return new StreamableHttpTransport({ url: spec.url, headers: buildAuthHeaders(spec), timeoutMs: spec.timeoutMs });
   }
   throw new Error("MCP server needs either command (stdio) or url (http)");
 }
@@ -298,12 +359,16 @@ export class McpClient {
   /** Swap a failed Streamable HTTP attempt for the legacy SSE transport. */
   async #fallbackToSse(error) {
     if (!this.spec.url) { return false; }
+    // A credential failure is not a transport mismatch: retrying over SSE would
+    // fail the same way and hide the real cause.
+    const statusCode = Number(error && error.status) || 0;
+    if (statusCode === 401 || statusCode === 403) { return false; }
     if (this.transport instanceof SseHttpTransport) { return false; }
     const status = error && (error.status || /\b4\d\d\b/.test(String(error.message)) ? 400 : 0);
     if (!status && !/404|405|400|not found|method/i.test(String(error && error.message))) { return false; }
     this.transport = new SseHttpTransport({
       url: this.spec.url,
-      headers: this.spec.headers,
+      headers: buildAuthHeaders(this.spec),
       timeoutMs: this.spec.timeoutMs,
     });
     await this.transport.start();
