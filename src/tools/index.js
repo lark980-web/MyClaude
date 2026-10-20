@@ -165,16 +165,24 @@ export const editTool = {
   async run({ file_path, old_string, new_string, replace_all = false }) {
     try {
       const raw = await readFile(file_path, "utf8");
-      if (!raw.includes(old_string)) return err("old_string not found in file");
+      // Models emit LF even when the file on disk is CRLF, so a literal
+      // includes() check fails on every Windows file. Retry with both sides
+      // normalised, then restore the original line endings on write.
+      const usesCRLF = raw.includes("\r\n");
+      const normLine = (s) => String(s).replace(/\r\n/g, "\n");
+      const restoreEol = (s) => (usesCRLF ? String(s).replace(/\n/g, "\r\n") : s);
+      const haystack = raw.includes(old_string) ? raw : normLine(raw);
+      const needle = raw.includes(old_string) ? old_string : normLine(old_string);
+      if (!haystack.includes(needle)) return err("old_string not found in file");
       if (!replace_all) {
-        const count = raw.split(old_string).length - 1;
+        const count = haystack.split(needle).length - 1;
         if (count > 1) return err(`old_string appears ${count} times; provide more context or use replace_all`);
-        const next = raw.replace(old_string, new_string);
-        await writeFile(file_path, next, "utf8");
+        const next = haystack.replace(needle, new_string);
+        await writeFile(file_path, restoreEol(next), "utf8");
         return ok(`replaced 1 occurrence in ${file_path}`);
       }
-      const next = raw.split(old_string).join(new_string);
-      await writeFile(file_path, next, "utf8");
+      const next = haystack.split(needle).join(new_string);
+      await writeFile(file_path, restoreEol(next), "utf8");
       return ok(`replaced all occurrences in ${file_path}`);
     } catch (e) {
       return err(`${e.code || "ERR"}: ${e.message}`);

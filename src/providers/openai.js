@@ -74,12 +74,12 @@ export class OpenAIProvider {
     return (json.data || []).map((m) => m.id);
   }
 
-  async streamChat({ messages, tools, signal, onDelta, onToolCall, onReasoning }) {
+  async streamChat({ messages, tools, signal, onDelta, onToolCall, onReasoning, maxTokens }) {
     const body = {
       model: this.model,
       messages,
       stream: true,
-      max_tokens: this.config.maxTokens,
+      max_tokens: maxTokens || this.config.maxTokens,
       temperature: this.config.temperature,
       // Ask for a final usage chunk; endpoints that ignore it simply never
       // send one, and usage stays null instead of lying.
@@ -197,7 +197,7 @@ export class OpenAIProvider {
     const body = {
       model: this.model,
       messages,
-      max_tokens: this.config.maxTokens,
+      max_tokens: maxTokens || this.config.maxTokens,
       temperature: this.config.temperature,
     };
     if (tools && tools.length) {

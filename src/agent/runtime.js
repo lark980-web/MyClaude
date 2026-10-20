@@ -14,7 +14,7 @@ import { EXTENDED_TOOLS, setQuestionPresenter, answerQuestion } from "../tools/e
 /**
  * Build an Agent wired with the extended tool set and any configured MCP servers.
  */
-export async function createAgent({ provider, config, ui, providerFactory }) {
+export async function createAgent({ provider, config, ui, providerFactory, sessionKey }) {
   // Register the built-in extended tools once per process.
   registerTools([multiEditTool, todoWriteTool, webFetchTool, ...EXTENDED_TOOLS]);
 
@@ -23,6 +23,7 @@ export async function createAgent({ provider, config, ui, providerFactory }) {
     config,
     ui,
     tools: toolSchemas(),
+    sessionKey,
     permissions: config.permissions,
   });
 

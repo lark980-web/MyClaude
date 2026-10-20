@@ -117,7 +117,7 @@ export async function startGui({ config: initialConfig, port = 7788, open = true
   const agentFor = async (key, ui) => {
     let agent = sessions.get(key);
     if (!agent) {
-      agent = await createAgent({ provider, config, ui, providerFactory: () => createProvider(config) });
+      agent = await createAgent({ provider, config, ui, sessionKey: key, providerFactory: () => createProvider(config) });
       sessions.set(key, agent);
     } else if (ui) {
       if (typeof agent.setUi === "function") agent.setUi(ui);

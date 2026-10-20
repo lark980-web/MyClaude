@@ -21,7 +21,7 @@ const NON_MUTATING_TOOLS = new Set([
 ]);
 
 export class Agent {
-  constructor({ provider, config, ui, tools = toolSchemas(), permissions }) {
+  constructor({ provider, config, ui, tools = toolSchemas(), permissions, sessionKey }) {
     this.provider = provider;
     // Wrap the provider so a failing endpoint can fall back to another model.
     // The router owns the active provider; `this.provider` stays the entry point
@@ -45,7 +45,9 @@ export class Agent {
     this.turnCount = 0;
     // Guards the Stop hook so it can only extend a run once.
     this.stopHookUsed = false;
-    this.sessionKey = "default";
+    // Session identity comes from the caller: the GUI keeps one agent per tab,
+    // so a hard-coded "default" made every tab share todos and task lists.
+    this.sessionKey = sessionKey || config.sessionKey || "default";
     this.mcp = null;
     this.totalInputTokens = 0;
     this.totalOutputTokens = 0;
@@ -323,6 +325,8 @@ export class Agent {
       let result;
       try {
         result = await this.router.streamChat({
+          // Per-model ceiling beats the global config default (8192).
+          maxTokens: this.maxTokens,
           messages: this.buildRequestMessages(),
           tools: this.tools,
           signal: this.abortController.signal,
