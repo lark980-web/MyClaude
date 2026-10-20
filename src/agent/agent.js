@@ -8,6 +8,7 @@ import { setQuestionPresenter } from "../tools/extended.js";
 import { HookRunner } from "../hooks.js";
 import { stripReasoning } from "./think.js";
 import { CheckpointStore } from "./checkpoint.js";
+import { skillCatalogue } from "../skills.js";
 import { contextWindowOf, maxTokensOf, supportsVision, findModel } from "../models.js";
 import { CONFIG_DIR } from "../config.js";
 import { join } from "node:path";
@@ -144,6 +145,22 @@ export class Agent {
         `\n\n# Project memory (MYCLAUDE.md)\n\nThe following project instructions take precedence over generic defaults:\n\n${this.memory}`
       );
     }
+    // Skills are advertised by name and description only. The model asks for a
+    // body when it decides the skill applies, so a large library does not bloat
+    // every request. Loading failures must never stop the agent from starting.
+    try {
+      const catalogue = skillCatalogue(process.cwd());
+      if (catalogue.length) {
+        const lines2 = catalogue.map((s) => `- ${s.name}: ${s.description}`).join("\n");
+        parts.push(
+          `\n\n# Available skills\nYou can use these skills when they fit the task. ` +
+            `Each is described so you can judge relevance; ask before assuming one exists.\n\n${lines2}`
+        );
+      }
+    } catch {
+      // A broken skill directory is not a reason to fail the session.
+    }
+
     if (this.config.permissionMode === "plan") {
       parts.push(
         `\n\n# Plan mode\nYou are in plan mode: you MUST NOT use Write, Edit, MultiEdit, NotebookEdit or any ` +

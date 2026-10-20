@@ -72,7 +72,7 @@ export function loadCommands(cwd = process.cwd()) {
 }
 
 /** Pull the leading `---` YAML-ish block out of a command file. */
-function splitFrontMatter(text) {
+export function splitFrontMatter(text) {
   const lines = String(text || "").replace(/\r\n?/g, "\n").split("\n");
   if (lines[0]?.trim() !== "---") { return { front: {}, body: lines.join("\n") }; }
   const front = {};

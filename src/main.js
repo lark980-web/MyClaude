@@ -18,6 +18,7 @@ import {
 } from "./session.js";
 import { resolveAttachments, describeAttachment } from "./attachments.js";
 import { loadCommands, findCommand, expandCommand } from "./commands.js";
+import { loadSkills } from "./skills.js";
 import { normalizeMode, PERMISSION_MODES } from "./agent/modes.js";
 import { VERSION } from "./version.js";
 import { GATEWAY_KEY_ENV, costLineFor, NO_PRICE_NOTICE } from "./models.js";
@@ -57,6 +58,7 @@ Commands (interactive):
   /compact           force context compaction now
   /cost              show token usage and estimated spend for this session
   /doctor            check config, gateway, tools and permissions
+  /skills            list available skills
   /model [name]      show or set model
   /provider [name]   show or set provider
   /base [url]        show or set base URL
@@ -498,6 +500,23 @@ async function handleCommand(raw, ctx) {
         return {};
       }
       ui.success(deleteSession(arg) ? `deleted ${arg}` : `not found: ${arg}`);
+      return {};
+    }
+    case "skills": {
+      const list = loadSkills(process.cwd());
+      if (!list.length) {
+        ui.info(
+          "(no skills) — add a directory containing SKILL.md under " +
+            ".myclaude/skills/ or ~/.myclaude/skills/"
+        );
+        return {};
+      }
+      ui.info(
+        `skills (${list.length}):\n` +
+          list
+            .map((s) => `  /${s.name.padEnd(16)} ${s.description}${s.scope === "user" ? "  (user)" : ""}`)
+            .join("\n")
+      );
       return {};
     }
     case "commands": {
