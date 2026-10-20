@@ -57,6 +57,31 @@ const NAME_VENDORS = [
   [/^grok/i, "xAI"],
 ];
 
+/** Aliases for the vendor segment of a "vendor/model" id. */
+const PREFIX_ALIASES = [
+  [/^claude$/i, "Anthropic"],
+  [/^(deepseek|ds)$/i, "DeepSeek"],
+  [/^(openai|gpt|o[13])$/i, "OpenAI"],
+  [/^(gemini|google|bard)$/i, "Google"],
+  [/^(qwen|tongyi|aliyun|alibaba)$/i, "阿里通义"],
+  [/^(glm|z-ai|zhipu|chatglm)$/i, "智谱"],
+  [/^(kimi|moonshot)$/i, "月之暗面"],
+  [/^(ernie|wenxin|baidu)$/i, "百度"],
+  [/^(baichuan)$/i, "百川"],
+  [/^(llama|meta)$/i, "Meta"],
+  [/^(mistral|mixtral)$/i, "Mistral"],
+  [/^(grok|xai|x-ai)$/i, "xAI"],
+  [/^(minimax)$/i, "MiniMax"],
+  [/^(sensenova)$/i, "商汤"],
+  [/^(nvidia)$/i, "NVIDIA"],
+  [/^(amd)$/i, "AMD"],
+  [/^(opencode-zen|opencode)$/i, "OpenCode Zen"],
+  [/^(workbuddy|workbuddy-ai)$/i, "WorkBuddy"],
+  [/^(qoder|qoder-cn)$/i, "Qoder"],
+  [/^(beatapi)$/i, "BeatAPI"],
+  [/^(group|auto)$/i, "路由组"],
+];
+
 /** A local gateway (127.0.0.1 / localhost / LAN IP) is self-hosted. */
 function isLocal(baseUrl) {
   const u = String(baseUrl || "").toLowerCase();
@@ -71,29 +96,45 @@ function isLocal(baseUrl) {
  * @param {string} [model]
  */
 export function vendorFromUrl(baseUrl, model = "") {
-  const url = String(baseUrl || "");
-  const host = hostOf(url);
+  // 1) The endpoint is authoritative: a known host wins outright. Checking the
+  //    model id first would let "meta/llama-3.1" override the NVIDIA host that
+  //    is actually serving the request.
+  const host = hostOf(baseUrl);
   for (const [re, name] of HOST_VENDORS) {
     if (re.test(host)) { return name; }
   }
-  // "vendor/model" is the gateway convention (DSH does the same): the segment
-  // before the slash names the vendor, so it beats any name-based guess.
-  const slash = String(model || "").indexOf("/");
-  if (slash > 0) { return String(model).slice(0, slash); }
-  // A local gateway proxies many vendors under one host, so the endpoint says
-  // nothing and every model would land in a single useless group. Fall back to
-  // the model name to surface the vendor behind the gateway; only models we
-  // cannot place stay under the gateway label.
-  for (const [re, name] of NAME_VENDORS) {
-    if (re.test(String(model || ""))) { return name; }
+
+  const m = String(model || "").trim();
+  const slash = m.indexOf("/");
+
+  // 2) "vendor/model" is the gateway convention: the segment before the slash
+  //    names the vendor. Some prefixes are aliases that need translating.
+  if (slash > 0) {
+    const prefix = m.slice(0, slash);
+    // Common vendor segments are aliases of a display name, so translate them
+    // instead of echoing the raw prefix.
+    for (const [re, name] of PREFIX_ALIASES) {
+      if (re.test(prefix)) { return name; }
+    }
+    if (/trae/i.test(prefix)) {
+      const rest = m.slice(slash + 1);
+      for (const [re, name] of NAME_VENDORS) {
+        if (re.test(rest)) return name;
+      }
+      return "Trae";
+    }
+    return prefix;
   }
-  if (isLocal(url)) { return "本地网关"; }
-  const m = /^https?:\/\/([^/]+)/i.exec(url);
-  if (m) { return m[1].replace(/^www\./i, ""); }
+
+  // 3) Bare model name, or a local gateway proxying several vendors.
+  for (const [re, name] of NAME_VENDORS) {
+    if (re.test(m)) { return name; }
+  }
+  if (isLocal(baseUrl)) { return "本地网关"; }
+  if (host) { return host; }
   return "未知";
 }
 
-/** Short, human label for an endpoint, e.g. "本地网关 · 127.0.0.1:8000". */
 export function endpointLabel(baseUrl) {
   const url = String(baseUrl || "");
   if (!url) { return "未配置"; }

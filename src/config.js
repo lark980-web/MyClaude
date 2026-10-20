@@ -47,11 +47,14 @@ const GATEWAY_FALLBACKS = [
   "beatapi/deepseek-v4.1-flash-free",
 ].map((id) => ({ name: id, model: id, baseUrl: GATEWAY_BASE_URL, apiKey: "" }));
 
+const defaultBaseUrl = process.env.MYCLAUDE_BASE_URL || (process.env.GEMINI_API_KEY ? "https://generativelanguage.googleapis.com/v1beta/openai" : GATEWAY_BASE_URL);
+const defaultApiKey = process.env.MYCLAUDE_API_KEY || (process.env.GEMINI_API_KEY ? process.env.GEMINI_API_KEY : gatewayKey());
+
 export const DEFAULT_CONFIG = {
   provider: "openai",
-  // One local gateway fronts every vendor, exactly as DSH wires it.
-  baseUrl: GATEWAY_BASE_URL,
-  apiKey: gatewayKey(),
+  activeProviderKey: process.env.GEMINI_API_KEY ? "gemini" : "gateway",
+  baseUrl: defaultBaseUrl,
+  apiKey: defaultApiKey,
   model: DEFAULT_MODEL,
   // Seconds to wait for a response before considering the endpoint dead.
   requestTimeoutMs: 90000,
@@ -67,6 +70,7 @@ export const DEFAULT_CONFIG = {
   contextWindow: contextWindowOf(DEFAULT_MODEL),
   compactThreshold: 0.8,
   mcpServers: {},
+  providers: {}
 };
 
 export function ensureConfigDir() {
@@ -87,10 +91,12 @@ export function loadConfig() {
   return {
     ...DEFAULT_CONFIG,
     ...fileConfig,
+    activeProviderKey: fileConfig.activeProviderKey || (fileConfig.baseUrl?.includes("anthropic") ? "anthropic" : fileConfig.baseUrl?.includes("deepseek") ? "deepseek" : fileConfig.baseUrl?.includes("googleapis") ? "gemini" : DEFAULT_CONFIG.activeProviderKey),
     baseUrl: process.env.MYCLAUDE_BASE_URL || fileConfig.baseUrl || DEFAULT_CONFIG.baseUrl,
     apiKey: process.env.MYCLAUDE_API_KEY || fileConfig.apiKey || DEFAULT_CONFIG.apiKey,
     model: process.env.MYCLAUDE_MODEL || fileConfig.model || DEFAULT_CONFIG.model,
     provider: process.env.MYCLAUDE_PROVIDER || fileConfig.provider || DEFAULT_CONFIG.provider,
+    providers: fileConfig.providers || {}
   };
 }
 

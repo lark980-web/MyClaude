@@ -1,0 +1,831 @@
+<!DOCTYPE html>
+<html lang="zh-CN" translate="no" class="notranslate">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta name="google" content="notranslate">
+<meta name="robots" content="notranslate">
+<meta http-equiv="Content-Language" content="zh-CN">
+<meta name="renderer" content="webkit">
+<meta name="description" content="An original terminal coding agent with tool use, plus a Claude-style web GUI">
+<meta property="og:title" content="MyClaude">
+<meta property="og:description" content="An original terminal coding agent with tool use, plus a Claude-style web GUI">
+<title>MyClaude</title>
+<script>
+  /* 首帧前确定主题，避免闪烁：URL 参数 > 本地记录 > 系统偏好 */
+  (function () {
+    var t = null;
+    try { t = new URLSearchParams(location.search).get("theme"); } catch (e) { }
+    if (t !== "light" && t !== "dark") { try { t = localStorage.getItem("myclaude.theme"); } catch (e) { } }
+    if (t !== "light" && t !== "dark") { t = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"; }
+    document.documentElement.setAttribute("data-theme", t);
+  })();
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/app.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='-12 -12 24 24'><g fill='%23D97757'><rect x='-1.5' y='-11' width='3' height='9' rx='1.5'/><rect x='-1.5' y='-11' width='3' height='9' rx='1.5' transform='rotate(45)'/><rect x='-1.5' y='-11' width='3' height='9' rx='1.5' transform='rotate(90)'/><rect x='-1.5' y='-11' width='3' height='9' rx='1.5' transform='rotate(135)'/><rect x='-1.5' y='-11' width='3' height='9' rx='1.5' transform='rotate(180)'/><rect x='-1.5' y='-11' width='3' height='9' rx='1.5' transform='rotate(225)'/><rect x='-1.5' y='-11' width='3' height='9' rx='1.5' transform='rotate(270)'/><rect x='-1.5' y='-11' width='3' height='9' rx='1.5' transform='rotate(315)'/></g></svg>">
+</head>
+<body class="notranslate">
+
+<!-- 图标库：原创的八芒星标记 + 线性图标 -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-spark" viewBox="-12 -12 24 24">
+      <g fill="currentColor">
+        <rect x="-1.45" y="-11.2" width="2.9" height="8.6" rx="1.45"/>
+        <rect x="-1.45" y="-11.2" width="2.9" height="8.6" rx="1.45" transform="rotate(45)"/>
+        <rect x="-1.45" y="-11.2" width="2.9" height="8.6" rx="1.45" transform="rotate(90)"/>
+        <rect x="-1.45" y="-11.2" width="2.9" height="8.6" rx="1.45" transform="rotate(135)"/>
+        <rect x="-1.45" y="-11.2" width="2.9" height="8.6" rx="1.45" transform="rotate(180)"/>
+        <rect x="-1.45" y="-11.2" width="2.9" height="8.6" rx="1.45" transform="rotate(225)"/>
+        <rect x="-1.45" y="-11.2" width="2.9" height="8.6" rx="1.45" transform="rotate(270)"/>
+        <rect x="-1.45" y="-11.2" width="2.9" height="8.6" rx="1.45" transform="rotate(315)"/>
+      </g>
+    </symbol>
+    <symbol id="i-plus" viewBox="0 0 20 20"><path d="M10 4.5v11M4.5 10h11" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></symbol>
+    <symbol id="i-search" viewBox="0 0 20 20"><circle cx="9" cy="9" r="5.2" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M13 13l3.5 3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></symbol>
+    <symbol id="i-chat" viewBox="0 0 20 20"><path d="M4 5.5A2.5 2.5 0 016.5 3h7A2.5 2.5 0 0116 5.5v5a2.5 2.5 0 01-2.5 2.5H9l-3.6 3v-3H6.5A2.5 2.5 0 014 10.5z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></symbol>
+    <symbol id="i-folder" viewBox="0 0 20 20"><path d="M3 6a2 2 0 012-2h3l1.6 1.8H15a2 2 0 012 2V14a2 2 0 01-2 2H5a2 2 0 01-2-2z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></symbol>
+    <symbol id="i-tool" viewBox="0 0 20 20"><path d="M8.2 3.4a4 4 0 015.2 5.2l3.4 3.4a1.5 1.5 0 01-2.1 2.1l-3.4-3.4A4 4 0 016 5.5l2 2 1.4-1.4-2-2z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></symbol>
+    <symbol id="i-task" viewBox="0 0 20 20"><rect x="3.5" y="4" width="13" height="12" rx="2.2" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M6.5 8.2h7M6.5 11.6h4.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 20 20"><circle cx="10" cy="10" r="6.5" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M10 6.5V10l2.4 1.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></symbol>
+    <symbol id="i-gear" viewBox="0 0 20 20"><path d="M8.6 2.8h2.8l.4 2 1.5.9 1.9-.7 1.4 2.4-1.5 1.4v1.8l1.5 1.4-1.4 2.4-1.9-.7-1.5.9-.4 2H8.6l-.4-2-1.5-.9-1.9.7-1.4-2.4 1.5-1.4V9.1L3.4 7.7l1.4-2.4 1.9.7 1.5-.9z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><circle cx="10" cy="10" r="2.2" fill="none" stroke="currentColor" stroke-width="1.3"/></symbol>
+    <symbol id="i-sun" viewBox="0 0 20 20"><circle cx="10" cy="10" r="3.2" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M10 2.8v1.6M10 15.6v1.6M2.8 10h1.6M15.6 10h1.6M4.9 4.9l1.1 1.1M14 14l1.1 1.1M15.1 4.9L14 6M6 14l-1.1 1.1" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></symbol>
+    <symbol id="i-moon" viewBox="0 0 20 20"><path d="M15.5 12.2A6 6 0 017.8 4.5a6 6 0 107.7 7.7z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></symbol>
+    <symbol id="i-sidebar" viewBox="0 0 20 20"><rect x="3" y="4" width="14" height="12" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M8 4.5v11" stroke="currentColor" stroke-width="1.4"/></symbol>
+    <symbol id="i-panel" viewBox="0 0 20 20"><rect x="3" y="4" width="14" height="12" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M12 4.5v11" stroke="currentColor" stroke-width="1.4"/></symbol>
+    <symbol id="i-up" viewBox="0 0 20 20"><path d="M10 15.5v-11M5.5 9L10 4.5 14.5 9" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-down" viewBox="0 0 20 20"><path d="M10 4.5v11M5.5 11L10 15.5 14.5 11" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-chev" viewBox="0 0 20 20"><path d="M6 8l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-x" viewBox="0 0 20 20"><path d="M5.5 5.5l9 9M14.5 5.5l-9 9" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></symbol>
+    <symbol id="i-eye" viewBox="0 0 20 20"><path d="M2.5 10S5.2 4.8 10 4.8 17.5 10 17.5 10 14.8 15.2 10 15.2 2.5 10 2.5 10z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><circle cx="10" cy="10" r="2.3" fill="none" stroke="currentColor" stroke-width="1.4"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 20 20"><rect x="7" y="7" width="9" height="9" rx="2" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M13 7V5.5A1.5 1.5 0 0011.5 4h-6A1.5 1.5 0 004 5.5v6A1.5 1.5 0 005.5 13H7" fill="none" stroke="currentColor" stroke-width="1.4"/></symbol>
+    <symbol id="i-retry" viewBox="0 0 20 20"><path d="M15.5 10a5.5 5.5 0 11-1.6-3.9M15.5 4v3.5H12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-edit" viewBox="0 0 20 20"><path d="M12.6 4.6l2.8 2.8-8 8H4.6v-2.8z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></symbol>
+    <symbol id="i-mic" viewBox="0 0 20 20"><rect x="7.2" y="2.8" width="5.6" height="9.2" rx="2.8" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M4.6 9.5a5.4 5.4 0 0010.8 0M10 14.9v2.3M7.2 17.2h5.6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></symbol>
+    <symbol id="i-code" viewBox="0 0 20 20"><path d="M6.8 6.2L3 10l3.8 3.8M13.2 6.2L17 10l-3.8 3.8M11.2 4.5l-2.4 11" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-style" viewBox="0 0 20 20"><path d="M4 15.5c2.2 0 3.5-1.2 4.2-3.2l2.6-7.3h2.2l-2.6 7.3c-.5 1.4.2 2.2 1.5 2.2 1.2 0 2.3-.7 3.1-1.8M5.8 9.2h6.2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-at" viewBox="0 0 20 20"><circle cx="10" cy="10" r="2.8" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M12.8 10v1.2a1.8 1.8 0 003.6 0V10a6.4 6.4 0 10-2.6 5.2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></symbol>
+    <symbol id="i-download" viewBox="0 0 20 20"><path d="M10 3.5v9.2M6.5 9.5L10 13l3.5-3.5M4 15.8h12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-archive" viewBox="0 0 20 20"><rect x="3" y="4" width="14" height="3.5" rx="1" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M4.2 7.5v7.5a1.5 1.5 0 001.5 1.5h8.6a1.5 1.5 0 001.5-1.5V7.5M8.2 11h3.6" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></symbol>
+    <symbol id="i-book" viewBox="0 0 20 20"><path d="M3.5 5.2A1.7 1.7 0 015.2 3.5h3.3c1 0 1.5.5 1.5 1.5v11.2c0-.8-.6-1.2-1.5-1.2H5.2a1.7 1.7 0 01-1.7-1.7V5.2zm13 0A1.7 1.7 0 0014.8 3.5h-3.3c-1 0-1.5.5-1.5 1.5v11.2c0-.8.6-1.2 1.5-1.2h3.3a1.7 1.7 0 001.7-1.7V5.2z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></symbol>
+    <symbol id="i-brain" viewBox="0 0 20 20"><path d="M10 3.2v13.6M10 5.2a3.2 3.2 0 00-5.4 2.2A2.8 2.8 0 004 12.6a3 3 0 004 3.6c.8.3 1.5 0 2-.6M10 5.2a3.2 3.2 0 015.4 2.2 2.8 2.8 0 01.6 5.2 3 3 0 01-4 3.6c-.8.3-1.5 0-2-.6" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-max" viewBox="0 0 20 20"><path d="M4 8V4h4M16 8V4h-4M4 12v4h4M16 12v4h-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-upload" viewBox="0 0 20 20"><path d="M10 13.2V4.2M6.5 7.5L10 4l3.5 3.5M4 15.8h12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-file-text" viewBox="0 0 20 20"><path d="M5.5 3.5h6l3.5 3.5v9.5a1.5 1.5 0 01-1.5 1.5h-8A1.5 1.5 0 014 16.5v-11.5A1.5 1.5 0 015.5 3.5z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M11.5 3.5V7H15M7 10.5h6M7 13.5h4.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></symbol>
+    <symbol id="i-chart" viewBox="0 0 20 20"><path d="M3.5 15.5h13M5.5 13V9.5M10 13V5.5M14.5 13V7.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></symbol>
+    <symbol id="i-bookmark" viewBox="0 0 20 20"><path d="M5.5 3.5h9a1 1 0 011 1v12l-5.5-3.2L4.5 16.5v-12a1 1 0 011-1z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></symbol>
+    <symbol id="i-pin" viewBox="0 0 20 20"><path d="M12.2 3.4l4.4 4.4-1.5 1.5-1.1-.6-3.1 3.1.5 2.7-1.4 1.4-2.8-2.8-3.5 3.5-.9-.9 3.5-3.5-2.8-2.8 1.4-1.4 2.7.5 3.1-3.1-.6-1.1 1.5-1.5z" fill="none" stroke="currentColor" stroke-width="1.45" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-globe" viewBox="0 0 20 20"><circle cx="10" cy="10" r="6.8" fill="none" stroke="currentColor" stroke-width="1.45"/><path d="M3.4 10h13.2M10 3.2c2 2 3 4.3 3 6.8s-1 4.8-3 6.8c-2-2-3-4.3-3-6.8s1-4.8 3-6.8z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></symbol>
+    <symbol id="i-volume" viewBox="0 0 20 20"><path d="M4 8.2h2.8L10.5 5v10l-3.7-3.2H4a1 1 0 01-1-1V9.2a1 1 0 011-1z" fill="none" stroke="currentColor" stroke-width="1.45" stroke-linejoin="round"/><path d="M13.2 7.5a3.5 3.5 0 010 5M15.2 5.5a6.2 6.2 0 010 9" fill="none" stroke="currentColor" stroke-width="1.45" stroke-linecap="round"/></symbol>
+    <symbol id="i-diff" viewBox="0 0 20 20"><path d="M6 4.5v6M3 7.5h6M3.5 14.5h5M13.5 5.5v9M11 12l2.5 2.5L16 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-save" viewBox="0 0 20 20"><path d="M4.5 3.5h8.8l3.2 3.2v9.3a1 1 0 01-1 1h-11a1 1 0 01-1-1v-11.5a1 1 0 011-1z" fill="none" stroke="currentColor" stroke-width="1.45" stroke-linejoin="round"/><path d="M7 3.5v4h5.5v-4M6.8 17v-5h6.4v5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></symbol>
+  </defs>
+</svg>
+
+<div class="app is-empty notranslate" id="app" translate="no">
+
+  <!-- ============================== 侧栏 ============================== -->
+  <aside class="rail" id="rail">
+    <div class="rail-head">
+      <div class="brand">
+        <span class="brand-name">MyClaude</span>
+      </div>
+      <button class="icon-btn" id="btn-rail-collapse" title="收起侧栏（Ctrl+B）" aria-label="收起侧栏">
+        <svg width="18" height="18"><use href="#i-sidebar"/></svg>
+      </button>
+    </div>
+
+    <nav class="rail-nav">
+      <button class="new-chat" id="btn-new-chat" title="新对话（Ctrl+L）">
+        <span class="new-chat-ico"><svg width="14" height="14"><use href="#i-plus"/></svg></span>
+        <span>新对话</span>
+      </button>
+      <button class="rail-item" id="btn-search-chat" title="搜索（Ctrl+K）">
+        <svg width="16" height="16"><use href="#i-search"/></svg>
+        <span>搜索</span>
+        <kbd class="rail-kbd">Ctrl K</kbd>
+      </button>
+      <button class="rail-item" id="btn-sessions" title="全部对话">
+        <svg width="16" height="16"><use href="#i-chat"/></svg>
+        <span>对话</span>
+      </button>
+      <button class="rail-item" id="btn-project" title="Projects 项目上下文与本地文件知识库（Ctrl+Shift+P）">
+        <svg width="16" height="16"><use href="#i-book"/></svg>
+        <span>Projects 知识库</span>
+        <span class="rail-badge" id="project-count">0</span>
+      </button>
+      <button class="rail-item" id="btn-prompt-library" title="Prompt Library · 常用系统提示词与指令模板库（Ctrl+Shift+L）">
+        <svg width="16" height="16"><use href="#i-bookmark"/></svg>
+        <span>提示词库</span>
+        <span class="rail-badge" id="prompt-lib-count">5</span>
+      </button>
+      <div class="rail-subgrid">
+        <button class="rail-item rail-subitem" id="btn-files" title="浏览工作目录">
+          <svg width="15" height="15"><use href="#i-folder"/></svg>
+          <span>文件</span>
+        </button>
+        <button class="rail-item rail-subitem" id="btn-tools" title="可用工具">
+          <svg width="15" height="15"><use href="#i-tool"/></svg>
+          <span>工具</span>
+          <span class="rail-badge" id="tool-count">0</span>
+        </button>
+        <button class="rail-item rail-subitem" id="btn-tasks" title="后台任务">
+          <svg width="15" height="15"><use href="#i-task"/></svg>
+          <span>任务</span>
+        </button>
+        <button class="rail-item rail-subitem active" id="btn-usage-stats" title="展开/收起侧边栏近 7 日用量统计（Recharts）">
+          <svg width="15" height="15"><use href="#i-chart"/></svg>
+          <span>统计</span>
+          <span class="rail-badge" id="rail-usage-badge">7天</span>
+        </button>
+      </div>
+    </nav>
+
+    <div class="rail-scroll">
+      <!-- 侧边栏近 7 天用量统计视图 (Usage Statistics with Recharts) -->
+      <section class="rail-usage-view" id="rail-usage-view" aria-label="近 7 天用量统计">
+        <div class="rail-usage-head">
+          <div class="rail-usage-title">
+            <svg width="13" height="13"><use href="#i-chart"/></svg>
+            <span>近7天用量</span>
+          </div>
+          <div class="rail-usage-controls">
+            <button type="button" class="rail-usage-tab active" data-metric="tokens" id="btn-usage-metric-tokens" title="按每日 Token 消耗可视化">Token</button>
+            <button type="button" class="rail-usage-tab" data-metric="requests" id="btn-usage-metric-reqs" title="按每日请求频次可视化">频次</button>
+            <button type="button" class="rail-usage-type-btn" id="btn-usage-chart-type" title="切换面积图 / 柱状图">柱状</button>
+          </div>
+        </div>
+        <div class="rail-usage-kpis">
+          <div class="rail-kpi-item">
+            <span class="rail-kpi-label">7日总计</span>
+            <b class="rail-kpi-val" id="rail-kpi-total">--</b>
+          </div>
+          <div class="rail-kpi-item">
+            <span class="rail-kpi-label">日均用量</span>
+            <b class="rail-kpi-val" id="rail-kpi-avg">--</b>
+          </div>
+          <div class="rail-kpi-item">
+            <span class="rail-kpi-label">单日峰值</span>
+            <b class="rail-kpi-val" id="rail-kpi-peak">--</b>
+          </div>
+        </div>
+        <div class="rail-recharts-host" id="rail-recharts-root"></div>
+      </section>
+
+      <div class="rail-label">
+        <div class="rail-label-left">
+          <span>最近</span>
+          <span class="rail-count" id="chat-count">0</span>
+        </div>
+        <button class="rail-archive-btn" id="btn-archive-policy" type="button" title="设置会话自动归档规则（按时间戳与活跃度）">
+          <svg width="12" height="12"><use href="#i-archive"/></svg>
+          <span id="archive-policy-label">智能归档</span>
+        </button>
+      </div>
+      <nav class="chat-list" id="chat-list" aria-label="会话列表"></nav>
+    </div>
+
+    <div class="rail-foot">
+      <button class="profile" id="btn-settings" title="设置（Ctrl+,）">
+        <span class="profile-avatar" id="profile-avatar">D</span>
+        <span class="profile-text">
+          <span class="profile-name" id="profile-name">Danny</span>
+          <span class="profile-sub" id="profile-sub">本地工作区</span>
+        </span>
+        <svg class="profile-gear" width="17" height="17"><use href="#i-gear"/></svg>
+      </button>
+      <button class="icon-btn" id="btn-theme" title="切换深色 / 浅色" aria-label="切换主题">
+        <svg width="17" height="17" id="theme-icon"><use href="#i-moon"/></svg>
+        <span id="theme-label" hidden>深色模式</span>
+      </button>
+    </div>
+  </aside>
+
+  <!-- ============================== 主区 ============================== -->
+  <section class="main" id="main">
+    <header class="topbar">
+      <div class="top-left">
+        <button class="icon-btn" id="btn-rail-toggle" title="展开侧栏（Ctrl+B）" aria-label="侧栏">
+          <svg width="18" height="18"><use href="#i-sidebar"/></svg>
+        </button>
+        <button class="icon-btn only-collapsed" id="btn-top-new" title="新对话" aria-label="新对话">
+          <svg width="18" height="18"><use href="#i-plus"/></svg>
+        </button>
+        <!-- Claude 顶栏模型指示与切换药丸 -->
+        <div class="top-model-wrap">
+          <button class="top-model-pill" id="btn-top-model" type="button" title="点击切换当前模型（按供应商分类）">
+            <svg class="top-model-spark" width="13" height="13" aria-hidden="true"><use href="#i-spark"/></svg>
+            <span class="top-model-name" id="top-model-name">模型</span>
+            <span class="top-model-vendor" id="top-model-vendor"></span>
+            <svg width="12" height="12" class="top-model-chev"><use href="#i-chev"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <div class="top-meta">
+        <span class="top-title" id="top-title">新对话</span>
+        <span class="top-sub" id="top-sub"></span>
+      </div>
+
+      <div class="top-right">
+        <!-- 突出显示模型配置按钮 -->
+        <button class="topbar-model-config-btn" id="btn-open-model-config" type="button" title="打开模型与供应商配置中心（Ctrl+,）">
+          <svg width="15" height="15"><use href="#i-gear"/></svg>
+          <span class="cfg-btn-text">模型与供应商配置</span>
+          <span class="topbar-cfg-badge" id="top-cfg-status-badge">就绪</span>
+        </button>
+        <div class="export-pick">
+          <button class="ghost-btn" id="btn-export-chat" type="button" title="导出或分享当前对话（Markdown / HTML 独立报告 / PDF 打印）">
+            <svg width="13" height="13"><use href="#i-download"/></svg>
+            <span>导出对话</span>
+          </button>
+          <div class="style-menu export-menu" id="export-menu" hidden>
+            <div class="style-menu-head">导出与分享当前会话 · Export &amp; Share</div>
+            <button type="button" class="style-opt" data-export-fmt="md">
+              <div class="style-opt-top"><span>导出 Markdown 文档 (.md)</span></div>
+              <div class="style-opt-desc">包含完整对话、代码块与思考摘要的标准 Markdown 文件</div>
+            </button>
+            <button type="button" class="style-opt" data-export-fmt="html">
+              <div class="style-opt-top"><span>导出独立网页快照 (.html)</span></div>
+              <div class="style-opt-desc">自带 Claude 温暖极简排版与代码高亮的单文件离线 HTML 报告</div>
+            </button>
+            <button type="button" class="style-opt" data-export-fmt="print">
+              <div class="style-opt-top"><span>打印 / 另存为 PDF 报告</span></div>
+              <div class="style-opt-desc">打开排版精美的打印预览视图，支持一键保存为 PDF</div>
+            </button>
+            <button type="button" class="style-opt" data-export-fmt="copy">
+              <div class="style-opt-top"><span>复制完整对话 Markdown</span></div>
+              <div class="style-opt-desc">将当前全部问答复制到剪贴板，便于粘贴至飞书/Notion/文档</div>
+            </button>
+          </div>
+        </div>
+        <button class="ghost-btn" id="btn-expand-tools" title="展开或收起全部工具输出">
+          <span id="expand-tools-label">展开输出</span>
+        </button>
+        <div class="usage" id="usage" title="上下文用量">
+          <span class="usage-ring" aria-hidden="true"></span>
+          <span class="usage-pct">0%</span>
+        </div>
+        <button class="icon-btn" id="btn-clear" title="新对话（Ctrl+L）" aria-label="新对话" hidden>
+          <svg width="18" height="18"><use href="#i-plus"/></svg>
+        </button>
+        <button class="icon-btn" id="btn-insp-toggle" title="会话面板（Ctrl+I）" aria-label="会话面板">
+          <svg width="18" height="18"><use href="#i-panel"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- 聊天区顶部置顶消息栏 (Pinned Conversation Segments) -->
+    <div class="pinned-bar" id="pinned-bar" aria-label="置顶消息" hidden></div>
+
+    <main class="stream" id="stream">
+      <div class="stream-inner" id="log">
+
+        <section class="welcome" id="welcome">
+          <div class="welcome-emblem">
+            <svg class="welcome-mark" width="46" height="46" aria-hidden="true"><use href="#i-spark"/></svg>
+          </div>
+          <h1 class="welcome-title">
+            <span id="greeting">下午好，开发者</span>
+          </h1>
+          <p class="welcome-sub" id="w-meta">原生终端编程智能体 · 支持多模型供应商自主调用与全套工程工具</p>
+
+          <!-- 突出展示当前运行模型状态与快捷配置 -->
+          <div class="welcome-model-card" id="welcome-model-card">
+            <div class="wmc-left">
+              <span class="wmc-icon" id="wmc-icon">✳️</span>
+              <div class="wmc-info">
+                <div class="wmc-title-row">
+                  <span class="latency-dot fast" id="wmc-dot"></span>
+                  <span class="wmc-label">当前运行模型：</span>
+                  <strong class="wmc-name" id="wmc-name">Claude 3.7 Sonnet</strong>
+                  <span class="wmc-vendor" id="wmc-vendor">Anthropic 官方</span>
+                  <span class="wmc-status-pill" id="wmc-status-pill">🟢 运行就绪</span>
+                </div>
+                <div class="wmc-sub" id="wmc-sub">接口服务地址：https://generativelanguage.googleapis.com · 支持多模态与工程工具自主调用</div>
+              </div>
+            </div>
+            <div class="wmc-actions">
+              <button type="button" class="wmc-btn" id="btn-wmc-switch" type="button" title="点击展开模型切换菜单（按厂商分类）">切换模型与供应商 ▾</button>
+              <button type="button" class="wmc-btn primary" id="btn-wmc-config" type="button" title="打开模型与供应商配置中心">⚙️ 配置供应商与 API Key</button>
+            </div>
+          </div>
+
+          <!-- Claude 经典快捷建议卡片 -->
+          <div class="welcome-suggestions">
+            <button type="button" class="welcome-sug-card" data-prompt="请全面分析当前工程的项目结构，指出可优化或重构的模块">
+              <span class="sug-ico">💡</span>
+              <div class="sug-body">
+                <span class="sug-title">架构与代码优化</span>
+                <span class="sug-desc">全面扫描当前代码仓库，提出模块解耦与性能建议</span>
+              </div>
+            </button>
+            <button type="button" class="welcome-sug-card" data-prompt="帮我为当前应用新增一个实用功能模块，并编写测试与运行验证">
+              <span class="sug-ico">⚡</span>
+              <div class="sug-body">
+                <span class="sug-title">全栈功能开发</span>
+                <span class="sug-desc">自动编写前后端逻辑、验证接口并运行构建</span>
+              </div>
+            </button>
+            <button type="button" class="welcome-sug-card" data-prompt="排查当前终端与服务进程报错，分析日志并尝试修复">
+              <span class="sug-ico">🛠️</span>
+              <div class="sug-body">
+                <span class="sug-title">终端与错误排查</span>
+                <span class="sug-desc">诊断当前环境进程、日志报错与异常堆栈</span>
+              </div>
+            </button>
+            <button type="button" class="welcome-sug-card" id="btn-sug-config">
+              <span class="sug-ico">⚙️</span>
+              <div class="sug-body">
+                <span class="sug-title">配置供应商与密钥</span>
+                <span class="sug-desc">绑定 Claude、DeepSeek、OpenAI 或 Gemini API Key</span>
+              </div>
+            </button>
+          </div>
+        </section>
+
+      </div>
+      <button class="to-bottom" id="btn-to-bottom" title="回到最新" aria-label="回到最新" hidden>
+        <svg width="16" height="16"><use href="#i-down"/></svg>
+      </button>
+    </main>
+
+    <footer class="composer">
+      <div class="composer-inner">
+        <div class="slash" id="slash" hidden></div>
+        <div class="slash at-menu" id="at-menu" hidden></div>
+
+        <div class="prompt" id="composer-box">
+          <div class="tray" id="attach-list" hidden></div>
+          <div class="voice-bar" id="voice-bar" hidden>
+            <div class="voice-wave" id="voice-wave" aria-hidden="true">
+              <i></i><i></i><i></i><i></i><i></i>
+            </div>
+            <span class="voice-badge" id="voice-status">正在聆听中文…</span>
+            <span class="voice-timer" id="voice-timer">00:00</span>
+            <span class="voice-interim" id="voice-interim">请开始说话（免费实时语音转文字）</span>
+            <select class="voice-select" id="voice-lang" title="切换中文识别方言">
+              <option value="zh-CN">普通话 (简体)</option>
+              <option value="zh-HK">粤语 (香港)</option>
+              <option value="zh-TW">国语 (繁体)</option>
+            </select>
+            <select class="voice-select" id="voice-engine" title="切换语音识别引擎">
+              <option value="free">免费极速识别</option>
+              <option value="gemini">AI 精准转写</option>
+              <option value="live">实时语音对话</option>
+            </select>
+            <button class="voice-done-btn" id="btn-voice-done" type="button" title="完成语音输入">完成</button>
+          </div>
+          <div class="prompt-top">
+            <textarea id="in" rows="1" spellcheck="false" autocomplete="off"
+              placeholder="今天想让 MyClaude 帮你做什么？（输入 @ 引用文件 · / 调用命令）"></textarea>
+          </div>
+          <div class="prompt-bar">
+            <div class="prompt-left">
+              <button class="round-btn" id="btn-attach" title="添加图片或文件（也可拖放、粘贴）" aria-label="添加附件">
+                <svg width="16" height="16"><use href="#i-plus"/></svg>
+              </button>
+              <button class="round-btn" id="btn-at" title="引用工作区文件（输入 @ 触发）" aria-label="引用文件">
+                <svg width="16" height="16"><use href="#i-at"/></svg>
+              </button>
+              <div class="segmented" id="mode-seg" role="group" aria-label="权限模式">
+                <span class="segmented-thumb" id="mode-thumb" aria-hidden="true"></span>
+                <button class="segmented-item" data-mode="ask" title="每次写入前询问">询问</button>
+                <button class="segmented-item" data-mode="auto" title="自动批准所有工具">自动</button>
+                <button class="segmented-item" data-mode="plan" title="只读，先给方案">计划</button>
+              </div>
+              <div class="style-pick">
+                <button class="style-btn" id="btn-style" type="button" title="切换回答风格（Choose a style）">
+                  <svg width="14" height="14"><use href="#i-style"/></svg>
+                  <span id="style-label">正常</span>
+                </button>
+                <div class="style-menu" id="style-menu" hidden></div>
+              </div>
+              <button class="style-btn thinking-btn" id="btn-thinking" type="button" title="开启/关闭深度思考（Claude Extended Thinking）">
+                <svg width="14" height="14"><use href="#i-brain"/></svg>
+                <span id="thinking-label">深度思考</span>
+              </button>
+              <button class="style-btn web-search-btn" id="btn-web-search" type="button" title="开启/关闭联网搜索与内联信源角标引用（Web Search &amp; Citations）">
+                <svg width="14" height="14"><use href="#i-globe"/></svg>
+                <span id="web-search-label">联网搜索</span>
+              </button>
+              <button class="style-btn project-pill-btn" id="btn-prompt-project" type="button" title="打开 Projects 模态框：切换多项目工作区或上传本地项目文件供 AI 参考">
+                <svg width="14" height="14"><use href="#i-book"/></svg>
+                <span id="prompt-project-label">Projects</span>
+                <span class="proj-pill-count" id="prompt-project-count" hidden>0</span>
+              </button>
+              <button class="style-btn prompt-lib-pill-btn" id="btn-prompt-lib" type="button" title="打开提示词库（Prompt Library）：保存并复用常用系统提示词或指令">
+                <svg width="14" height="14"><use href="#i-bookmark"/></svg>
+                <span id="prompt-lib-pill-label">提示词库</span>
+              </button>
+              <button class="round-btn vision-btn" id="btn-vision" title="是否把图片发送给模型">
+                <svg width="16" height="16"><use href="#i-eye"/></svg>
+                <span id="vision-label" class="sr">视觉开启</span>
+              </button>
+              <button class="round-btn mic-btn" id="btn-mic" title="免费中文语音转文字（点击说话 · Alt+V）" aria-label="中文语音转文字">
+                <svg width="16" height="16"><use href="#i-mic"/></svg>
+                <span class="sr">语音转文字</span>
+              </button>
+            </div>
+            <div class="prompt-right">
+              <span class="prompt-stat" id="stat"></span>
+              <div class="model-pick">
+                <button class="model-btn" id="btn-model" title="切换模型与供应商">
+                  <span class="latency-dot fast" id="model-btn-dot" aria-hidden="true"></span>
+                  <span id="model-label">模型</span>
+                  <svg width="14" height="14"><use href="#i-chev"/></svg>
+                </button>
+              </div>
+              <button class="stop-btn" id="btn-stop" title="停止生成（Esc）" aria-label="停止生成" hidden>
+                <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><rect x="3" y="3" width="10" height="10" rx="2" fill="currentColor"/></svg>
+              </button>
+              <button class="send-btn" id="send" title="发送（Enter）" aria-label="发送">
+                <svg width="17" height="17"><use href="#i-up"/></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="cards" id="welcome-cards"></div>
+
+        <div class="composer-foot">
+          <span id="vision-note"></span>
+          <span class="foot-hint">MyClaude 可能会出错，请核对重要操作。<kbd>Enter</kbd> 发送 · <kbd>Shift</kbd>+<kbd>Enter</kbd> 换行</span>
+        </div>
+        <input type="file" id="file-input" multiple hidden>
+      </div>
+    </footer>
+  </section>
+
+  <!-- ============================== 会话与 Artifacts 面板 ============================== -->
+  <aside class="inspector" id="inspector">
+    <header class="insp-head">
+      <div class="insp-tabs" role="tablist">
+        <button class="insp-tab active" id="tab-insp-info" data-tab="info" type="button">会话详情</button>
+        <button class="insp-tab" id="tab-insp-artifact" data-tab="artifact" type="button">
+          <span>Artifacts</span>
+          <span class="insp-tab-badge" id="artifact-count" hidden>0</span>
+        </button>
+      </div>
+      <div class="insp-head-right">
+        <button class="icon-btn" id="btn-insp-close" title="关闭（Ctrl+I）" aria-label="关闭">
+          <svg width="16" height="16"><use href="#i-x"/></svg>
+        </button>
+      </div>
+    </header>
+    <div class="insp-scroll" id="insp-body"></div>
+    <div class="artifact-pane" id="artifact-pane" hidden>
+      <div class="artifact-bar" id="artifact-bar">
+        <div class="artifact-meta">
+          <select class="artifact-select" id="artifact-select" title="切换当前对话中的 Artifact"></select>
+        </div>
+        <div class="artifact-actions">
+          <div class="artifact-view-seg">
+            <button class="artifact-view-btn active" id="btn-art-preview" data-view="preview" type="button">预览</button>
+            <button class="artifact-view-btn" id="btn-art-code" data-view="code" type="button">代码</button>
+            <button class="artifact-view-btn" id="btn-art-diff" data-view="diff" type="button" title="对比当前 Artifact 与上一版本（或基线）的行级代码差异">对比 Diff</button>
+            <button class="artifact-view-btn" id="btn-art-edit" data-view="edit" type="button" title="在线修改代码并实时更新预览">编辑</button>
+          </div>
+          <button class="icon-btn" id="btn-art-apply-file" title="将此 Artifact 代码一键写入本地工作区文件（Apply to Workspace）" aria-label="写入工作区文件">
+            <svg width="15" height="15"><use href="#i-save"/></svg>
+          </button>
+          <button class="icon-btn" id="btn-art-reload" title="重新渲染画布预览" aria-label="刷新预览">
+            <svg width="15" height="15"><use href="#i-retry"/></svg>
+          </button>
+          <button class="icon-btn" id="btn-art-copy" title="复制代码" aria-label="复制代码">
+            <svg width="15" height="15"><use href="#i-copy"/></svg>
+          </button>
+          <button class="icon-btn" id="btn-art-download" title="下载文件" aria-label="下载文件">
+            <svg width="15" height="15"><use href="#i-download"/></svg>
+          </button>
+          <button class="icon-btn" id="btn-art-fullscreen" title="全屏展开/还原画布" aria-label="全屏画布">
+            <svg width="15" height="15"><use href="#i-max"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="artifact-apply-bar" id="artifact-apply-bar" hidden>
+        <span class="artifact-apply-label">写入工作区路径：</span>
+        <input type="text" class="artifact-apply-input" id="artifact-apply-path" placeholder="如：src/components/Demo.jsx 或 docs/flow.mmd" autocomplete="off">
+        <button type="button" class="artifact-apply-btn" id="btn-art-apply-confirm">确认写入文件</button>
+        <button type="button" class="model-action-btn" id="btn-art-apply-cancel">取消</button>
+      </div>
+      <div class="artifact-stage" id="artifact-stage"></div>
+      <div class="artifact-refine-bar" id="artifact-refine-bar">
+        <input type="text" class="artifact-refine-input" id="artifact-refine-input" placeholder="让 MyClaude 修改此 Artifact（如：优化界面布局、改为深色风格、增加图表）…" autocomplete="off" />
+        <button class="artifact-refine-btn" id="btn-art-refine" type="button">迭代画布</button>
+      </div>
+    </div>
+  </aside>
+
+  <!-- 划词引用追问浮层 -->
+  <button class="quote-pop" id="quote-pop" type="button" hidden>
+    <span>引用并追问</span>
+  </button>
+
+  <!-- ============================== 浮层 ============================== -->
+  <div class="dropzone" id="dropzone"><div class="dropzone-box">松手即可添加附件</div></div>
+
+  <div class="modal" id="modal" hidden>
+    <div class="modal-veil" data-close="1"></div>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+      <header class="modal-head">
+        <h2 id="modal-title">标题</h2>
+        <button class="icon-btn" data-close="1" title="关闭（Esc）" aria-label="关闭">
+          <svg width="16" height="16" style="pointer-events:none"><use href="#i-x"/></svg>
+        </button>
+      </header>
+      <div class="modal-body" id="modal-body"></div>
+      <footer class="modal-foot" id="modal-foot" hidden></footer>
+    </div>
+  </div>
+
+  <!-- Dedicated Projects Modal: 上传本地项目文件作为 AI 上下文并列表展示 -->
+  <div class="modal projects-modal" id="projects-modal" hidden>
+    <div class="modal-veil" data-proj-close="1"></div>
+    <div class="modal-card projects-modal-card" role="dialog" aria-modal="true" aria-labelledby="projects-modal-title">
+      <header class="modal-head projects-modal-head">
+        <div class="projects-head-title-wrap">
+          <span class="projects-head-icon"><svg width="18" height="18"><use href="#i-book"/></svg></span>
+          <div>
+            <h2 id="projects-modal-title">Projects · 项目上下文与提示词库</h2>
+            <p class="projects-head-sub" id="projects-modal-sub">上传本地项目文件作为上下文，或保存并复用常用系统提示词（System Prompts）与指令</p>
+          </div>
+        </div>
+        <div class="projects-head-right">
+          <div class="proj-modal-switch" id="proj-modal-mode-tabs" role="tablist">
+            <button type="button" class="proj-mode-tab active" data-proj-mode="files" id="tab-proj-mode-files">
+              <svg width="13" height="13"><use href="#i-file-text"/></svg>
+              <span>项目文件上下文</span>
+            </button>
+            <button type="button" class="proj-mode-tab" data-proj-mode="prompts" id="tab-proj-mode-prompts">
+              <svg width="13" height="13"><use href="#i-bookmark"/></svg>
+              <span>提示词库 (Prompt Library)</span>
+              <span class="proj-tab-cnt" id="proj-lib-tab-cnt">5</span>
+            </button>
+          </div>
+          <button class="icon-btn" id="btn-proj-modal-close" data-proj-close="1" title="关闭（Esc）" aria-label="关闭">
+            <svg width="16" height="16" style="pointer-events:none"><use href="#i-x"/></svg>
+          </button>
+        </div>
+      </header>
+
+      <div class="modal-body projects-modal-body" id="projects-modal-body">
+        <div class="proj-files-pane" id="proj-files-pane">
+        <!-- 多项目工作区切换栏 (Multi-Project Switcher) -->
+        <div class="proj-switcher-bar" id="proj-switcher-bar">
+          <div class="proj-switcher-left">
+            <span class="proj-switcher-label">切换工作区项目：</span>
+            <div class="proj-switcher-pills" id="proj-switcher-pills"></div>
+          </div>
+          <div class="proj-switcher-right">
+            <button type="button" class="model-action-btn primary-act" id="btn-proj-create">+ 新建项目</button>
+            <button type="button" class="model-action-btn" id="btn-proj-delete" title="删除当前选中的项目（至少保留一个）">删除项目</button>
+          </div>
+        </div>
+
+        <!-- 顶部项目容量与名称栏 -->
+        <div class="proj-overview-grid">
+          <div class="proj-name-card">
+            <label class="proj-field-label" for="proj-name-input">当前项目名称</label>
+            <input type="text" class="proj-name-input" id="proj-name-input" placeholder="输入项目名称（如：MyClaude Web App）" autocomplete="off">
+          </div>
+          <div class="proj-cap-box proj-cap-box-inline">
+            <div class="proj-cap-top">
+              <span id="proj-cap-summary">已启用 0 个上下文文件</span>
+              <span class="proj-cap-pct" id="proj-cap-pct">0% · 0 tok</span>
+            </div>
+            <div class="progress"><i id="proj-cap-bar" style="width: 2%"></i></div>
+          </div>
+        </div>
+
+        <!-- 本地项目文件上传区（支持拖拽或多选本地文件/目录） -->
+        <div class="proj-upload-zone" id="proj-dropzone">
+          <input type="file" id="proj-file-input" multiple hidden>
+          <input type="file" id="proj-dir-input" webkitdirectory directory multiple hidden>
+          <div class="proj-upload-left">
+            <span class="proj-upload-ico"><svg width="20" height="20"><use href="#i-upload"/></svg></span>
+            <div class="proj-upload-text">
+              <div class="proj-upload-title">拖拽本地项目文件到此处，或点击右侧按钮上传</div>
+              <div class="proj-upload-sub">支持代码、文档与配置（.js, .ts, .py, .md, .json, .html, .css, .sql, .yaml, .txt 等），直接注入 AI 参考上下文</div>
+            </div>
+          </div>
+          <div class="proj-upload-actions">
+            <button type="button" class="btn primary proj-up-btn" id="btn-proj-upload-files">
+              <svg width="14" height="14"><use href="#i-upload"/></svg>
+              <span>上传本地文件</span>
+            </button>
+            <button type="button" class="btn ghost proj-up-btn" id="btn-proj-upload-dir" title="选择本地文件夹批量导入代码上下文">
+              <svg width="14" height="14"><use href="#i-folder"/></svg>
+              <span>上传文件夹</span>
+            </button>
+            <button type="button" class="btn ghost proj-up-btn" id="btn-proj-toggle-snippet" title="手动粘贴一段文档或架构说明作为上下文">
+              <svg width="14" height="14"><use href="#i-plus"/></svg>
+              <span>添加文本片段</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- 可展开的自定义文本片段录入框 -->
+        <div class="proj-snippet-creator" id="proj-snippet-box" hidden>
+          <div class="proj-snippet-row">
+            <input type="text" id="proj-snippet-title" class="proj-snippet-input" placeholder="片段标题（如：API 鉴权说明.md / 数据库 Schema）" autocomplete="off">
+            <div class="proj-snippet-btns">
+              <button type="button" class="btn ghost" id="btn-proj-snippet-cancel">取消</button>
+              <button type="button" class="btn primary" id="btn-proj-snippet-add">加入列表</button>
+            </div>
+          </div>
+          <textarea id="proj-snippet-content" class="msg-edit-ta" rows="4" placeholder="在此粘贴需要让 AI 随时参考的文档、接口定义或代码片段…"></textarea>
+        </div>
+
+        <!-- 项目上下文文件列表控制栏 -->
+        <div class="proj-list-toolbar">
+          <div class="proj-list-tabs" id="proj-source-tabs">
+            <button type="button" class="proj-tab active" data-src="all">全部 <span class="proj-tab-cnt" id="proj-cnt-all">0</span></button>
+            <button type="button" class="proj-tab" data-src="upload">本地上传 <span class="proj-tab-cnt" id="proj-cnt-upload">0</span></button>
+            <button type="button" class="proj-tab" data-src="workspace">工作区关联 <span class="proj-tab-cnt" id="proj-cnt-ws">0</span></button>
+            <button type="button" class="proj-tab" data-src="snippet">文本片段 <span class="proj-tab-cnt" id="proj-cnt-snippet">0</span></button>
+          </div>
+          <div class="proj-list-tools">
+            <input type="text" class="proj-search-input" id="proj-file-search" placeholder="筛选项目文件…" autocomplete="off">
+            <select class="archive-policy-select" id="proj-ws-select" title="从服务端工作区选择文件加入列表">
+              <option value="">+ 关联工作区文件…</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- 项目文件列表容器（供 AI 引用参考） -->
+        <div class="proj-context-list" id="proj-context-list"></div>
+
+        <!-- 文件内容内联预览/编辑面板 -->
+        <div class="proj-file-preview" id="proj-file-preview" hidden>
+          <div class="proj-preview-head">
+            <span class="proj-preview-title" id="proj-preview-title">文件预览</span>
+            <div class="proj-preview-actions">
+              <button type="button" class="model-action-btn" id="btn-proj-preview-save" hidden>保存修改</button>
+              <button type="button" class="model-action-btn" id="btn-proj-preview-close">收起预览</button>
+            </div>
+          </div>
+          <textarea class="proj-preview-ta" id="proj-preview-ta" spellcheck="false"></textarea>
+        </div>
+
+        <!-- 项目专属指令（Custom Instructions）与常用提示词库快捷栏 -->
+        <div class="proj-inst-section">
+          <div class="proj-inst-head">
+            <div>
+              <label class="proj-field-label" for="proj-inst-ta">项目专属系统指令（System Prompt / Custom Instructions）</label>
+              <span class="proj-inst-hint">定义 AI 在此项目中的角色、编码风格与回答规范</span>
+            </div>
+            <div class="proj-inst-actions">
+              <button type="button" class="model-action-btn" id="btn-proj-save-inst-to-lib" title="将下方输入框中的指令保存到「提示词库」以便随时复用">+ 存入提示词库</button>
+              <button type="button" class="model-action-btn active" id="btn-proj-open-lib" title="打开提示词库，浏览、搜索或管理常用系统提示词">浏览提示词库 →</button>
+            </div>
+          </div>
+          <!-- 常用系统提示词一键复用胶囊栏 -->
+          <div class="proj-prompt-quick-bar" id="proj-prompt-quick-bar"></div>
+          <textarea id="proj-inst-ta" class="msg-edit-ta" rows="3" placeholder="例如：请始终使用 TypeScript 和中文注释；回答时优先参考上方已上传的项目文件…（也可点击上方常用提示词一键填入）"></textarea>
+        </div>
+        </div><!-- /.proj-files-pane -->
+
+        <!-- ================= Prompt Library（常用系统提示词与指令模板库视图） ================= -->
+        <div class="proj-prompts-pane" id="proj-prompts-pane" hidden>
+          <!-- 当前激活的系统提示词状态栏 -->
+          <div class="plib-banner" id="plib-active-banner">
+            <div class="plib-banner-left">
+              <span class="plib-banner-dot"></span>
+              <span class="plib-banner-label">当前项目系统指令：</span>
+              <b class="plib-banner-val" id="plib-active-summary">未设置（可从下方列表一键应用）</b>
+            </div>
+            <div class="plib-banner-actions">
+              <button type="button" class="model-action-btn" id="btn-plib-clear-active" hidden>清除当前指令</button>
+              <button type="button" class="btn primary proj-up-btn" id="btn-plib-new">
+                <svg width="13" height="13"><use href="#i-plus"/></svg>
+                <span>新建提示词模板</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- 新建 / 编辑提示词模板表单（默认收起） -->
+          <div class="plib-editor" id="plib-editor" hidden>
+            <div class="plib-editor-head">
+              <span class="plib-editor-title" id="plib-editor-title">新建系统提示词 / 常用指令</span>
+              <span class="proj-inst-hint">保存后可在任意项目或对话中一键复用</span>
+            </div>
+            <div class="plib-editor-grid">
+              <input type="text" class="proj-snippet-input" id="plib-form-title" placeholder="提示词名称（如：资深 React 架构师 / 严苛代码审查）" autocomplete="off">
+              <select class="archive-policy-select plib-cat-select" id="plib-form-category" title="选择提示词分类">
+                <option value="system">系统角色 (System Role)</option>
+                <option value="coding">编程规范 (Coding)</option>
+                <option value="review">审查重构 (Code Review)</option>
+                <option value="docs">文档架构 (Docs & Spec)</option>
+                <option value="custom">自定义指令 (Custom)</option>
+              </select>
+              <input type="text" class="proj-snippet-input plib-tag-input" id="plib-form-tag" placeholder="短标签（如：系统角色 / TS规范）" autocomplete="off">
+            </div>
+            <textarea id="plib-form-content" class="msg-edit-ta" rows="4" placeholder="输入系统提示词或常用指令正文…（例如：你是一位资深架构师，请优先给出清晰的模块设计与完整可运行的 TypeScript 代码）"></textarea>
+            <div class="plib-editor-foot">
+              <label class="plib-check-label">
+                <input type="checkbox" id="plib-form-apply-now" checked>
+                <span>保存后立即设为当前项目系统指令</span>
+              </label>
+              <div class="proj-snippet-btns">
+                <button type="button" class="btn ghost" id="btn-plib-form-cancel">取消</button>
+                <button type="button" class="btn primary" id="btn-plib-form-save">保存到提示词库</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- 提示词库分类筛选与搜索栏 -->
+          <div class="proj-list-toolbar">
+            <div class="proj-list-tabs" id="plib-cat-tabs">
+              <button type="button" class="proj-tab active" data-pcat="all">全部 <span class="proj-tab-cnt" id="plib-cnt-all">0</span></button>
+              <button type="button" class="proj-tab" data-pcat="system">系统角色 <span class="proj-tab-cnt" id="plib-cnt-system">0</span></button>
+              <button type="button" class="proj-tab" data-pcat="coding">编程规范 <span class="proj-tab-cnt" id="plib-cnt-coding">0</span></button>
+              <button type="button" class="proj-tab" data-pcat="review">审查重构 <span class="proj-tab-cnt" id="plib-cnt-review">0</span></button>
+              <button type="button" class="proj-tab" data-pcat="docs">文档撰写 <span class="proj-tab-cnt" id="plib-cnt-docs">0</span></button>
+              <button type="button" class="proj-tab" data-pcat="custom">自定义 <span class="proj-tab-cnt" id="plib-cnt-custom">0</span></button>
+            </div>
+            <div class="proj-list-tools">
+              <input type="text" class="proj-search-input" id="plib-search-input" placeholder="搜索提示词标题、标签或正文…" autocomplete="off">
+            </div>
+          </div>
+
+          <!-- 提示词卡片列表容器 -->
+          <div class="plib-list" id="plib-list"></div>
+        </div><!-- /.proj-prompts-pane -->
+      </div>
+
+      <footer class="modal-foot projects-modal-foot">
+        <div class="proj-foot-left">
+          <button type="button" class="btn ghost" id="btn-proj-toggle-all">全部启用/停用</button>
+          <button type="button" class="btn ghost" id="btn-proj-clear-uploads">清空上传文件</button>
+        </div>
+        <div class="proj-foot-right">
+          <button type="button" class="btn ghost" data-proj-close="1">取消</button>
+          <button type="button" class="btn primary" id="btn-proj-save">保存并应用到 AI 上下文</button>
+        </div>
+      </footer>
+    </div>
+  </div>
+
+  <div class="cmd" id="cmd" hidden>
+    <div class="cmd-veil"></div>
+    <div class="cmd-card">
+      <div class="cmd-search">
+        <svg width="18" height="18"><use href="#i-search"/></svg>
+        <input class="cmd-input" id="cmd-input" placeholder="搜索对话或命令…" autocomplete="off" spellcheck="false">
+      </div>
+      <div class="cmd-list" id="cmd-list"></div>
+    </div>
+  </div>
+
+  <!-- ============================== 模型与供应商配置中心 ============================== -->
+  <div class="modal config-modal" id="model-config-modal" hidden>
+    <div class="modal-veil" id="model-config-veil"></div>
+    <div class="modal-card config-dialog" role="dialog" aria-modal="true" aria-labelledby="cfg-dialog-title">
+      <header class="modal-head config-dialog-head">
+        <div class="cfg-dialog-title-wrap">
+          <span class="cfg-dialog-spark"><svg width="18" height="18"><use href="#i-spark"/></svg></span>
+          <div>
+            <h2 id="cfg-dialog-title" class="cfg-dialog-title">模型与供应商配置中心</h2>
+            <p class="cfg-dialog-sub">配置 Anthropic Claude、DeepSeek、OpenAI、Gemini 与本地模型密钥及推理参数</p>
+          </div>
+        </div>
+        <button class="icon-btn" id="btn-close-model-config" title="关闭（Esc）" aria-label="关闭">
+          <svg width="18" height="18"><use href="#i-x"/></svg>
+        </button>
+      </header>
+
+      <div class="config-tabs-bar">
+        <button type="button" class="config-tab-btn active" data-cfg-tab="providers">
+          <span>供应商与密钥配置</span>
+        </button>
+        <button type="button" class="config-tab-btn" data-cfg-tab="fallbacks">
+          <span>备用容灾模型池</span>
+        </button>
+        <button type="button" class="config-tab-btn" data-cfg-tab="params">
+          <span>Claude 推理参数</span>
+        </button>
+      </div>
+
+      <div class="config-dialog-body" id="model-config-body">
+        <!-- 动态由 app.js 渲染 -->
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================== 浮动模型与供应商切换下拉菜单 ============================== -->
+  <div class="model-menu popover-model-menu" id="model-menu" hidden></div>
+
+  <div class="toasts" id="toasts" aria-live="polite"></div>
+  <div class="veil" id="rail-veil" hidden></div>
+</div>
+
+<script src="/markdown.js" defer></script>
+<script src="/usage-chart.js" defer></script>
+<script src="/app.js" defer></script>
+</body>
+</html>

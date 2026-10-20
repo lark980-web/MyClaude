@@ -25,7 +25,7 @@ import { loadGuiAssets } from "./assets.js";
 import { loadCommands, findCommand, expandCommand } from "../commands.js";
 import { normalizeMode, PERMISSION_MODES } from "../agent/modes.js";
 import { vendorFromUrl, endpointLabel } from "../vendors.js";
-import { MODELS, findModel, supportsVision, contextWindowOf } from "../models.js";
+import { MODELS, PROVIDER_PRESETS, findModel, supportsVision, contextWindowOf } from "../models.js";
 
 const VERSION = "0.18.0";
 const MAX_FILE_BYTES = 1024 * 1024;
@@ -335,34 +335,38 @@ export async function startGui({ config: initialConfig, port = 7788, open = true
     const url = new URL(req.url, `http://localhost:${port}`);
     const path = url.pathname;
 
-    // Host-header guard: the server binds to loopback and should only answer
-    // loopback names, so a hostile page cannot drive it through DNS rebinding.
+    // Host-header guard: allows loopback and cloud preview hosts
     const host = String(req.headers.host || "");
-    if (host && !/^(127\.0\.0\.1|0\.0\.0\.0|localhost|\[::1\]|10\.\d+\.\d+\.\d+|172\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|[a-z0-9.-]+\.(run\.app|google\.com|googleusercontent\.com|internal))(:\d+)?$/i.test(host)) {
+    // Allow loopback, private ranges and known preview hosts. A trailing
+    // catch-all here would match any hostname (including "evil.example") and
+    // silently disable the guard, so the list stays explicit.
+    const ALLOWED_HOST = /^(127\.0\.0\.1|0\.0\.0\.0|localhost|\[::1\]|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+|192\.168\.\d+\.\d+|[a-z0-9.-]+\.(run\.app|google\.com|googleusercontent\.com|internal))(:\d+)?$/i;
+    if (host && !ALLOWED_HOST.test(host)) {
       sendText(res, 403, "forbidden host");
       return;
     }
 
     try {
       /* ---- static assets ---- */
+      const currentAssets = loadGuiAssets();
       if (path === "/" || path === "/index.html") {
-        sendText(res, 200, assets.page, MIME[".html"]);
+        sendText(res, 200, currentAssets.page, MIME[".html"]);
         return;
       }
       if (path === "/app.css") {
-        sendText(res, 200, assets.styles, MIME[".css"]);
+        sendText(res, 200, currentAssets.styles, MIME[".css"]);
         return;
       }
       if (path === "/app.js") {
-        sendText(res, 200, assets.app, MIME[".js"]);
+        sendText(res, 200, currentAssets.app, MIME[".js"]);
         return;
       }
       if (path === "/markdown.js") {
-        sendText(res, 200, assets.markdown, MIME[".js"]);
+        sendText(res, 200, currentAssets.markdown, MIME[".js"]);
         return;
       }
       if (path === "/usage-chart.js") {
-        sendText(res, 200, assets.usageChart || "", MIME[".js"]);
+        sendText(res, 200, currentAssets.usageChart || "", MIME[".js"]);
         return;
       }
 
@@ -374,7 +378,15 @@ export async function startGui({ config: initialConfig, port = 7788, open = true
           version: VERSION,
           model: config.model,
           provider: config.provider,
+          activeProviderKey: config.activeProviderKey || "custom",
           baseUrl: config.baseUrl,
+          apiKeyConfigured: !!config.apiKey,
+          apiKeyMasked: config.apiKey ? (config.apiKey.length > 8 ? config.apiKey.slice(0, 4) + "..." + config.apiKey.slice(-4) : "已配置") : "",
+          temperature: config.temperature ?? 0.7,
+          maxTokens: config.maxTokens ?? 8192,
+          requestTimeoutMs: config.requestTimeoutMs ?? 90000,
+          providerPresets: PROVIDER_PRESETS,
+          providers: config.providers || {},
           permissionMode: agent?.mode ?? config.permissionMode,
           vision: config.vision !== false,
           cwd,
@@ -408,6 +420,14 @@ export async function startGui({ config: initialConfig, port = 7788, open = true
           for (const agent of sessions.values()) agent.setModel?.(config.model);
           saveConfig({ model: config.model });
         }
+        if (body.activeProviderKey) {
+          config.activeProviderKey = String(body.activeProviderKey);
+          saveConfig({ activeProviderKey: config.activeProviderKey });
+        }
+        if (body.providers && typeof body.providers === "object") {
+          config.providers = { ...(config.providers || {}), ...body.providers };
+          saveConfig({ providers: config.providers });
+        }
         if (body.permissionMode) {
           const wanted = normalizeMode(body.permissionMode);
           if (wanted) {
@@ -426,10 +446,22 @@ export async function startGui({ config: initialConfig, port = 7788, open = true
           provider.baseUrl = config.baseUrl.replace(/\/+$/, "");
           saveConfig({ baseUrl: config.baseUrl });
         }
-        if (body.apiKey) {
-          config.apiKey = String(body.apiKey);
+        if (body.apiKey !== undefined) {
+          config.apiKey = String(body.apiKey || "");
           provider.apiKey = config.apiKey;
           saveConfig({ apiKey: config.apiKey });
+        }
+        if (body.temperature != null) {
+          config.temperature = Number(body.temperature);
+          saveConfig({ temperature: config.temperature });
+        }
+        if (body.maxTokens != null) {
+          config.maxTokens = Number(body.maxTokens);
+          saveConfig({ maxTokens: config.maxTokens });
+        }
+        if (body.requestTimeoutMs != null) {
+          config.requestTimeoutMs = Number(body.requestTimeoutMs);
+          saveConfig({ requestTimeoutMs: config.requestTimeoutMs });
         }
         if (Array.isArray(body.fallbacks)) {
           config.fallbacks = body.fallbacks
@@ -452,6 +484,7 @@ export async function startGui({ config: initialConfig, port = 7788, open = true
           permissionMode: config.permissionMode,
           vision: config.vision !== false,
           model: config.model,
+          activeProviderKey: config.activeProviderKey,
           baseUrl: config.baseUrl,
           fallbacks: (config.fallbacks || []).map((f) => ({
             name: f.name || f.model,
@@ -460,6 +493,55 @@ export async function startGui({ config: initialConfig, port = 7788, open = true
             vendor: vendorFromUrl(f.baseUrl || config.baseUrl, f.model)
           }))
         });
+        return;
+      }
+
+      /* ---- 测试模型服务连通性 ---- */
+      if (path === "/api/test-connection" && req.method === "POST") {
+        const body = await readJson(req);
+        const testUrl = String(body.baseUrl || config.baseUrl || "").replace(/\/+$/, "");
+        const testKey = body.apiKey != null && body.apiKey !== "" ? String(body.apiKey).trim() : config.apiKey;
+        const testModel = String(body.model || config.model || "gpt-3.5-turbo").trim();
+        const started = Date.now();
+        try {
+          const controller = new AbortController();
+          const timer = setTimeout(() => controller.abort(), 9000);
+          const headers = { "Content-Type": "application/json" };
+          if (testKey) {
+            if (/anthropic\.com/i.test(testUrl)) {
+              headers["x-api-key"] = testKey;
+              headers["anthropic-version"] = "2023-06-01";
+            } else {
+              headers.Authorization = `Bearer ${testKey}`;
+            }
+          }
+
+          // Try checking /models first
+          let fetchRes = await fetch(`${testUrl}/models`, { method: "GET", headers, signal: controller.signal }).catch(() => null);
+          // If /models returned 404 or failed, try a lightweight ping
+          if (!fetchRes || fetchRes.status === 404 || fetchRes.status === 405) {
+            fetchRes = await fetch(`${testUrl}/chat/completions`, {
+              method: "POST",
+              headers,
+              body: JSON.stringify({ model: testModel, messages: [{ role: "user", content: "ping" }], max_tokens: 1 }),
+              signal: controller.signal
+            }).catch(() => null);
+          }
+          clearTimeout(timer);
+          const latencyMs = Math.max(12, Date.now() - started);
+          if (fetchRes && fetchRes.status >= 200 && fetchRes.status < 300) {
+            sendJson(res, 200, { ok: true, latencyMs, status: fetchRes.status, message: `服务连接正常，响应延迟 ${latencyMs}ms` });
+          } else if (fetchRes && (fetchRes.status === 401 || fetchRes.status === 403)) {
+            sendJson(res, 200, { ok: false, latencyMs, status: fetchRes.status, error: `鉴权失败（HTTP ${fetchRes.status}），请检查 API Key 密钥是否正确` });
+          } else if (fetchRes) {
+            sendJson(res, 200, { ok: false, latencyMs, status: fetchRes.status, error: `服务响应异常（HTTP ${fetchRes.status}: ${fetchRes.statusText || "请求未通过"}）` });
+          } else {
+            sendJson(res, 200, { ok: false, latencyMs, error: "无法连接到该服务地址，请确认地址与网络是否正常" });
+          }
+        } catch (e) {
+          const latencyMs = Math.max(15, Date.now() - started);
+          sendJson(res, 200, { ok: false, latencyMs, error: e?.message || "网络请求超时或地址无法解析" });
+        }
         return;
       }
 
@@ -580,10 +662,22 @@ export async function startGui({ config: initialConfig, port = 7788, open = true
         const models = rawList.map((entry) => {
           const perf = scoreLatency(entry.id);
           const cap = classifyCategory(entry.id);
+          const mDef = findModel(entry.id);
+          const vendor = (mDef && mDef.vendor) || vendorFromUrl(entry.baseUrl, entry.id);
+          const providerKey = (mDef && mDef.providerKey) || null;
+          const badge = (mDef && mDef.badge) || (vendor ? `${vendor}` : null);
           return {
             id: entry.id,
+            name: (mDef && mDef.name) || entry.id,
             baseUrl: entry.baseUrl,
-            vendor: vendorFromUrl(entry.baseUrl, entry.id),
+            providerKey,
+            vendor,
+            badge,
+            color: mDef?.color || null,
+            contextWindow: mDef?.contextWindow || 200000,
+            maxTokens: mDef?.maxTokens || 8192,
+            thinking: !!mDef?.thinking,
+            input: mDef?.input || ["text"],
             category: cap.category,
             categoryLabel: cap.categoryLabel,
             capabilityTag: cap.capabilityTag,

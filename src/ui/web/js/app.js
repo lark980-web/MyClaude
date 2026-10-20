@@ -3666,153 +3666,649 @@
   }
 
   /** 设置页：模型可切换，并附带 provider / 视觉 / 模式。 */
-  function openSettings() {
-    var c = S.config || {};
-    openModal("设置", function (body) {
-      var models = [];
-      var modelInput = document.createElement("input");
-      modelInput.value = c.model || "";
-      modelInput.placeholder = "模型名称";
-      body.appendChild(field("模型", modelInput));
+  var currentConfigTab = "providers";
+  var selectedProviderKey = "anthropic";
+  var showApiKeyPlain = false;
 
-      var modelHint = el("div", "hint", "输入模型名，或在下方选择已发现的模型。");
-      var modelList = el("div", "options");
-      body.appendChild(modelHint);
-      body.appendChild(modelList);
+  var FRONTEND_PROVIDER_PRESETS = [
+    {
+      key: "anthropic",
+      name: "Anthropic Claude",
+      badge: "Claude 官方",
+      icon: "✳",
+      color: "#D97757",
+      baseUrl: "https://api.anthropic.com/v1",
+      defaultModel: "claude-3-7-sonnet",
+      keyPlaceholder: "sk-ant-api03-...",
+      desc: "Anthropic 官方 Claude 旗舰模型，支持 Claude 3.7 Sonnet 混合推理与编程",
+      models: [
+        { id: "claude-3-7-sonnet", name: "Claude 3.7 Sonnet (混合推理/编程旗舰)", tag: "旗舰推理" },
+        { id: "claude-3-5-sonnet", name: "Claude 3.5 Sonnet (全栈编程王者)", tag: "全栈标杆" },
+        { id: "claude-3-5-haiku", name: "Claude 3.5 Haiku (轻量高性价比)", tag: "极速响应" },
+        { id: "claude-3-opus", name: "Claude 3 Opus (复杂深度学术分析)", tag: "深度分析" }
+      ]
+    },
+    {
+      key: "deepseek",
+      name: "DeepSeek 深度求索",
+      badge: "DeepSeek 官方",
+      icon: "🐋",
+      color: "#0066FF",
+      baseUrl: "https://api.deepseek.com/v1",
+      defaultModel: "deepseek-chat",
+      keyPlaceholder: "sk-...",
+      desc: "DeepSeek 官方大模型 API，支持 DeepSeek-V3 编程与 DeepSeek-R1 深度思考",
+      models: [
+        { id: "deepseek-chat", name: "DeepSeek-V3 (通用对话与代码能力)", tag: "通用代码" },
+        { id: "deepseek-reasoner", name: "DeepSeek-R1 (深度思维链与数学推理)", tag: "深度思考" },
+        { id: "deepseek-v4.1-flash", name: "DeepSeek V4.1 Flash (百万超长上下文)", tag: "1M长文本" }
+      ]
+    },
+    {
+      key: "gemini",
+      name: "Google Gemini",
+      badge: "Gemini 官方",
+      icon: "✨",
+      color: "#1A73E8",
+      baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai",
+      defaultModel: "gemini-2.5-flash",
+      keyPlaceholder: "AIzaSy... (环境已自带免费密钥)",
+      desc: "Google Gemini 官方兼容端，系统已注入免费 GEMINI_API_KEY，免配即用",
+      models: [
+        { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash (百万超长上下文极速 · 免配即用)", tag: "免配即用" },
+        { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro (高级多模态复杂推理)", tag: "多模态旗舰" },
+        { id: "gemini-2.0-flash", name: "Gemini 2.0 Flash (实时超快交互)", tag: "极速" }
+      ]
+    },
+    {
+      key: "openai",
+      name: "OpenAI",
+      badge: "OpenAI 官方",
+      icon: "🟢",
+      color: "#10A37F",
+      baseUrl: "https://api.openai.com/v1",
+      defaultModel: "gpt-4o",
+      keyPlaceholder: "sk-proj-...",
+      desc: "OpenAI 官方 API，支持 GPT-4o 全模态、o1/o3-mini 高阶强化推理",
+      models: [
+        { id: "gpt-4o", name: "GPT-4o (全模态旗舰 Omni)", tag: "全模态" },
+        { id: "gpt-4o-mini", name: "GPT-4o Mini (极速高性价比)", tag: "高性价比" },
+        { id: "o1", name: "OpenAI o1 (强化复杂推理旗舰)", tag: "高阶推理" },
+        { id: "o3-mini", name: "OpenAI o3-mini (极速代码与数学推理)", tag: "代码推理" }
+      ]
+    },
+    {
+      key: "zhipu",
+      name: "智谱 AI (GLM)",
+      badge: "智谱清言",
+      icon: "🟣",
+      color: "#385BF5",
+      baseUrl: "https://open.bigmodel.cn/api/paas/v4",
+      defaultModel: "glm-4-flash",
+      keyPlaceholder: "zhipu-api-key...",
+      desc: "国产清言大模型，支持 GLM-4-Plus 长文本与 GLM-4-Flash 免费极速调用",
+      models: [
+        { id: "glm-4-plus", name: "GLM-4 Plus (高性能基座与长文本旗舰)", tag: "智谱旗舰" },
+        { id: "glm-4-flash", name: "GLM-4 Flash (免费极速)", tag: "免费极速" }
+      ]
+    },
+    {
+      key: "qwen",
+      name: "通义千问 (Qwen)",
+      badge: "阿里云百炼",
+      icon: "🔷",
+      color: "#FF6600",
+      baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+      defaultModel: "qwen-2.5-coder-32b",
+      keyPlaceholder: "sk-...",
+      desc: "阿里云通义千问大模型，支持开源编程王者 Qwen 2.5 Coder 32B",
+      models: [
+        { id: "qwen-2.5-coder-32b", name: "Qwen 2.5 Coder 32B (开源编程王者)", tag: "编程标杆" },
+        { id: "qwen-max", name: "Qwen Max (全能超大规模旗舰)", tag: "全能旗舰" }
+      ]
+    },
+    {
+      key: "ollama",
+      name: "Ollama 本地大模型",
+      badge: "本地私有",
+      icon: "🦙",
+      color: "#6B7280",
+      baseUrl: "http://localhost:11434/v1",
+      defaultModel: "deepseek-r1:8b",
+      keyPlaceholder: "Ollama 本地服务无需 API Key",
+      desc: "运行在本地端口 11434 的私有开源大模型，完全离线且无需密钥",
+      models: [
+        { id: "deepseek-r1:8b", name: "DeepSeek-R1 8B (本地轻量思考模型)", tag: "本地思考" },
+        { id: "qwen2.5-coder:7b", name: "Qwen 2.5 Coder 7B (本地代码模型)", tag: "本地代码" },
+        { id: "llama3.3:70b", name: "Llama 3.3 70B (Meta 开源旗舰)", tag: "本地旗舰" }
+      ]
+    },
+    {
+      key: "gateway",
+      name: "OpenCode Zen / 聚合网关",
+      badge: "聚合网关",
+      icon: "⚡",
+      color: "#8B5CF6",
+      baseUrl: "http://127.0.0.1:3425/v1",
+      defaultModel: "group/auto-deepseek-v4-1-flash-free",
+      keyPlaceholder: "可留空或填写网关 Token",
+      desc: "内置多厂商聚合路由网关，自动负载均衡与跨厂商故障转移",
+      models: [
+        { id: "group/auto-deepseek-v4-1-flash-free", name: "DeepSeek V4.1 Flash Free (聚合网关)", tag: "免费" },
+        { id: "group/auto-glm-5-3-flash-free", name: "GLM-5.3-Flash Free (聚合网关)", tag: "免费" },
+        { id: "group/auto-deepseek-v4-1-flash", name: "DeepSeek V4.1 Flash (百万长文本)", tag: "1M" },
+        { id: "opencode-zen/cat-jam-free", name: "Cat-Jam Free · OpenCode Zen", tag: "免费" },
+        { id: "qoder-cn/gfmodel", name: "GfModel · Qoder CN", tag: "网关" }
+      ]
+    },
+    {
+      key: "custom",
+      name: "自定义兼容网关 (OneAPI / 中转站)",
+      badge: "自定义 API",
+      icon: "🌐",
+      color: "#4B5563",
+      baseUrl: "",
+      defaultModel: "",
+      keyPlaceholder: "自定义 API 密钥 (Bearer Token)",
+      desc: "支持任意符合 OpenAI /chat/completions 规范的第三方中转站、代理或企业私有网关",
+      models: []
+    }
+  ];
 
-      getJSON("/api/models").then(function (j) {
-        models = j.models || [];
-        renderModelList();
-      }).catch(function () {
-        modelHint.textContent = "未能从服务端获取模型列表，可直接手动输入。";
-      });
+  function closeModelConfigModal() {
+    var m = $("model-config-modal");
+    if (m) { m.hidden = true; }
+  }
 
-      function renderModelList() {
-        clear(modelList);
-        // 按能力分类分栏展示（编程与推理 / 通用对话 / 长上下文与视觉）。
-        var catOrder = ["coding", "general", "context"];
-        var groups = {};
-        models.forEach(function (m) {
-          var cap = modelCategoryOf(m);
-          if (!groups[cap.id]) { groups[cap.id] = { label: cap.label, items: [] }; }
-          groups[cap.id].items.push(m);
-        });
-        catOrder.forEach(function (cid) {
-          var grp = groups[cid];
-          if (!grp || !grp.items.length) { return; }
-          var gwrap = el("div", "model-group");
-          var ghead = el("div", "model-group-head");
-          ghead.appendChild(el("span", "model-group-arrow", "\u25BE"));
-          ghead.appendChild(el("span", null, grp.label));
-          ghead.appendChild(el("span", "model-group-badge", String(grp.items.length)));
-          ghead.addEventListener("click", function () {
-            gwrap.classList.toggle("collapsed");
-          });
-          gwrap.appendChild(ghead);
-          var list = el("div", "model-group-list");
-          grp.items.forEach(function (m) {
-            var name = m.id;
-            var v = m.vendor || vendorFromUrl(m.baseUrl, m.id);
-            var perf = modelLatencyOf(m);
-            var cap = modelCategoryOf(m);
-            var b = el("button", "opt");
-            b.type = "button";
-            b.appendChild(el("span", "opt-mark", "\u2713"));
-            var dot = el("span", "latency-dot " + perf.tier);
-            dot.title = "响应延迟：" + perf.ms + "ms（" + perf.label + "）";
-            b.appendChild(dot);
-            b.appendChild(el("span", "opt-label", name));
-            b.appendChild(el("span", "model-cap-tag " + cap.id, cap.tag));
-            var msBadge = el("span", "model-opt-ms " + perf.tier, perf.ms + "ms");
-            msBadge.title = perf.label + " · " + perf.ms + "ms";
-            b.appendChild(msBadge);
-            if (name !== c.model) { b.appendChild(el("span", "model-opt-vendor", v)); }
-            if (name === c.model) { b.classList.add("picked"); }
-            b.addEventListener("click", function () {
-              modelInput.value = name;
-              Array.prototype.forEach.call(modelList.querySelectorAll(".opt"), function (x) { x.classList.remove("picked"); });
-              b.classList.add("picked");
-            });
-            list.appendChild(b);
-          });
-          gwrap.appendChild(list);
-          modelList.appendChild(gwrap);
-        });
+  function openModelConfigModal(targetTab) {
+    var modal = $("model-config-modal");
+    if (!modal) { return; }
+    if (targetTab) { currentConfigTab = targetTab; }
+
+    modal.hidden = false;
+    renderConfigModalContent();
+
+    // 重新从服务端拉取一次最新配置，保持双向同步
+    getJSON("/api/config").then(function (j) {
+      if (j) {
+        if (!S.config) { S.config = {}; }
+        Object.assign(S.config, j);
+        renderConfigModalContent();
       }
+    }).catch(function () {});
+  }
 
-      var baseInput = document.createElement("input");
-      baseInput.value = c.baseUrl || "";
-      baseInput.placeholder = "http://127.0.0.1:8000/v1";
-      body.appendChild(field("接口地址", baseInput));
+  function renderConfigModalContent() {
+    var c = S.config || {};
+    var body = $("model-config-body");
+    if (!body) { return; }
+    clear(body);
 
-      var keyInput = document.createElement("input");
-      keyInput.type = "password";
-      keyInput.autocomplete = "off";
-      keyInput.value = c.apiKey || "";
-      keyInput.placeholder = "API Key";
-      body.appendChild(field("密钥", keyInput));
-
-      var nameInput = document.createElement("input");
-      nameInput.value = userName();
-      nameInput.placeholder = "留空则只显示问候语";
-      body.appendChild(field("称呼（用于欢迎语）", nameInput));
-
-      var grid = el("div", "field-row");
-      var modeSel = document.createElement("select");
-      ((c.modes && c.modes.length ? c.modes : [
-        { id: "ask", zh: "询问", desc: "每次写入前确认" },
-        { id: "acceptEdits", zh: "接受编辑", desc: "自动批准编辑与常规构建" },
-        { id: "auto", zh: "自动", desc: "不再询问任何工具" },
-        { id: "dontAsk", zh: "不再提问", desc: "需要确认的一律拒绝" },
-        { id: "plan", zh: "计划", desc: "只读，先给方案" },
-        { id: "bypassPermissions", zh: "全部放行", desc: "跳过确认，慎用" },
-        { id: "fullAccess", zh: "完全放行", desc: "跳过确认与 deny 规则，完全按指令执行" },
-      ]).map(function (o) { return [o.id, o.zh + "：" + o.desc]; })).forEach(function (o) {
-        var opt = document.createElement("option");
-        opt.value = o[0];
-        opt.textContent = o[1];
-        if ((c.permissionMode || "ask") === o[0]) { opt.selected = true; }
-        modeSel.appendChild(opt);
-      });
-      grid.appendChild(field("权限模式", modeSel));
-
-      var visWrap = el("label", "switch");
-      var vis = document.createElement("input");
-      vis.type = "checkbox";
-      vis.checked = S.vision;
-      visWrap.appendChild(vis);
-      visWrap.appendChild(el("span", "switch-label", "视觉（发送图片）"));
-      grid.appendChild(field("视觉", visWrap));
-      body.appendChild(grid);
-
-      body._save = function () {
-        try { localStorage.setItem(LS_NAME, nameInput.value.trim()); } catch (e) { }
-        renderProfile();
-        var patch = { model: modelInput.value.trim(), permissionMode: modeSel.value, vision: vis.checked };
-        if (baseInput.value.trim()) { patch.baseUrl = baseInput.value.trim(); }
-        if (keyInput.value.trim()) { patch.apiKey = keyInput.value.trim(); }
-        return postJSON("/api/config", patch).then(function (j) {
-          S.vision = vis.checked;
-          if (S.config) {
-            S.config.model = j.model || patch.model;
-            S.config.baseUrl = patch.baseUrl || S.config.baseUrl;
-            S.config.permissionMode = j.permissionMode || patch.permissionMode;
-          }
-          renderVision();
-          renderTopMeta();
-          moveModeThumb();
-          renderInspector();
-          toast("设置已保存", "ok");
-          closeModal();
-        }).catch(function (e) { toast("保存失败：" + e.message, "err"); });
+    // 切换选项卡高亮
+    var tabBtns = document.querySelectorAll(".config-tab-btn");
+    Array.prototype.forEach.call(tabBtns, function (b) {
+      var tab = b.getAttribute("data-cfg-tab");
+      b.classList.toggle("active", tab === currentConfigTab);
+      b.onclick = function () {
+        currentConfigTab = tab;
+        renderConfigModalContent();
       };
-    }, [
-      { label: "取消", cls: "ghost", fn: closeModal },
-      { label: "保存", cls: "primary", fn: function () {
-        var b = $("modal-body");
-        if (b && b._save) { b._save(); }
-      } }
-    ]);
+    });
+
+    if (currentConfigTab === "providers") {
+      renderProvidersTab(body, c);
+    } else if (currentConfigTab === "fallbacks") {
+      renderFallbacksTab(body, c);
+    } else {
+      renderParamsTab(body, c);
+    }
+  }
+
+  function renderProvidersTab(body, c) {
+    var wrap = el("div", "cfg-providers-pane");
+
+    // 标题说明
+    var intro = el("div", "cfg-pane-intro");
+    intro.innerHTML = "<div class='cfg-pane-title'>选择并配置您的 AI 模型供应商</div><div class='cfg-pane-desc'>支持 Anthropic Claude 官方、DeepSeek、OpenAI、Gemini 与本地 Ollama。配置后一键测试连通性并实时生效。</div>";
+    wrap.appendChild(intro);
+
+    // 当前实际生效的 BaseUrl 供应商推断
+    var curBase = c.baseUrl || "";
+    var presets = (c.providerPresets && c.providerPresets.length) ? c.providerPresets : FRONTEND_PROVIDER_PRESETS;
+
+    // 确定当前选中的供应商
+    if (!selectedProviderKey) {
+      selectedProviderKey = c.activeProviderKey || "anthropic";
+      for (var p = 0; p < presets.length; p++) {
+        if (presets[p].baseUrl && curBase.indexOf(presets[p].baseUrl) === 0) {
+          selectedProviderKey = presets[p].key;
+          break;
+        }
+      }
+    }
+
+    // 供应商网格卡片
+    var grid = el("div", "cfg-provider-grid");
+    presets.forEach(function (preset) {
+      var card = el("button", "cfg-provider-card" + (selectedProviderKey === preset.key ? " active" : ""));
+      card.type = "button";
+      var isCurrentActive = (c.activeProviderKey === preset.key) || (preset.baseUrl && curBase.indexOf(preset.baseUrl) === 0);
+
+      var topRow = el("div", "pcard-top");
+      var icon = el("span", "pcard-icon", preset.icon || "🤖");
+      var name = el("strong", "pcard-name", preset.name);
+      topRow.appendChild(icon);
+      topRow.appendChild(name);
+
+      if (isCurrentActive) {
+        var actBadge = el("span", "pcard-badge active-tag", "正在使用");
+        topRow.appendChild(actBadge);
+      } else if (preset.badge) {
+        var badge = el("span", "pcard-badge", preset.badge);
+        topRow.appendChild(badge);
+      }
+      card.appendChild(topRow);
+
+      var desc = el("div", "pcard-desc", preset.desc || (preset.models && preset.models.length ? preset.models[0].name : "支持自定义模型"));
+      card.appendChild(desc);
+
+      card.addEventListener("click", function () {
+        selectedProviderKey = preset.key;
+        renderConfigModalContent();
+      });
+      grid.appendChild(card);
+    });
+    wrap.appendChild(grid);
+
+    // 当前选中的供应商配置表单
+    var curPreset = presets.find(function (p) { return p.key === selectedProviderKey; }) || presets[0];
+    var formBox = el("div", "cfg-form-card");
+
+    var fHead = el("div", "cfg-form-head");
+    fHead.innerHTML = `<div class="cfg-fhead-left"><span class="pcard-icon">${curPreset.icon}</span> <div><strong>${curPreset.name} 配置</strong><span class="cfg-fhead-sub">${curPreset.desc || ""}</span></div></div>`;
+    formBox.appendChild(fHead);
+
+    var formGrid = el("div", "cfg-form-grid");
+
+    // 1. 接口服务地址 Base URL
+    var baseField = el("div", "cfg-field");
+    var baseLabelWrap = el("div", "cfg-label-wrap");
+    baseLabelWrap.innerHTML = "<label>接口服务地址 (Base URL)</label>";
+    if (curPreset.baseUrl) {
+      var resetBase = el("button", "cfg-link-btn", "恢复默认地址");
+      resetBase.type = "button";
+      resetBase.addEventListener("click", function () {
+        baseInput.value = curPreset.baseUrl;
+      });
+      baseLabelWrap.appendChild(resetBase);
+    }
+    baseField.appendChild(baseLabelWrap);
+
+    var baseInput = document.createElement("input");
+    baseInput.type = "text";
+    baseInput.className = "cfg-input";
+    baseInput.placeholder = curPreset.baseUrl || "https://api.openai.com/v1";
+    // 优先读取该供应商已保存的 baseUrl，否则使用当前全局或预设
+    var savedProvConf = (c.providers && c.providers[curPreset.key]) || {};
+    baseInput.value = savedProvConf.baseUrl || (selectedProviderKey === c.activeProviderKey ? c.baseUrl : (curPreset.baseUrl || ""));
+    baseField.appendChild(baseInput);
+    formGrid.appendChild(baseField);
+
+    // 2. API Key
+    var keyField = el("div", "cfg-field");
+    var keyLabelWrap = el("div", "cfg-label-wrap");
+    keyLabelWrap.innerHTML = "<label>API 密钥 (API Key)</label>";
+    if (c.apiKeyConfigured && selectedProviderKey === c.activeProviderKey) {
+      var keyStatus = el("span", "cfg-key-status", "● " + (c.apiKeyMasked || "已配置"));
+      keyLabelWrap.appendChild(keyStatus);
+    }
+    keyField.appendChild(keyLabelWrap);
+
+    var keyWrap = el("div", "cfg-key-wrap");
+    var keyInput = document.createElement("input");
+    keyInput.type = showApiKeyPlain ? "text" : "password";
+    keyInput.className = "cfg-input cfg-key-input";
+    keyInput.placeholder = curPreset.keyPlaceholder || "请输入 API Key";
+    keyInput.autocomplete = "off";
+    keyInput.value = savedProvConf.apiKey || (selectedProviderKey === c.activeProviderKey ? (c.apiKey || "") : "");
+    keyWrap.appendChild(keyInput);
+
+    var eyeBtn = el("button", "cfg-eye-btn", showApiKeyPlain ? "隐藏" : "显示");
+    eyeBtn.type = "button";
+    eyeBtn.title = "显示/隐藏密钥明文";
+    eyeBtn.addEventListener("click", function () {
+      showApiKeyPlain = !showApiKeyPlain;
+      keyInput.type = showApiKeyPlain ? "text" : "password";
+      eyeBtn.textContent = showApiKeyPlain ? "隐藏" : "显示";
+    });
+    keyWrap.appendChild(eyeBtn);
+    keyField.appendChild(keyWrap);
+
+    if (curPreset.key === "gemini") {
+      var geminiNote = el("div", "cfg-field-hint good", "✨ Google AI Studio 环境已自动注入免费 GEMINI_API_KEY，此处留空即自动使用系统环境密钥。");
+      keyField.appendChild(geminiNote);
+    } else if (curPreset.key === "ollama") {
+      var ollamaNote = el("div", "cfg-field-hint", "🦙 Ollama 为本地私有服务，默认无需 API Key，只要确保本地已运行即可。");
+      keyField.appendChild(ollamaNote);
+    } else {
+      var normalNote = el("div", "cfg-field-hint", "密钥保存在您的本地工作区配置文件 ~/.myclaude/config.json 中，绝不外发。");
+      keyField.appendChild(normalNote);
+    }
+    formGrid.appendChild(keyField);
+
+    // 3. 模型选择 (Model)
+    var modelField = el("div", "cfg-field cfg-field-full");
+    var modelLabelWrap = el("div", "cfg-label-wrap");
+    modelLabelWrap.innerHTML = "<label>生效模型名称 (Model)</label><span class='cfg-field-desc'>点击下方推荐模型一键填入，或直接输入自定义模型标识</span>";
+    modelField.appendChild(modelLabelWrap);
+
+    var modelInput = document.createElement("input");
+    modelInput.type = "text";
+    modelInput.className = "cfg-input";
+    modelInput.placeholder = curPreset.defaultModel || "如：claude-3-7-sonnet";
+    modelInput.value = savedProvConf.model || (selectedProviderKey === c.activeProviderKey ? c.model : (curPreset.defaultModel || ""));
+    modelField.appendChild(modelInput);
+
+    // 预设模型快速点击药丸
+    if (curPreset.models && curPreset.models.length) {
+      var pillWrap = el("div", "cfg-model-pills");
+      curPreset.models.forEach(function (m) {
+        var pill = el("button", "cfg-model-pill" + (modelInput.value === m.id ? " active" : ""));
+        pill.type = "button";
+        pill.innerHTML = `<span>${m.name}</span>` + (m.tag ? `<span class="pill-tag">${m.tag}</span>` : "");
+        pill.addEventListener("click", function () {
+          modelInput.value = m.id;
+          Array.prototype.forEach.call(pillWrap.querySelectorAll(".cfg-model-pill"), function (p) {
+            p.classList.remove("active");
+          });
+          pill.classList.add("active");
+        });
+        pillWrap.appendChild(pill);
+      });
+      modelField.appendChild(pillWrap);
+    }
+    formGrid.appendChild(modelField);
+
+    formBox.appendChild(formGrid);
+
+    // 连通性测试与保存操作栏
+    var actionBox = el("div", "cfg-action-box");
+
+    var testBtn = el("button", "btn ghost test-conn-btn");
+    testBtn.type = "button";
+    testBtn.innerHTML = `<svg width="15" height="15"><use href="#i-globe"/></svg> <span>测试服务连通性</span>`;
+
+    var testStatus = el("div", "test-result-box");
+    testStatus.hidden = true;
+
+    testBtn.addEventListener("click", function () {
+      var testUrl = baseInput.value.trim() || curPreset.baseUrl;
+      var testKey = keyInput.value.trim();
+      var testModel = modelInput.value.trim() || curPreset.defaultModel;
+
+      testBtn.disabled = true;
+      testBtn.innerHTML = `<span class="spinner-dot"></span> <span>测试中…</span>`;
+      testStatus.hidden = false;
+      testStatus.className = "test-result-box testing";
+      testStatus.textContent = "正在探测 " + (curPreset.name) + " 接口服务响应…";
+
+      postJSON("/api/test-connection", {
+        baseUrl: testUrl,
+        apiKey: testKey,
+        model: testModel
+      }).then(function (res) {
+        testBtn.disabled = false;
+        testBtn.innerHTML = `<svg width="15" height="15"><use href="#i-globe"/></svg> <span>重新测试</span>`;
+        if (res.ok) {
+          testStatus.className = "test-result-box ok";
+          testStatus.innerHTML = `<strong>✅ 连通成功！</strong> 响应延迟 <b>${res.latencyMs}ms</b> · 服务地址与鉴权均正常响应。`;
+        } else {
+          testStatus.className = "test-result-box err";
+          testStatus.innerHTML = `<strong>❌ 连接失败：</strong> ${res.error || res.message || "请求未通过，请检查服务地址与密钥"}`;
+        }
+      }).catch(function (err) {
+        testBtn.disabled = false;
+        testBtn.innerHTML = `<svg width="15" height="15"><use href="#i-globe"/></svg> <span>重新测试</span>`;
+        testStatus.className = "test-result-box err";
+        testStatus.innerHTML = `<strong>❌ 网络异常：</strong> ${err.message || "未能连接到目标主机"}`;
+      });
+    });
+
+    var saveBtn = el("button", "btn primary save-cfg-btn");
+    saveBtn.type = "button";
+    saveBtn.innerHTML = `<svg width="15" height="15"><use href="#i-save"/></svg> <span>保存并设为当前生效模型</span>`;
+
+    saveBtn.addEventListener("click", function () {
+      var targetBaseUrl = baseInput.value.trim() || curPreset.baseUrl;
+      var targetApiKey = keyInput.value.trim();
+      var targetModel = modelInput.value.trim() || curPreset.defaultModel || "claude-3-7-sonnet";
+
+      var provPatch = {};
+      provPatch[curPreset.key] = {
+        baseUrl: targetBaseUrl,
+        apiKey: targetApiKey,
+        model: targetModel,
+        updatedAt: Date.now()
+      };
+
+      saveBtn.disabled = true;
+      saveBtn.textContent = "正在保存…";
+
+      postJSON("/api/config", {
+        activeProviderKey: curPreset.key,
+        baseUrl: targetBaseUrl,
+        apiKey: targetApiKey,
+        model: targetModel,
+        providers: provPatch
+      }).then(function (j) {
+        saveBtn.disabled = false;
+        saveBtn.innerHTML = `<svg width="15" height="15"><use href="#i-save"/></svg> <span>保存并设为当前生效模型</span>`;
+
+        if (S.config) {
+          S.config.activeProviderKey = curPreset.key;
+          S.config.baseUrl = targetBaseUrl;
+          S.config.apiKey = targetApiKey;
+          S.config.model = targetModel;
+          if (!S.config.providers) { S.config.providers = {}; }
+          S.config.providers[curPreset.key] = provPatch[curPreset.key];
+        }
+
+        animateModelLabelChange(targetModel);
+        updateModelBtnDot(targetModel);
+        renderTopMeta();
+        renderInspector();
+        fetchModels(true);
+
+        toast("已成功切换并生效模型：" + targetModel + "（" + curPreset.name + "）", "ok");
+        closeModelConfigModal();
+      }).catch(function (err) {
+        saveBtn.disabled = false;
+        saveBtn.innerHTML = `<svg width="15" height="15"><use href="#i-save"/></svg> <span>保存并设为当前生效模型</span>`;
+        toast("保存配置失败：" + err.message, "err");
+      });
+    });
+
+    actionBox.appendChild(testBtn);
+    actionBox.appendChild(saveBtn);
+
+    formBox.appendChild(testStatus);
+    formBox.appendChild(actionBox);
+    wrap.appendChild(formBox);
+
+    body.appendChild(wrap);
+  }
+
+  function renderFallbacksTab(body, c) {
+    var wrap = el("div", "cfg-fb-pane");
+    var intro = el("div", "cfg-pane-intro");
+    intro.innerHTML = "<div class='cfg-pane-title'>备用容灾模型池 (Fallback Pool)</div><div class='cfg-pane-desc'>当主模型遇到速率限制 (429)、服务端超载 (503) 或网络超时时，MyClaude 会自动无缝切换到备用模型继续生成。</div>";
+    wrap.appendChild(intro);
+
+    var list = el("div", "cfg-fb-list");
+    var fallbacks = c.fallbacks || [];
+    if (!fallbacks.length) {
+      list.appendChild(el("div", "empty-note", "暂无备用模型，可在下方添加。"));
+    } else {
+      fallbacks.forEach(function (fb, idx) {
+        var row = el("div", "cfg-fb-item");
+        row.innerHTML = `<span class="fb-idx">#${idx + 1}</span> <div class="fb-info"><strong>${fb.name || fb.model}</strong><span class="fb-sub">${fb.baseUrl || "与主端点相同"}</span></div>`;
+        var delBtn = el("button", "icon-btn fb-del", "×");
+        delBtn.type = "button";
+        delBtn.title = "删除此备用模型";
+        delBtn.addEventListener("click", function () {
+          var updated = fallbacks.filter(function (_, i) { return i !== idx; });
+          postJSON("/api/config", { fallbacks: updated }).then(function () {
+            if (S.config) { S.config.fallbacks = updated; }
+            renderConfigModalContent();
+            toast("已更新备用模型池", "ok");
+          });
+        });
+        row.appendChild(delBtn);
+        list.appendChild(row);
+      });
+    }
+    wrap.appendChild(list);
+
+    // 新增备用模型
+    var addBox = el("div", "cfg-fb-add-box");
+    addBox.innerHTML = "<div class='cfg-field-title'>添加新的备用模型</div>";
+
+    var addGrid = el("div", "cfg-form-grid");
+    var mNameIn = document.createElement("input");
+    mNameIn.className = "cfg-input";
+    mNameIn.placeholder = "备用模型名称 (如: deepseek-v4.1-flash)";
+    addGrid.appendChild(field("模型名", mNameIn));
+
+    var mUrlIn = document.createElement("input");
+    mUrlIn.className = "cfg-input";
+    mUrlIn.placeholder = "备用端点 Base URL (留空则沿用主地址)";
+    addGrid.appendChild(field("服务地址 (可选)", mUrlIn));
+
+    addBox.appendChild(addGrid);
+
+    var addBtn = el("button", "btn primary", "+ 添加到备用池");
+    addBtn.type = "button";
+    addBtn.addEventListener("click", function () {
+      var nm = mNameIn.value.trim();
+      if (!nm) { toast("请输入模型名称", "err"); return; }
+      var nextFb = (fallbacks || []).concat([{ model: nm, baseUrl: mUrlIn.value.trim() || c.baseUrl || "" }]);
+      postJSON("/api/config", { fallbacks: nextFb }).then(function () {
+        if (S.config) { S.config.fallbacks = nextFb; }
+        renderConfigModalContent();
+        toast("已添加备用模型", "ok");
+      });
+    });
+    addBox.appendChild(addBtn);
+    wrap.appendChild(addBox);
+
+    body.appendChild(wrap);
+  }
+
+  function renderParamsTab(body, c) {
+    var wrap = el("div", "cfg-params-pane");
+    var intro = el("div", "cfg-pane-intro");
+    intro.innerHTML = "<div class='cfg-pane-title'>Claude 生成参数与工作区设定</div><div class='cfg-pane-desc'>微调温度系数、最大输出 Token、请求超时与工具执行权限模式。</div>";
+    wrap.appendChild(intro);
+
+    var grid = el("div", "cfg-form-grid");
+
+    // 用户称呼
+    var nameInput = document.createElement("input");
+    nameInput.className = "cfg-input";
+    nameInput.value = userName();
+    nameInput.placeholder = "留空则显示通用问候语";
+    grid.appendChild(field("您的称呼（用于顶部与欢迎区问候）", nameInput));
+
+    // 温度 Temperature
+    var tempField = el("div", "cfg-field");
+    var tempLabel = el("label", null, "采样温度 (Temperature): " + (c.temperature ?? 0.7));
+    var tempSlider = document.createElement("input");
+    tempSlider.type = "range";
+    tempSlider.min = "0.0";
+    tempSlider.max = "1.5";
+    tempSlider.step = "0.05";
+    tempSlider.value = String(c.temperature ?? 0.7);
+    tempSlider.className = "cfg-range";
+    tempSlider.addEventListener("input", function () {
+      tempLabel.textContent = "采样温度 (Temperature): " + tempSlider.value;
+    });
+    tempField.appendChild(tempLabel);
+    tempField.appendChild(tempSlider);
+    grid.appendChild(tempField);
+
+    // 最大输出 Token 数
+    var maxTokInput = document.createElement("input");
+    maxTokInput.type = "number";
+    maxTokInput.className = "cfg-input";
+    maxTokInput.value = String(c.maxTokens || 8192);
+    grid.appendChild(field("单次最大输出 Tokens (Max Output Tokens)", maxTokInput));
+
+    // 超时时间
+    var timeoutInput = document.createElement("input");
+    timeoutInput.type = "number";
+    timeoutInput.className = "cfg-input";
+    timeoutInput.value = String(Math.round((c.requestTimeoutMs || 90000) / 1000));
+    grid.appendChild(field("请求超时时间 (秒)", timeoutInput));
+
+    // 权限模式
+    var modeSel = document.createElement("select");
+    modeSel.className = "cfg-select";
+    ((c.modes && c.modes.length ? c.modes : [
+      { id: "ask", zh: "询问", desc: "每次写入前需用户批准" },
+      { id: "auto", zh: "自动", desc: "自动批准所有常规工具调用" },
+      { id: "plan", zh: "计划", desc: "只读模式，先提供分析方案" }
+    ])).forEach(function (m) {
+      var opt = document.createElement("option");
+      opt.value = m.id;
+      opt.textContent = m.zh + "：" + m.desc;
+      if ((c.permissionMode || "ask") === m.id) { opt.selected = true; }
+      modeSel.appendChild(opt);
+    });
+    grid.appendChild(field("自主执行模式 (Permission Mode)", modeSel));
+
+    // 视觉支持
+    var visWrap = el("label", "switch");
+    var vis = document.createElement("input");
+    vis.type = "checkbox";
+    vis.checked = S.vision !== false;
+    visWrap.appendChild(vis);
+    visWrap.appendChild(el("span", "switch-label", "启用多模态视觉（发送附件图片供模型解析）"));
+    grid.appendChild(field("视觉支持 (Vision)", visWrap));
+
+    wrap.appendChild(grid);
+
+    var saveParamsBtn = el("button", "btn primary", "保存参数配置");
+    saveParamsBtn.type = "button";
+    saveParamsBtn.addEventListener("click", function () {
+      try { localStorage.setItem(LS_NAME, nameInput.value.trim()); } catch (e) {}
+      renderProfile();
+      var patch = {
+        temperature: parseFloat(tempSlider.value) || 0.7,
+        maxTokens: parseInt(maxTokInput.value, 10) || 8192,
+        requestTimeoutMs: (parseInt(timeoutInput.value, 10) || 90) * 1000,
+        permissionMode: modeSel.value,
+        vision: vis.checked
+      };
+      postJSON("/api/config", patch).then(function (j) {
+        if (S.config) { Object.assign(S.config, patch); }
+        S.vision = vis.checked;
+        renderVision();
+        renderTopMeta();
+        moveModeThumb();
+        toast("参数配置已更新", "ok");
+        closeModelConfigModal();
+      }).catch(function (e) {
+        toast("保存参数失败：" + e.message, "err");
+      });
+    });
+    wrap.appendChild(saveParamsBtn);
+
+    body.appendChild(wrap);
+  }
+
+  // 保持原有接口兼容
+  function openSettings() {
+    openModelConfigModal("providers");
   }
 
   function openTools() {
@@ -4323,10 +4819,51 @@
     var bInsp = $("btn-insp-toggle");
     if (bInsp) { bInsp.addEventListener("click", function () { setInspector(!$("app").classList.contains("insp-open")); }); }
     var bModel = $("btn-model");
-    if (bModel) { bModel.addEventListener("click", function (e) { e.stopPropagation(); toggleModelMenu(); }); }
+    if (bModel) { bModel.addEventListener("click", function (e) { e.stopPropagation(); toggleModelMenu(bModel); }); }
+    var bTopModel = $("btn-top-model");
+    if (bTopModel) { bTopModel.addEventListener("click", function (e) { e.stopPropagation(); toggleModelMenu(bTopModel); }); }
+    var bOpenCfg = $("btn-open-model-config");
+    if (bOpenCfg) { bOpenCfg.addEventListener("click", function (e) { e.stopPropagation(); openModelConfigModal("providers"); }); }
+    var bCloseCfg = $("btn-close-model-config");
+    if (bCloseCfg) { bCloseCfg.addEventListener("click", closeModelConfigModal); }
+    var bCfgVeil = $("model-config-veil");
+    if (bCfgVeil) { bCfgVeil.addEventListener("click", closeModelConfigModal); }
+    var bWmcSwitch = $("btn-wmc-switch");
+    if (bWmcSwitch) { bWmcSwitch.addEventListener("click", function (e) { e.stopPropagation(); toggleModelMenu(bWmcSwitch); }); }
+    var bWmcCfg = $("btn-wmc-config");
+    if (bWmcCfg) { bWmcCfg.addEventListener("click", function (e) { e.stopPropagation(); openModelConfigModal("providers"); }); }
+    var bSugCfg = $("btn-sug-config");
+    if (bSugCfg) { bSugCfg.addEventListener("click", function (e) { e.stopPropagation(); openModelConfigModal("providers"); }); }
+
+    // 绑定欢迎区快捷建议卡片点击填入输入框
+    var welcomeCards = document.querySelectorAll(".welcome-sug-card[data-prompt]");
+    Array.prototype.forEach.call(welcomeCards, function (card) {
+      card.addEventListener("click", function () {
+        var p = card.getAttribute("data-prompt");
+        var inEl = $("in");
+        if (inEl && p) {
+          inEl.value = p;
+          inEl.focus();
+          autoResizeInput();
+        }
+      });
+    });
+
+    window.addEventListener("resize", function () {
+      var m = $("model-menu");
+      if (m && !m.hidden && currentModelMenuAnchor) {
+        positionModelMenu(currentModelMenuAnchor);
+      }
+    });
+
     document.addEventListener("click", function (e) {
       var m = $("model-menu");
-      if (m && !m.hidden && !m.contains(e.target)) { closeModelMenuSmoothly(); }
+      if (m && !m.hidden && !m.contains(e.target) &&
+          !($("btn-top-model") && $("btn-top-model").contains(e.target)) &&
+          !($("btn-wmc-switch") && $("btn-wmc-switch").contains(e.target)) &&
+          !($("btn-model") && $("btn-model").contains(e.target))) {
+        closeModelMenuSmoothly();
+      }
       var sm = $("style-menu");
       if (sm && !sm.hidden && !sm.contains(e.target)) { sm.hidden = true; }
       var am = $("at-menu");
@@ -4392,6 +4929,7 @@
       var typing = tag === "INPUT" || tag === "TEXTAREA" || (e.target && e.target.isContentEditable);
       var mod = e.ctrlKey || e.metaKey;
       if (e.key === "Escape") {
+        if ($("model-config-modal") && !$("model-config-modal").hidden) { closeModelConfigModal(); return; }
         if ($("projects-modal") && !$("projects-modal").hidden) { closeProjectModal(); return; }
         if (!$("modal").hidden) { closeModal(); return; }
         if (!$("cmd").hidden) { closeCmd(); return; }
@@ -7311,10 +7849,61 @@
     return { ms: 340 + (hash % 180), tier: "medium", label: "正常" };
   }
 
+  var modelProviderFilter = "all";
+  var currentModelMenuAnchor = null;
+
+  function positionModelMenu(anchor) {
+    var menu = $("model-menu");
+    if (!menu) return;
+    anchor = anchor || $("btn-top-model") || $("btn-wmc-switch") || $("btn-model");
+    if (!anchor) return;
+    var rect = anchor.getBoundingClientRect();
+    var menuWidth = Math.min(490, window.innerWidth - 20);
+    var menuMaxHeight = Math.min(600, window.innerHeight - 80);
+    menu.style.position = "fixed";
+    menu.style.width = menuWidth + "px";
+    menu.style.maxHeight = menuMaxHeight + "px";
+    menu.style.zIndex = "9998";
+
+    // If anchor is near top (like topbar #btn-top-model or welcome card):
+    if (rect.top < window.innerHeight / 2) {
+      menu.style.top = (rect.bottom + 8) + "px";
+      menu.style.bottom = "auto";
+      var left = Math.max(10, Math.min(rect.left, window.innerWidth - menuWidth - 10));
+      menu.style.left = left + "px";
+      menu.style.right = "auto";
+      menu.style.transformOrigin = "top left";
+    } else {
+      // Near bottom (like composer #btn-model):
+      menu.style.bottom = (window.innerHeight - rect.top + 8) + "px";
+      menu.style.top = "auto";
+      var right = Math.max(10, Math.min(window.innerWidth - rect.right, window.innerWidth - menuWidth - 10));
+      menu.style.right = right + "px";
+      menu.style.left = "auto";
+      menu.style.transformOrigin = "bottom right";
+    }
+  }
+
+  function toggleModelMenu(anchorEl) {
+    var menu = $("model-menu");
+    if (!menu) { return; }
+    if (!menu.hidden && currentModelMenuAnchor === anchorEl) {
+      closeModelMenuSmoothly();
+      return;
+    }
+    currentModelMenuAnchor = anchorEl || $("btn-top-model") || $("btn-wmc-switch") || $("btn-model");
+    menu.classList.remove("closing");
+    menu.hidden = false;
+    positionModelMenu(currentModelMenuAnchor);
+    drawModelMenu();
+    if (!modelCache) {
+      fetchModels(false);
+    }
+  }
+
   function updateModelBtnDot(modelName) {
     var dot = $("model-btn-dot");
     var btn = $("btn-model");
-    if (!dot) { return; }
     var name = modelName || (S.config && S.config.model) || "";
     var match = null;
     if (modelCache && modelCache.length) {
@@ -7325,10 +7914,75 @@
     }
     var perf = modelLatencyOf(match || name);
     var cap = modelCategoryOf(match || name);
-    dot.className = "latency-dot " + (modelProbing ? "probing" : perf.tier);
-    dot.title = "当前模型延迟：" + perf.ms + "ms（" + perf.label + " · " + cap.tag + "）";
+    var v = (match && match.vendor) || vendorFromUrl((S.config && S.config.baseUrl) || "", name);
+
+    if (dot) {
+      dot.className = "latency-dot " + (modelProbing ? "probing" : perf.tier);
+      dot.title = "当前模型延迟：" + perf.ms + "ms（" + perf.label + " · " + cap.tag + "）";
+    }
     if (btn) {
-      btn.title = "切换模型 · 当前 " + (name || "默认") + "（" + cap.tag + " · " + perf.label + " " + perf.ms + "ms）";
+      btn.title = "切换模型与供应商 · 当前 " + (name || "默认") + "（" + cap.tag + " · " + perf.label + " " + perf.ms + "ms）";
+    }
+    var modelLbl = $("model-label");
+    if (modelLbl) {
+      modelLbl.textContent = name || "选择模型";
+    }
+
+    // 同步顶栏 Claude 药丸状态
+    var tName = $("top-model-name");
+    var tVendor = $("top-model-vendor");
+    if (tName) {
+      tName.textContent = (match && match.name) ? match.name.split("·")[0].trim() : (name || "选择模型");
+    }
+    if (tVendor) {
+      tVendor.textContent = v || "Anthropic 官方";
+    }
+
+    // 同步顶栏配置按钮状态徽章
+    var topCfgBadge = $("top-cfg-status-badge");
+    if (topCfgBadge) {
+      if (v && (v.indexOf("Google") >= 0 || v.indexOf("Gemini") >= 0)) {
+        topCfgBadge.textContent = "免配即用";
+        topCfgBadge.className = "topbar-cfg-badge free";
+      } else if (S.config && S.config.apiKeyConfigured) {
+        topCfgBadge.textContent = "已就绪";
+        topCfgBadge.className = "topbar-cfg-badge ok";
+      } else {
+        topCfgBadge.textContent = "未配置";
+        topCfgBadge.className = "topbar-cfg-badge warn";
+      }
+    }
+
+    // 同步欢迎区模型状态看板
+    var wName = $("wmc-name");
+    var wVendor = $("wmc-vendor");
+    var wIcon = $("wmc-icon");
+    var wDot = $("wmc-dot");
+    var wStatusPill = $("wmc-status-pill");
+    var wSub = $("wmc-sub");
+    if (wName) { wName.textContent = (match && match.name) || name || "Claude 3.7 Sonnet"; }
+    if (wVendor) { wVendor.textContent = v || "Anthropic 官方"; }
+    var iconMap = { "Anthropic": "✳️", "DeepSeek": "🐋", "OpenAI": "🟢", "Google": "✨", "Google Gemini": "✨", "智谱": "🟣", "阿里通义": "🔷", "Ollama": "🦙" };
+    if (wIcon) { wIcon.textContent = iconMap[v] || "🤖"; }
+    if (wDot) {
+      wDot.className = "latency-dot " + (modelProbing ? "probing" : perf.tier);
+      wDot.title = "延迟：" + perf.ms + "ms";
+    }
+    if (wStatusPill) {
+      if (v && (v.indexOf("Google") >= 0 || v.indexOf("Gemini") >= 0)) {
+        wStatusPill.textContent = "🟢 运行正常 · 免配即用 (" + perf.ms + "ms)";
+        wStatusPill.className = "wmc-status-pill ok";
+      } else if (S.config && S.config.apiKeyConfigured) {
+        wStatusPill.textContent = "🟢 运行正常 (" + perf.ms + "ms)";
+        wStatusPill.className = "wmc-status-pill ok";
+      } else {
+        wStatusPill.textContent = "🟡 需配置 API Key (" + v + ")";
+        wStatusPill.className = "wmc-status-pill warn";
+      }
+    }
+    if (wSub) {
+      var curUrl = (S.config && S.config.baseUrl) || "";
+      wSub.textContent = "接口服务地址：" + (curUrl || "https://api.anthropic.com/v1") + " · 支持多模态、深度思考与工程工具自主调用";
     }
   }
 
@@ -7364,21 +8018,6 @@
       menu.hidden = true;
       menu.classList.remove("closing");
     }, 145);
-  }
-
-  function toggleModelMenu() {
-    var menu = $("model-menu");
-    if (!menu) { return; }
-    if (!menu.hidden) {
-      closeModelMenuSmoothly();
-      return;
-    }
-    menu.classList.remove("closing");
-    menu.hidden = false;
-    drawModelMenu();
-    if (!modelCache) {
-      fetchModels(false);
-    }
   }
 
   /** 模型菜单的搜索关键词。 */
@@ -7466,6 +8105,58 @@
     search.addEventListener("keydown", function (e) { e.stopPropagation(); });
     menu.appendChild(search);
 
+    // 供应商分类导航栏（全部 / Claude 官方 / DeepSeek / OpenAI / Gemini / 智谱通义国产 / 聚合网关 / 本地 Ollama）
+    var provFilterTabs = el("div", "model-vendor-tabs");
+    var provItems = [
+      { id: "all", label: "全部厂商", icon: "🌐" },
+      { id: "anthropic", label: "Claude 官方", icon: "✳", match: /claude|anthropic/i },
+      { id: "deepseek", label: "DeepSeek", icon: "🐋", match: /deepseek/i },
+      { id: "openai", label: "OpenAI", icon: "🟢", match: /gpt|o[13]|openai/i },
+      { id: "gemini", label: "Gemini", icon: "✨", match: /gemini|google/i },
+      { id: "chinese", label: "智谱/通义/国产", icon: "🟣", match: /glm|zhipu|qwen|tongyi|kimi|moonshot|sensenova|minimax|step|hy3|hy4/i },
+      { id: "gateway", label: "聚合网关", icon: "⚡", match: /group\/|opencode-zen|trae|qoder|beatapi|amd\//i },
+      { id: "ollama", label: "本地 Ollama", icon: "🦙", match: /ollama|llama|localhost|11434/i }
+    ];
+    provItems.forEach(function (pv) {
+      var pb = el("button", "model-vendor-tab" + (modelProviderFilter === pv.id ? " active" : ""));
+      pb.type = "button";
+      var ico = el("span", "pv-icon", pv.icon);
+      var lbl = el("span", null, pv.label);
+      pb.appendChild(ico);
+      pb.appendChild(lbl);
+      pb.addEventListener("click", function (e) {
+        e.stopPropagation();
+        modelProviderFilter = pv.id;
+        drawModelMenu();
+      });
+      provFilterTabs.appendChild(pb);
+    });
+    menu.appendChild(provFilterTabs);
+
+    // 选中厂商时的专属提示与快速配置横幅
+    if (modelProviderFilter !== "all") {
+      var currentPv = provItems.find(function (p) { return p.id === modelProviderFilter; });
+      if (currentPv) {
+        var pvBanner = el("div", "model-vendor-banner");
+        var pvLeft = el("div", "pv-banner-left");
+        pvLeft.innerHTML = `<span class="pv-banner-ico">${currentPv.icon}</span> <div><strong>${currentPv.label} 专属模型库</strong><span class="pv-banner-sub">点击下方模型一键启用；也可直接配置此厂商专属 API Key 与服务地址</span></div>`;
+        pvBanner.appendChild(pvLeft);
+
+        var pvCfgBtn = el("button", "pv-banner-btn", "⚙️ 配置此厂商");
+        pvCfgBtn.type = "button";
+        pvCfgBtn.title = "打开此厂商的 API Key 与 Base URL 配置";
+        pvCfgBtn.addEventListener("click", function (e) {
+          e.stopPropagation();
+          closeModelMenuSmoothly();
+          openModelConfigModal("providers");
+          selectedProviderKey = currentPv.id === "chinese" ? "zhipu" : currentPv.id;
+          renderConfigModalContent();
+        });
+        pvBanner.appendChild(pvCfgBtn);
+        menu.appendChild(pvBanner);
+      }
+    }
+
     var allEntries = modelCache.map(function (m) {
       return typeof m === "string" ? { id: m, baseUrl: (S.config && S.config.baseUrl) || "", vendor: "" } : m;
     });
@@ -7479,7 +8170,7 @@
 
     var tabs = el("div", "model-cat-tabs");
     [
-      { id: "all", label: "全部" },
+      { id: "all", label: "全部能力" },
       { id: "coding", label: "编程 Coding" },
       { id: "general", label: "通用 General" },
       { id: "context", label: "长文本 Context" }
@@ -7498,6 +8189,14 @@
     menu.appendChild(tabs);
 
     var entries = allEntries.slice();
+    if (modelProviderFilter !== "all") {
+      var targetPv = provItems.find(function (p) { return p.id === modelProviderFilter; });
+      if (targetPv && targetPv.match) {
+        entries = entries.filter(function (m) {
+          return targetPv.match.test(m.id) || targetPv.match.test(m.vendor || "") || (m.providerKey === targetPv.id);
+        });
+      }
+    }
     if (modelCategoryFilter !== "all") {
       entries = entries.filter(function (m) {
         return modelCategoryOf(m).id === modelCategoryFilter;
@@ -7640,6 +8339,19 @@
       });
       menu.appendChild(box);
     }
+
+    // 底部常驻配置模型与供应商快捷入口
+    var menuFoot = el("div", "model-menu-foot");
+    var cfgBtn = el("button", "model-menu-cfg-btn");
+    cfgBtn.type = "button";
+    cfgBtn.innerHTML = `<span>⚙️ 配置供应商与 API Key（添加/修改 Claude、DeepSeek、OpenAI、本地模型）</span> <span class="cfg-arrow">→</span>`;
+    cfgBtn.addEventListener("click", function (e) {
+      e.stopPropagation();
+      closeModelMenuSmoothly();
+      openModelConfigModal("providers");
+    });
+    menuFoot.appendChild(cfgBtn);
+    menu.appendChild(menuFoot);
   }
 
 
