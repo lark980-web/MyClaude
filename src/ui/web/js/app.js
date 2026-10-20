@@ -281,12 +281,25 @@
     try { return JSON.stringify(args || {}, null, 2); } catch (e) { return String(args); }
   }
 
+  /**
+   * Keep the transcript pinned to the newest content while it streams.
+   *
+   * The write is flagged as programmatic: the scroll listener treats every
+   * scroll event as a user gesture, so scrolling ourselves would otherwise look
+   * like "the user scrolled away" and silently turn auto-follow off — which is
+   * why the view stopped following during long tool runs.
+   */
   function scrollStream(force) {
     var st = $("stream");
     if (!st) { return; }
     if (force) { S.autoScroll = true; }
     if (S.autoScroll) {
-      requestAnimationFrame(function () { st.scrollTop = st.scrollHeight; });
+      S.programmaticScroll = true;
+      requestAnimationFrame(function () {
+        st.scrollTop = st.scrollHeight;
+        // Release the flag after the scroll event for this write has fired.
+        requestAnimationFrame(function () { S.programmaticScroll = false; });
+      });
     }
     var b = $("btn-to-bottom");
     if (b) { b.hidden = !(st.scrollHeight - st.scrollTop - st.clientHeight > 240); }
@@ -2082,6 +2095,8 @@
         state.thought.label.textContent = "深度思考中…（" + state.reasoningBuf.length + " 字 · " + secsR + " 秒）";
         state.thought.box.classList.add("open");
       }
+      // The thinking panel grows too; keep it in view while it streams.
+      scrollStream();
       return;
     }
     if (ev.type === "delta") {
@@ -2128,10 +2143,13 @@
         state.buffer = "";
       }
       state.pendingTools.push(addToolCard(ev.call.name, ev.call.args));
+      // A tool card is new content too: follow it like any other output.
+      scrollStream();
       return;
     }
     if (ev.type === "tool_end") {
       finishToolCard(state.pendingTools.shift(), ev.ok, ev.elapsed, ev.output, ev.data);
+      scrollStream();
       return;
     }
     if (ev.type === "confirm") { showConfirm(ev); return; }
@@ -2140,6 +2158,7 @@
     if (ev.type === "todos") {
       S.todos = ev.todos || [];
       renderInspector();
+      scrollStream();
       return;
     }
     if (ev.type === "stats") {
@@ -4920,6 +4939,9 @@
     var stream = $("stream");
     if (stream) {
       stream.addEventListener("scroll", function () {
+        // Ignore the scroll we caused ourselves; only a real user gesture may
+        // turn auto-follow off.
+        if (S.programmaticScroll) { return; }
         var far = stream.scrollHeight - stream.scrollTop - stream.clientHeight > 120;
         S.autoScroll = !far;
         var b = $("btn-to-bottom");
