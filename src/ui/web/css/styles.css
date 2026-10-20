@@ -437,13 +437,6 @@ svg { flex: none; }
   transition: opacity 200ms var(--ease);
 }
 .usage:hover { background: var(--hover); }
-.usage-ring {
-  width: 14px; height: 14px; border-radius: 50%;
-  background: conic-gradient(var(--accent) 0deg, var(--line-strong) 0deg);
-  -webkit-mask: radial-gradient(circle, transparent 3.6px, #000 4.2px);
-  mask: radial-gradient(circle, transparent 3.6px, #000 4.2px);
-  transition: background 400ms var(--ease);
-}
 .usage.hot { color: var(--warn); }
 
 /* ---------------------------------------------------------------- 消息流 --- */
@@ -3892,128 +3885,7 @@ body.no-motion *, body.no-motion *::before, body.no-motion *::after { animation:
   color: var(--accent);
 }
 
-.rail-usage-view {
-  margin: 2px 0 6px;
-  padding: 8px 8px 6px;
-  border-radius: 10px;
-  border: 1px solid var(--line);
-  background: var(--panel);
-  box-shadow: var(--shadow-sm);
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  min-width: 0;
-  overflow: hidden;
-  animation: modelListFade 180ms var(--ease-out) both;
-}
-.rail-usage-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 4px;
-  min-width: 0;
-}
-.rail-usage-title {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 11.5px;
-  font-weight: 600;
-  color: var(--fg-2);
-  white-space: nowrap;
-  min-width: 0;
-}
-.rail-usage-title svg {
-  color: var(--accent);
-  flex: none;
-}
-.rail-usage-controls {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  background: var(--panel-2);
-  padding: 1.5px;
-  border-radius: 6px;
-  border: 1px solid var(--line);
-  flex: none;
-}
-.rail-usage-tab,
-.rail-usage-type-btn {
-  height: 19px;
-  padding: 0 5px;
-  border-radius: 4px;
-  font-size: 10px;
-  color: var(--fg-3);
-  white-space: nowrap;
-  transition: background var(--t) var(--ease), color var(--t) var(--ease);
-}
-.rail-usage-tab:hover,
-.rail-usage-type-btn:hover {
-  color: var(--fg);
-}
-.rail-usage-tab.active {
-  background: var(--panel);
-  color: var(--accent);
-  font-weight: 600;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
-}
-.rail-usage-type-btn {
-  border-left: 1px solid var(--line);
-  border-radius: 0 4px 4px 0;
-  padding-left: 5px;
-}
 
-.rail-usage-kpis {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 4px;
-  min-width: 0;
-}
-.rail-kpi-item {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  padding: 4px 5px;
-  border-radius: 6px;
-  background: var(--panel-2);
-  border: 1px solid var(--line);
-  min-width: 0;
-}
-.rail-kpi-label {
-  font-size: 9.5px;
-  color: var(--fg-4);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.rail-kpi-val {
-  font: 600 11px/1.2 var(--mono);
-  color: var(--fg);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.rail-recharts-host {
-  width: 100%;
-  min-width: 0;
-  min-height: 112px;
-  margin-top: 0;
-  overflow: hidden;
-}
-
-.rc-usage-tooltip {
-  padding: 8px 10px;
-  border-radius: 9px;
-  background: var(--panel);
-  border: 1px solid var(--line-strong);
-  box-shadow: var(--shadow);
-  font-size: 11.5px;
-  color: var(--fg-2);
-  line-height: 1.45;
-  z-index: 60;
-}
 .rc-tip-date {
   font-weight: 600;
   color: var(--fg);
@@ -4890,12 +4762,6 @@ body.no-motion *, body.no-motion *::before, body.no-motion *::after { animation:
 }
 
 /* 14.3 联网搜索开关与内联信源角标卡片 (Web Search & Inline Citations) */
-.style-btn.web-search-btn.active {
-  background: color-mix(in srgb, var(--info) 14%, transparent);
-  color: var(--info);
-  border-color: color-mix(in srgb, var(--info) 38%, transparent);
-  font-weight: 500;
-}
 .cite-badge {
   display: inline-flex;
   align-items: center;

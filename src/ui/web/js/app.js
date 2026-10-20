@@ -2032,7 +2032,6 @@
     }
     setBusy(false);
     refreshStats();
-    refreshUsageStats();
   }
 
   function handleStreamEvent(ev, state) {
@@ -2382,7 +2381,6 @@
     if (!body) { return; }
     clear(body);
     renderSessionSection(body);
-    renderUsageInspectorSection(body);
     renderProjectSection(body);
     renderRoutingSection(body);
     renderTodoSection(body);
@@ -5084,26 +5082,6 @@
     toast(S.thinking ? "已开启「深度思考 (Extended Thinking)」模式" : "已关闭深度思考模式", S.thinking ? "ok" : "info");
   }
 
-  function renderWebSearchButton() {
-    var btn = $("btn-web-search");
-    var lbl = $("web-search-label");
-    if (btn) {
-      btn.classList.toggle("active", !!S.webSearch);
-      btn.title = S.webSearch
-        ? "联网搜索已开启（Web Search & Citations）：自动检索实时信源并生成内联角标 [1][2] 与底部来源卡片（点击关闭）"
-        : "开启联网搜索与内联信源角标引用（Web Search & Citations）";
-    }
-    if (lbl) {
-      lbl.textContent = S.webSearch ? "联网搜索 · 开" : "联网搜索";
-    }
-  }
-
-  function toggleWebSearchMode() {
-    S.webSearch = !S.webSearch;
-    try { localStorage.setItem(LS_WEB_SEARCH, S.webSearch ? "1" : "0"); } catch (e) {}
-    renderWebSearchButton();
-    toast(S.webSearch ? "已开启「联网搜索与内联角标引用」模式" : "已关闭联网搜索模式", S.webSearch ? "ok" : "info");
-  }
 
   /* ---- Claude Projects & Prompt Library（项目文件上下文 + 常用系统提示词库） ---- */
   var projModalDraft = {
@@ -7272,138 +7250,6 @@
   }
 
   /* ---- 侧边栏近 7 天用量统计视图 (Usage Statistics with Recharts) ---- */
-  var usageStatsState = {
-    open: true,
-    metric: "tokens", // "tokens" | "requests"
-    chartType: "area", // "area" | "bar"
-    days: [],
-    totalTokens7d: 0,
-    totalRequests7d: 0,
-    avgDailyTokens: 0,
-    peakTokens: 0,
-    peakRequests: 0
-  };
-
-  function formatCompactMetric(n, isTokens) {
-    var v = Number(n || 0);
-    if (!isTokens) { return v + " 次"; }
-    if (v >= 1000000) { return (v / 1000000).toFixed(1) + "M"; }
-    if (v >= 1000) { return (v / 1000).toFixed(1) + "k"; }
-    return String(v);
-  }
-
-  function refreshUsageStats() {
-    return getJSON("/api/usage-stats").then(function (j) {
-      if (j && j.ok) {
-        usageStatsState.days = j.days || [];
-        usageStatsState.totalTokens7d = j.totalTokens7d || 0;
-        usageStatsState.totalRequests7d = j.totalRequests7d || 0;
-        usageStatsState.avgDailyTokens = j.avgDailyTokens || 0;
-        usageStatsState.peakTokens = j.peakTokens || 0;
-        usageStatsState.peakRequests = j.peakRequests || 0;
-        renderSidebarUsageView();
-        var inspChart = $("insp-recharts-root");
-        if (inspChart && typeof window.renderUsageStatisticsChart === "function") {
-          window.renderUsageStatisticsChart(inspChart, {
-            data: usageStatsState.days,
-            metric: usageStatsState.metric,
-            chartType: usageStatsState.chartType,
-            height: 152
-          });
-        }
-      }
-      return usageStatsState;
-    }).catch(function () {});
-  }
-
-  function renderSidebarUsageView() {
-    var view = $("rail-usage-view");
-    var btnNav = $("btn-usage-stats");
-    var badge = $("rail-usage-badge");
-    if (btnNav) {
-      btnNav.classList.toggle("active", !!usageStatsState.open);
-    }
-    if (badge && usageStatsState.totalTokens7d > 0) {
-      badge.textContent = formatCompactMetric(usageStatsState.totalTokens7d, true);
-    }
-    if (!view) { return; }
-    view.hidden = !usageStatsState.open;
-    if (!usageStatsState.open) { return; }
-
-    var isTokens = usageStatsState.metric !== "requests";
-    var btnTok = $("btn-usage-metric-tokens");
-    var btnReq = $("btn-usage-metric-reqs");
-    var btnType = $("btn-usage-chart-type");
-    if (btnTok) { btnTok.classList.toggle("active", isTokens); }
-    if (btnReq) { btnReq.classList.toggle("active", !isTokens); }
-    if (btnType) {
-      btnType.textContent = usageStatsState.chartType === "area" ? "柱状" : "趋势";
-    }
-
-    var kpiTotal = $("rail-kpi-total");
-    var kpiAvg = $("rail-kpi-avg");
-    var kpiPeak = $("rail-kpi-peak");
-    if (kpiTotal) {
-      kpiTotal.textContent = isTokens
-        ? formatCompactMetric(usageStatsState.totalTokens7d, true)
-        : usageStatsState.totalRequests7d + " 次";
-    }
-    if (kpiAvg) {
-      kpiAvg.textContent = isTokens
-        ? formatCompactMetric(usageStatsState.avgDailyTokens, true) + "/日"
-        : Math.round((usageStatsState.totalRequests7d || 0) / 7) + " 次/日";
-    }
-    if (kpiPeak) {
-      kpiPeak.textContent = isTokens
-        ? formatCompactMetric(usageStatsState.peakTokens, true)
-        : (usageStatsState.peakRequests || 0) + " 次";
-    }
-
-    var chartHost = $("rail-recharts-root");
-    if (chartHost && typeof window.renderUsageStatisticsChart === "function") {
-      window.renderUsageStatisticsChart(chartHost, {
-        data: usageStatsState.days,
-        metric: usageStatsState.metric,
-        chartType: usageStatsState.chartType,
-        height: 112
-      });
-    }
-  }
-
-  function renderUsageInspectorSection(root) {
-    var s = section("用量统计 (近 7 天 · Recharts)");
-    var headBar = el("div", "fb-head-bar");
-    var isTokens = usageStatsState.metric !== "requests";
-    headBar.appendChild(el("span", "empty-note", isTokens ? "近 7 日每日 Token 消耗" : "近 7 日每日请求频次"));
-    var actWrap = el("div", "fb-head-actions");
-    var mBtn = el("button", "model-action-btn", isTokens ? "切换为请求频次" : "切换为 Token 量");
-    mBtn.type = "button";
-    mBtn.addEventListener("click", function () {
-      usageStatsState.metric = isTokens ? "requests" : "tokens";
-      renderSidebarUsageView();
-      renderInspector();
-    });
-    actWrap.appendChild(mBtn);
-    headBar.appendChild(actWrap);
-    s.body.appendChild(headBar);
-
-    var chartBox = el("div", "rail-recharts-host");
-    chartBox.id = "insp-recharts-root";
-    s.body.appendChild(chartBox);
-
-    root.appendChild(s.sec);
-    if (typeof window.renderUsageStatisticsChart === "function" && usageStatsState.days.length) {
-      setTimeout(function () {
-        window.renderUsageStatisticsChart(chartBox, {
-          data: usageStatsState.days,
-          metric: usageStatsState.metric,
-          chartType: usageStatsState.chartType,
-          height: 152
-        });
-      }, 0);
-    }
-  }
-
   function initClaudeFeatures() {
     try {
       var savedStyle = localStorage.getItem(LS_STYLE);
@@ -7412,52 +7258,12 @@
       if (savedArchive) { S.archivePolicy = savedArchive; }
       var savedThinking = localStorage.getItem(LS_THINKING);
       if (savedThinking === "1") { S.thinking = true; }
-      var savedWebSearch = localStorage.getItem(LS_WEB_SEARCH);
-      if (savedWebSearch === "1") { S.webSearch = true; }
     } catch (e) {}
     renderStyleButton();
     renderThinkingButton();
-    renderWebSearchButton();
     renderArchivePolicyButton();
     refreshProjectKnowledge();
     refreshPromptLibrary();
-    refreshUsageStats();
-
-    var btnUsageNav = $("btn-usage-stats");
-    if (btnUsageNav) {
-      btnUsageNav.addEventListener("click", function () {
-        usageStatsState.open = !usageStatsState.open;
-        renderSidebarUsageView();
-        if (usageStatsState.open) {
-          var v = $("rail-usage-view");
-          if (v && v.scrollIntoView) { v.scrollIntoView({ behavior: "smooth", block: "nearest" }); }
-        }
-      });
-    }
-    var btnMetricTok = $("btn-usage-metric-tokens");
-    var btnMetricReq = $("btn-usage-metric-reqs");
-    var btnChartType = $("btn-usage-chart-type");
-    if (btnMetricTok) {
-      btnMetricTok.addEventListener("click", function () {
-        usageStatsState.metric = "tokens";
-        renderSidebarUsageView();
-        if ($("app") && $("app").classList.contains("insp-open") && S.inspTab === "info") { renderInspector(); }
-      });
-    }
-    if (btnMetricReq) {
-      btnMetricReq.addEventListener("click", function () {
-        usageStatsState.metric = "requests";
-        renderSidebarUsageView();
-        if ($("app") && $("app").classList.contains("insp-open") && S.inspTab === "info") { renderInspector(); }
-      });
-    }
-    if (btnChartType) {
-      btnChartType.addEventListener("click", function () {
-        usageStatsState.chartType = usageStatsState.chartType === "area" ? "bar" : "area";
-        renderSidebarUsageView();
-        if ($("app") && $("app").classList.contains("insp-open") && S.inspTab === "info") { renderInspector(); }
-      });
-    }
 
     var btnThinking = $("btn-thinking");
     if (btnThinking) {
@@ -7467,13 +7273,6 @@
       });
     }
 
-    var btnWebSearch = $("btn-web-search");
-    if (btnWebSearch) {
-      btnWebSearch.addEventListener("click", function (e) {
-        e.stopPropagation();
-        toggleWebSearchMode();
-      });
-    }
 
     var btnExportChat = $("btn-export-chat");
     var exportMenu = $("export-menu");

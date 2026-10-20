@@ -137,44 +137,10 @@
           <svg width="15" height="15"><use href="#i-task"/></svg>
           <span>任务</span>
         </button>
-        <button class="rail-item rail-subitem active" id="btn-usage-stats" title="展开/收起侧边栏近 7 日用量统计（Recharts）">
-          <svg width="15" height="15"><use href="#i-chart"/></svg>
-          <span>统计</span>
-          <span class="rail-badge" id="rail-usage-badge">7天</span>
-        </button>
       </div>
     </nav>
 
     <div class="rail-scroll">
-      <!-- 侧边栏近 7 天用量统计视图 (Usage Statistics with Recharts) -->
-      <section class="rail-usage-view" id="rail-usage-view" aria-label="近 7 天用量统计">
-        <div class="rail-usage-head">
-          <div class="rail-usage-title">
-            <svg width="13" height="13"><use href="#i-chart"/></svg>
-            <span>近7天用量</span>
-          </div>
-          <div class="rail-usage-controls">
-            <button type="button" class="rail-usage-tab active" data-metric="tokens" id="btn-usage-metric-tokens" title="按每日 Token 消耗可视化">Token</button>
-            <button type="button" class="rail-usage-tab" data-metric="requests" id="btn-usage-metric-reqs" title="按每日请求频次可视化">频次</button>
-            <button type="button" class="rail-usage-type-btn" id="btn-usage-chart-type" title="切换面积图 / 柱状图">柱状</button>
-          </div>
-        </div>
-        <div class="rail-usage-kpis">
-          <div class="rail-kpi-item">
-            <span class="rail-kpi-label">7日总计</span>
-            <b class="rail-kpi-val" id="rail-kpi-total">--</b>
-          </div>
-          <div class="rail-kpi-item">
-            <span class="rail-kpi-label">日均用量</span>
-            <b class="rail-kpi-val" id="rail-kpi-avg">--</b>
-          </div>
-          <div class="rail-kpi-item">
-            <span class="rail-kpi-label">单日峰值</span>
-            <b class="rail-kpi-val" id="rail-kpi-peak">--</b>
-          </div>
-        </div>
-        <div class="rail-recharts-host" id="rail-recharts-root"></div>
-      </section>
 
       <div class="rail-label">
         <div class="rail-label-left">
@@ -408,10 +374,6 @@
               <button class="style-btn thinking-btn" id="btn-thinking" type="button" title="开启/关闭深度思考（Claude Extended Thinking）">
                 <svg width="14" height="14"><use href="#i-brain"/></svg>
                 <span id="thinking-label">深度思考</span>
-              </button>
-              <button class="style-btn web-search-btn" id="btn-web-search" type="button" title="开启/关闭联网搜索与内联信源角标引用（Web Search &amp; Citations）">
-                <svg width="14" height="14"><use href="#i-globe"/></svg>
-                <span id="web-search-label">联网搜索</span>
               </button>
               <button class="style-btn project-pill-btn" id="btn-prompt-project" type="button" title="打开 Projects 模态框：切换多项目工作区或上传本地项目文件供 AI 参考">
                 <svg width="14" height="14"><use href="#i-book"/></svg>
