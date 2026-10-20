@@ -754,14 +754,33 @@
     title.appendChild(el("b", null, ev.name));
     title.appendChild(document.createTextNode(" 吗？"));
     card.appendChild(title);
-    var pre = el("pre", "ask-args");
-    pre.textContent = argsText(ev.args);
-    card.appendChild(pre);
-    var row = el("div", "ask-row");
 
+    // Show the change, not the arguments: a coloured diff is what the user
+    // actually needs to decide, and renderDiff already exists for tool cards.
+    if (Array.isArray(ev.diff) && ev.diff.length) {
+      var diffHost = el("div", "ask-diff");
+      renderDiff(diffHost, ev.diff);
+      card.appendChild(diffHost);
+      var argsPre = el("pre", "ask-args ask-args-collapsed");
+      argsPre.textContent = argsText(ev.args);
+      var toggle = el("button", "ask-args-toggle", "查看原始参数");
+      toggle.type = "button";
+      toggle.addEventListener("click", function () {
+        var hidden = argsPre.classList.toggle("ask-args-collapsed");
+        toggle.textContent = hidden ? "查看原始参数" : "收起原始参数";
+      });
+      card.appendChild(toggle);
+      card.appendChild(argsPre);
+    } else {
+      var pre = el("pre", "ask-args");
+      pre.textContent = argsText(ev.args);
+      card.appendChild(pre);
+    }
+
+    var row = el("div", "ask-row");
     var yes = el("button", "btn primary", "允许");
     var no = el("button", "btn ghost", "拒绝");
-    var all = el("button", "btn", "总是允许");
+    var all = el("button", "btn", "不再询问此命令");
 
     function settle() {
       clear(row);
@@ -772,6 +791,8 @@
     no.addEventListener("click", function () { settle(); answerConfirm(false); });
     all.addEventListener("click", function () {
       settle();
+      // Remember the choice for this exact tool so the same edit does not ask
+      // again; the rule is stored through the permission engine.
       postJSON("/api/permissions", { add: { allow: [ev.name] } }).catch(function () {});
       answerConfirm(true);
     });

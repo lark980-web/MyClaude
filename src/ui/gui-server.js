@@ -126,6 +126,68 @@ export async function startGui({ config: initialConfig, port = 7788, open = true
     return agent;
   };
 
+/**
+ * Build a preview diff from the arguments of a mutating tool.
+ *
+ * The confirm dialog used to show raw JSON, which asks the user to approve a
+ * change they cannot see: `{"file_path":"a.js","old_string":"…"}` says nothing
+ * about the resulting file. Turning the arguments into a unified diff lets the
+ * existing renderDiff() draw the same coloured view used by GitDiff.
+ *
+ * Only Write / Edit / MultiEdit are previewed; other tools return null and the
+ * client falls back to showing the arguments.
+ */
+function buildConfirmDiff(name, args) {
+  const a = args || {};
+  const files = [];
+  const split = (text) => String(text == null ? "" : text).split(/\r?\n/);
+
+  if (name === "Write") {
+    const body = split(a.content);
+    const lines2 = body.map((text) => ({ type: "add", text }));
+    files.push({
+      name: String(a.file_path || "(file)"),
+      added: body.length,
+      removed: 0,
+      hunks: [{ header: "@@ new file @@", lines: lines2 }],
+    });
+  } else if (name === "Edit") {
+    const before = split(a.old_string);
+    const after = split(a.new_string);
+    const body = [
+      ...before.map((text) => ({ type: "del", text })),
+      ...after.map((text) => ({ type: "add", text })),
+    ];
+    files.push({
+      name: String(a.file_path || "(file)"),
+      added: after.length,
+      removed: before.length,
+      hunks: [{ header: "@@ edit @@", lines: body }],
+    });
+  } else if (name === "MultiEdit") {
+    for (const edit of a.edits || []) {
+      const before = split(edit.old_string);
+      const after = split(edit.new_string);
+      files.push({
+        name: String(a.file_path || "(file)"),
+        added: after.length,
+        removed: before.length,
+        hunks: [{
+          header: "@@ edit " + (files.length + 1) + " @@",
+          lines: [
+            ...before.map((text) => ({ type: "del", text })),
+            ...after.map((text) => ({ type: "add", text })),
+          ],
+        }],
+      });
+    }
+  } else {
+    return null;
+  }
+
+  return files.length ? files : null;
+}
+
   /** UI adapter: every method maps onto one SSE event. */
   const makeUi = (res) => ({
     streamText: (t) => sse(res, { type: "delta", text: t }),
@@ -151,7 +213,7 @@ export async function startGui({ config: initialConfig, port = 7788, open = true
       new Promise((resolve) => {
         const id = Math.random().toString(36).slice(2);
         confirmResolvers.set(id, resolve);
-        sse(res, { type: "confirm", id, name, args });
+        sse(res, { type: "confirm", id, name, args, diff: buildConfirmDiff(name, args) });
         setTimeout(() => {
           if (confirmResolvers.has(id)) {
             confirmResolvers.delete(id);
