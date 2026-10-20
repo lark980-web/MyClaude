@@ -12,7 +12,8 @@
     "build:embed": "node scripts/bundle-gui.mjs",
     "build": "node scripts/bundle-gui.mjs",
     "gui": "node bin/myclaude.js --gui",
-    "test": "node --test \"test/*.test.js\""
+    "test": "node --test \"test/*.test.js\"",
+    "build:exe": "node scripts/build-exe.mjs"
   },
   "engines": {
     "node": ">=20"
