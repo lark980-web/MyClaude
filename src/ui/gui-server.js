@@ -129,6 +129,7 @@ export async function startGui({ config: initialConfig, port = 7788, open = true
   /** UI adapter: every method maps onto one SSE event. */
   const makeUi = (res) => ({
     streamText: (t) => sse(res, { type: "delta", text: t }),
+    reasoningText: (t) => sse(res, { type: "reasoning", text: t }),
     endStream: () => sse(res, { type: "assistant_end" }),
     info: (t) => sse(res, { type: "info", text: String(t) }),
     warn: (t) => sse(res, { type: "warn", text: String(t) }),

@@ -6,6 +6,7 @@ import { SYSTEM_PROMPT } from "./prompt.js";
 import { buildUserContent, buildToolAttachmentContent, resolveAttachments } from "../attachments.js";
 import { setQuestionPresenter } from "../tools/extended.js";
 import { HookRunner } from "../hooks.js";
+import { stripReasoning } from "./think.js";
 import { contextWindowOf, maxTokensOf, supportsVision, findModel } from "../models.js";
 
 /** Tools that never touch the filesystem, so they never need approval. */
@@ -329,6 +330,11 @@ export class Agent {
           onDelta: (chunk) => {
             streamed += chunk;
             this.ui.streamText(chunk);
+          },
+          // Reasoning arrives on its own channel so it can be shown in the
+          // collapsible panel instead of the answer body.
+          onReasoning: (chunk) => {
+            if (typeof this.ui.reasoningText === "function") { this.ui.reasoningText(chunk); }
           }
         });
       } catch (e) {
@@ -353,7 +359,9 @@ export class Agent {
       }
 
       if (!toolCalls.length) {
-        this.messages.push({ role: "assistant", content: text || "" });
+        // A gateway that answers with a leading <think> block would otherwise
+        // persist it in history and replay it to the model next turn.
+        this.messages.push({ role: "assistant", content: stripReasoning(text) });
 
         // Stop may veto the ending (e.g. "tests still failing"), which keeps the
         // agent working with the hook's reason as new context. Only allow it
@@ -374,7 +382,7 @@ export class Agent {
 
       this.messages.push({
         role: "assistant",
-        content: text || null,
+        content: stripReasoning(text) || null,
         tool_calls: toolCalls.map((c) => ({
           id: c.id,
           type: "function",

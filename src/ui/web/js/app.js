@@ -557,8 +557,12 @@
   }
 
   function renderAssistant(handle, text, streaming) {
-    handle.raw = text;
-    handle.body.innerHTML = MD.render(text);
+    // Same think-splitting as flushAssistant: streaming must not paint the raw
+    // <think> block (or a stray </think>) into the answer.
+    var parsed = extractThinkTagContent(text);
+    var visible = parsed ? parsed.rest : text;
+    handle.raw = visible;
+    handle.body.innerHTML = MD.render(visible || "");
     handle.body.className = "md" + (streaming ? " cursor" : " ");
     scrollStream();
   }
@@ -1822,17 +1826,48 @@
     }
   }
 
+  /**
+   * Split a leading <think>...</think> block away from the answer.
+   *
+   * Some gateways put their reasoning inline in `content` instead of a dedicated
+   * field. That reasoning belongs in the collapsible "thinking" panel, never in
+   * the message body — and it must never reach `handle.raw`, which feeds copy,
+   * TTS, pin, follow-ups and the saved branch history.
+   *
+   * The closing tag is searched from the opening tag onwards so a stray
+   * `implicit reasoning` mentioned inside the prose cannot swallow the answer.
+   * A closing tag with no opening one is dropped too: it is a model tic, not
+   * content, and rendering it as text is what leaked into transcripts before.
+   */
   function extractThinkTagContent(raw) {
-    var s = String(raw || "");
-    var mClosed = s.match(/^\s*<think>([\s\S]*?)<\/think>\s*/i);
-    if (mClosed) {
-      return { think: mClosed[1].trim(), rest: s.slice(mClosed[0].length), open: false };
+    var s = String(raw == null ? "" : raw);
+    var start = s.indexOf("<think>");
+    // An opening tag only starts a block when nothing but whitespace precedes it;
+    // buried in prose it is quoted content and must be left alone.
+    if (start > 0 && !/^\s*$/.test(s.slice(0, start))) { start = -1; }
+    if (start < 0) {
+      var closeAt = s.indexOf("</think>");
+      if (closeAt < 0) { return null; }
+      // A closing tag with no opener: either the gateway dropped the opener but
+      // kept the reasoning inline, or the tag is merely quoted inside prose.
+      // Only a paragraph break before the tag marks the former — that is the
+      // case where a page of analysis used to print above a one-line answer.
+      var before = s.slice(0, closeAt);
+      if (/\n\s*$/.test(before) && before.trim()) {
+        return { think: before.trim(), rest: s.slice(closeAt + 8).replace(/^\s+/, ""), open: false };
+      }
+      // Quoted in prose: leave the line untouched.
+      return { think: "", rest: s, open: false };
     }
-    var mOpen = s.match(/^\s*<think>([\s\S]*)$/i);
-    if (mOpen) {
-      return { think: mOpen[1].trim(), rest: "", open: true };
+    var end = s.indexOf("</think>", start + 7);
+    if (end < 0) {
+      return { think: s.slice(start + 7).trim(), rest: "", open: true };
     }
-    return null;
+    return {
+      think: s.slice(start + 7, end).trim(),
+      rest: s.slice(0, start) + s.slice(end + 8),
+      open: false
+    };
   }
 
   function flushAssistant(handle, text, streaming) {
@@ -1840,6 +1875,7 @@
     var parsed = extractThinkTagContent(full);
     var visibleText = parsed ? parsed.rest : full;
     handle.raw = visibleText;
+    handle.think = parsed ? parsed.think : "";
     handle.pending = false;
     handle.body.className = "md" + (streaming ? " cursor" : " ");
     handle.body.innerHTML = MD.render(visibleText || (streaming && parsed && parsed.open ? "正在深度思考推演中…" : ""));
@@ -1986,6 +2022,7 @@
       pendingTools: [],
       startedAt: Date.now(),
       thought: null,
+      reasoningBuf: "",
       thoughtTimer: null
     }
 
@@ -2035,6 +2072,18 @@
   }
 
   function handleStreamEvent(ev, state) {
+    // Reasoning streams on its own channel: it belongs in the collapsible
+    // panel, never in the answer body.
+    if (ev.type === "reasoning") {
+      state.reasoningBuf += ev.text;
+      if (state.thought) {
+        state.thought.body.textContent = state.reasoningBuf;
+        var secsR = Math.max(1, Math.round((Date.now() - state.startedAt) / 1000));
+        state.thought.label.textContent = "深度思考中…（" + state.reasoningBuf.length + " 字 · " + secsR + " 秒）";
+        state.thought.box.classList.add("open");
+      }
+      return;
+    }
     if (ev.type === "delta") {
       state.buffer += ev.text;
       var parsed = extractThinkTagContent(state.buffer);

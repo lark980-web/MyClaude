@@ -74,7 +74,7 @@ export class OpenAIProvider {
     return (json.data || []).map((m) => m.id);
   }
 
-  async streamChat({ messages, tools, signal, onDelta, onToolCall }) {
+  async streamChat({ messages, tools, signal, onDelta, onToolCall, onReasoning }) {
     const body = {
       model: this.model,
       messages,
@@ -108,6 +108,7 @@ export class OpenAIProvider {
     const decoder = new TextDecoder();
     let buffer = "";
     let text = "";
+    let reasoning = "";
     let usage = null;
     const toolAccum = new Map();
     let finishReason = null;
@@ -146,6 +147,15 @@ export class OpenAIProvider {
         if (choice.finish_reason) finishReason = choice.finish_reason;
 
         const delta = choice.delta || {};
+
+        // Reasoning models stream their thinking through a separate field. It
+        // must not be concatenated into `text`: that is the answer, and mixing
+        // them is what made reasoning leak into the transcript as body text.
+        const thought = delta.reasoning_content ?? delta.reasoning;
+        if (typeof thought === "string" && thought) {
+          reasoning += thought;
+          onReasoning?.(thought);
+        }
         if (delta.content) {
           text += delta.content;
           onDelta?.(delta.content);
@@ -180,7 +190,7 @@ export class OpenAIProvider {
 
     for (const call of toolCalls) onToolCall?.(call);
 
-    return { text, toolCalls, finishReason, usage };
+    return { text, reasoning, toolCalls, finishReason, usage };
   }
 
   async complete({ messages, tools, signal }) {
