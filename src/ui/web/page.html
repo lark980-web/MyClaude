@@ -358,12 +358,21 @@
               <button class="round-btn" id="btn-at" title="引用工作区文件（输入 @ 触发）" aria-label="引用文件">
                 <svg width="16" height="16"><use href="#i-at"/></svg>
               </button>
-              <div class="segmented" id="mode-seg" role="group" aria-label="权限模式">
-                <span class="segmented-thumb" id="mode-thumb" aria-hidden="true"></span>
-                <button class="segmented-item" data-mode="ask" title="每次写入前询问">询问</button>
-                <button class="segmented-item" data-mode="auto" title="自动批准所有工具">自动</button>
-                <button class="segmented-item" data-mode="plan" title="只读，先给方案">计划</button>
-              </div>
+              <!-- Permission mode: a native select instead of the old 3-item
+                   segmented control. The segmented form could not carry the
+                   other four modes, and its thumb needed manual positioning. -->
+              <label class="mode-select-wrap" title="权限模式：询问 / 接受编辑 / 自动 / 不再提问 / 计划 / 全部放行 / 完全放行">
+                <svg width="14" height="14" aria-hidden="true"><use href="#i-style"/></svg>
+                <select id="mode-select" class="mode-select" aria-label="权限模式">
+                  <option value="ask">询问</option>
+                  <option value="acceptEdits">接受编辑</option>
+                  <option value="auto">自动</option>
+                  <option value="dontAsk">不再提问</option>
+                  <option value="plan">计划</option>
+                  <option value="bypassPermissions">全部放行</option>
+                  <option value="fullAccess">完全放行</option>
+                </select>
+              </label>
               <div class="style-pick">
                 <button class="style-btn" id="btn-style" type="button" title="切换回答风格（Choose a style）">
                   <svg width="14" height="14"><use href="#i-style"/></svg>

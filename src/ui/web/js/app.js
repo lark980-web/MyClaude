@@ -2302,33 +2302,22 @@
     moveModeThumb();
   }
 
+  /**
+   * Reflect the active permission mode in the composer dropdown.
+   *
+   * Kept under the old name because several call sites (boot, resize, setMode)
+   * already invoke it; only the control it drives changed from a segmented
+   * group to a native select.
+   */
   function moveModeThumb() {
-    var seg = $("mode-seg");
-    var thumb = $("mode-thumb");
-    if (!seg || !thumb) { return; }
-    var items = seg.querySelectorAll(".segmented-item");
-    var mode = (S.config && S.config.permissionMode) || $("mode-seg").dataset.mode || "ask";
-    var idx = 0;
-    Array.prototype.forEach.call(items, function (it, i) {
-      it.classList.toggle("active", it.getAttribute("data-mode") === mode);
-      if (it.getAttribute("data-mode") === mode) { idx = i; }
-    });
-    var item = items[idx];
-    if (!item) { return; }
-    // The segmented control only carries the three everyday modes. When the
-    // session is in one of the others (set from Settings), hide the thumb
-    // instead of parking it under the wrong label.
-    var matched = Array.prototype.some.call(items, function (it) {
-      return it.getAttribute("data-mode") === mode;
-    });
-    if (!matched) {
-      thumb.style.width = "0px";
-      thumb.style.opacity = "0";
-      return;
-    }
-    thumb.style.opacity = "";
-    thumb.style.width = item.offsetWidth + "px";
-    thumb.style.transform = "translateX(" + (item.offsetLeft - 2) + "px)";
+    var sel = $("mode-select");
+    if (!sel) { return; }
+    var mode = (S.config && S.config.permissionMode) || "ask";
+    // Unknown values must not blank the control.
+    var known = Array.prototype.some.call(sel.options, function (o) { return o.value === mode; });
+    sel.value = known ? mode : "ask";
+    var opt = sel.options[sel.selectedIndex];
+    if (opt) { sel.title = opt.textContent; }
   }
 
   var lastRenderedModel = null;
@@ -4827,15 +4816,19 @@
       });
     }
 
-    Array.prototype.forEach.call(document.querySelectorAll(".segmented-item"), function (btn) {
-      btn.addEventListener("click", function () {
-        var mode = btn.getAttribute("data-mode");
-        postJSON("/api/config", { permissionMode: mode }).then(function (j) {
-          if (S.config) { S.config.permissionMode = j.permissionMode || mode; }
-          setMode(j.permissionMode || mode);
-        }).catch(function (e) { toast("切换失败：" + e.message, "err"); });
+    var modeSel = $("mode-select");
+    if (modeSel) {
+      modeSel.addEventListener("change", function () {
+        var mode = modeSel.value;
+        postJSON("/api/config", { permissionMode: mode }).then(function (j2) {
+          if (S.config) { S.config.permissionMode = j2.permissionMode || mode; }
+          setMode(j2.permissionMode || mode);
+        }).catch(function (e) {
+          toast("切换失败：" + e.message, "err");
+          moveModeThumb();
+        });
       });
-    });
+    }
 
     var bNew = $("btn-new-chat");
     if (bNew) { bNew.addEventListener("click", newChat); }

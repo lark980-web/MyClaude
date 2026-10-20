@@ -5226,7 +5226,12 @@ body.no-motion *, body.no-motion *::before, body.no-motion *::after { animation:
   font: 600 12.5px/1 var(--sans);
   cursor: pointer;
   transition: all var(--t) var(--ease);
-}
+
+  /* The label must never wrap: without nowrap it broke onto two lines and
+     spilled out of the 32px bar once the top bar got tight. */
+  white-space: nowrap;
+  flex: none;
+  max-width: 220px;}
 
 .topbar-model-config-btn:hover {
   color: var(--accent);
@@ -6158,3 +6163,45 @@ body.no-motion *, body.no-motion *::before, body.no-motion *::after { animation:
   color: var(--fg);
   font: 13px/1 var(--sans);
 }
+
+/* Keep the long config label inside the button instead of pushing the bar. */
+.topbar-model-config-btn .cfg-btn-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ------------------------------------------------- 权限模式下拉 -------- */
+.mode-select-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 28px;
+  padding: 0 8px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  color: var(--fg-2);
+  flex: none;
+  transition: border-color var(--t) var(--ease), background var(--t) var(--ease);
+}
+.mode-select-wrap:hover { background: var(--hover); border-color: var(--line-strong); }
+.mode-select-wrap svg { flex: none; color: var(--fg-3); }
+.mode-select {
+  appearance: none;
+  -webkit-appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--fg-2);
+  font: 500 12px/1 var(--sans);
+  padding: 0 14px 0 0;
+  cursor: pointer;
+  outline: none;
+  /* Native arrow is hidden by appearance:none; this draws our own. */
+  background-image: linear-gradient(45deg, transparent 50%, currentColor 50%),
+    linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position: calc(100% - 6px) center, calc(100% - 2px) center;
+  background-size: 4px 4px, 4px 4px;
+  background-repeat: no-repeat;
+}
+.mode-select option { background: var(--panel); color: var(--fg); }
