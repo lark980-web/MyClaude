@@ -30,10 +30,10 @@ export const PROVIDER_PRESETS = [
     keyEnvVar: "ANTHROPIC_API_KEY",
     docUrl: "https://docs.anthropic.com",
     models: [
-      { id: "claude-3-7-sonnet", name: "Claude 3.7 Sonnet · 混合推理与编程旗舰", contextWindow: 200000, maxTokens: 64000, input: ["text", "image"], thinking: true, category: "coding", tag: "旗舰推理" },
-      { id: "claude-3-5-sonnet", name: "Claude 3.5 Sonnet · 前端与全栈编程王者", contextWindow: 200000, maxTokens: 8192, input: ["text", "image"], category: "coding", tag: "编程王者" },
-      { id: "claude-3-5-haiku", name: "Claude 3.5 Haiku · 极速轻量与低延迟", contextWindow: 200000, maxTokens: 8192, input: ["text", "image"], category: "general", tag: "极速响应" },
-      { id: "claude-3-opus", name: "Claude 3 Opus · 深度学术与复杂分析", contextWindow: 200000, maxTokens: 4096, input: ["text", "image"], category: "context", tag: "复杂分析" }
+      { id: "claude-3-7-sonnet", name: "Claude 3.7 Sonnet · 混合推理与编程旗舰", contextWindow: 200000, maxTokens: 64000, inputPrice: 3, outputPrice: 15, input: ["text", "image"], thinking: true, category: "coding", tag: "旗舰推理" },
+      { id: "claude-3-5-sonnet", name: "Claude 3.5 Sonnet · 前端与全栈编程王者", contextWindow: 200000, maxTokens: 8192, inputPrice: 3, outputPrice: 15, input: ["text", "image"], category: "coding", tag: "编程王者" },
+      { id: "claude-3-5-haiku", name: "Claude 3.5 Haiku · 极速轻量与低延迟", contextWindow: 200000, maxTokens: 8192, inputPrice: 0.8, outputPrice: 4, input: ["text", "image"], category: "general", tag: "极速响应" },
+      { id: "claude-3-opus", name: "Claude 3 Opus · 深度学术与复杂分析", contextWindow: 200000, maxTokens: 4096, inputPrice: 15, outputPrice: 75, input: ["text", "image"], category: "context", tag: "复杂分析" }
     ]
   },
   {
@@ -48,8 +48,8 @@ export const PROVIDER_PRESETS = [
     keyEnvVar: "DEEPSEEK_API_KEY",
     docUrl: "https://platform.deepseek.com",
     models: [
-      { id: "deepseek-chat", name: "DeepSeek-V3 · 强力通用与编程代码 (V3)", contextWindow: 64000, maxTokens: 8192, input: ["text"], category: "coding", tag: "通用代码" },
-      { id: "deepseek-reasoner", name: "DeepSeek-R1 · 深度思考与逻辑推理 (R1)", contextWindow: 64000, maxTokens: 8192, input: ["text"], thinking: true, category: "coding", tag: "深度思考" },
+      { id: "deepseek-chat", name: "DeepSeek-V3 · 强力通用与编程代码 (V3)", contextWindow: 64000, maxTokens: 8192, inputPrice: 0.27, outputPrice: 1.1, input: ["text"], category: "coding", tag: "通用代码" },
+      { id: "deepseek-reasoner", name: "DeepSeek-R1 · 深度思考与逻辑推理 (R1)", contextWindow: 64000, maxTokens: 8192, inputPrice: 0.55, outputPrice: 2.19, input: ["text"], thinking: true, category: "coding", tag: "深度思考" },
       { id: "deepseek-v4.1-flash", name: "DeepSeek V4.1 Flash · 百万长文本 (1M)", contextWindow: 1048576, maxTokens: 384000, input: ["text", "image"], category: "context", tag: "1M长文本" },
       { id: "deepseek-v4-flash", name: "DeepSeek V4 Flash · 高性能极速", contextWindow: 1048576, maxTokens: 384000, input: ["text", "image"], category: "general", tag: "极速" }
     ]
@@ -66,9 +66,9 @@ export const PROVIDER_PRESETS = [
     keyEnvVar: "GEMINI_API_KEY",
     docUrl: "https://aistudio.google.com",
     models: [
-      { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash · 百万超长上下文极速 (内置就绪)", contextWindow: 1048576, maxTokens: 65536, input: ["text", "image"], category: "general", tag: "免配即用" },
+      { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash · 百万超长上下文极速 (内置就绪)", contextWindow: 1048576, maxTokens: 65536, inputPrice: 0.3, outputPrice: 2.5, input: ["text", "image"], category: "general", tag: "免配即用" },
       { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro · 强力多模态与高级复杂推理", contextWindow: 1048576, maxTokens: 65536, input: ["text", "image"], category: "coding", tag: "多模态旗舰" },
-      { id: "gemini-2.0-flash", name: "Gemini 2.0 Flash · 实时超快交互", contextWindow: 1048576, maxTokens: 8192, input: ["text", "image"], category: "general", tag: "极速" }
+      { id: "gemini-2.0-flash", name: "Gemini 2.0 Flash · 实时超快交互", contextWindow: 1048576, maxTokens: 8192, inputPrice: 0.1, outputPrice: 0.4, input: ["text", "image"], category: "general", tag: "极速" }
     ]
   },
   {
@@ -83,10 +83,10 @@ export const PROVIDER_PRESETS = [
     keyEnvVar: "OPENAI_API_KEY",
     docUrl: "https://platform.openai.com",
     models: [
-      { id: "gpt-4o", name: "GPT-4o · 全模态旗舰 (Omni)", contextWindow: 128000, maxTokens: 16384, input: ["text", "image"], category: "coding", tag: "全模态" },
-      { id: "gpt-4o-mini", name: "GPT-4o Mini · 极速高性价比", contextWindow: 128000, maxTokens: 16384, input: ["text", "image"], category: "general", tag: "高性价比" },
-      { id: "o1", name: "OpenAI o1 · 强化复杂推理旗舰", contextWindow: 128000, maxTokens: 32768, input: ["text", "image"], thinking: true, category: "coding", tag: "高阶推理" },
-      { id: "o3-mini", name: "OpenAI o3-mini · 极速代码与数学推理", contextWindow: 128000, maxTokens: 65536, input: ["text"], thinking: true, category: "coding", tag: "代码推理" }
+      { id: "gpt-4o", name: "GPT-4o · 全模态旗舰 (Omni)", contextWindow: 128000, maxTokens: 16384, inputPrice: 2.5, outputPrice: 10, input: ["text", "image"], category: "coding", tag: "全模态" },
+      { id: "gpt-4o-mini", name: "GPT-4o Mini · 极速高性价比", contextWindow: 128000, maxTokens: 16384, inputPrice: 0.15, outputPrice: 0.6, input: ["text", "image"], category: "general", tag: "高性价比" },
+      { id: "o1", name: "OpenAI o1 · 强化复杂推理旗舰", contextWindow: 128000, maxTokens: 32768, inputPrice: 15, outputPrice: 60, input: ["text", "image"], thinking: true, category: "coding", tag: "高阶推理" },
+      { id: "o3-mini", name: "OpenAI o3-mini · 极速代码与数学推理", contextWindow: 128000, maxTokens: 65536, inputPrice: 1.1, outputPrice: 4.4, input: ["text"], thinking: true, category: "coding", tag: "代码推理" }
     ]
   },
   {
@@ -261,3 +261,42 @@ export function vendorList() {
   return seen;
 }
 
+/**
+ * Public list price for a catalogue entry, in USD per million tokens.
+ *
+ * Only models whose vendor rate card is unambiguous carry these fields. The
+ * function returns null both for unknown ids and for deliberately unpriced
+ * entries, so callers can distinguish "no verified price" from a real $0.
+ */
+export function priceOfModel(id) {
+  const model = findModel(id);
+  if (!model) return null;
+  const inputPrice = model.inputPrice;
+  const outputPrice = model.outputPrice;
+  if (typeof inputPrice !== "number" || !Number.isFinite(inputPrice)) return null;
+  if (typeof outputPrice !== "number" || !Number.isFinite(outputPrice)) return null;
+  return { inputPrice, outputPrice };
+}
+
+/** Estimated spend in USD, or null when the model has no verified price. */
+export function estimateCostUsd(id, inputTokens, outputTokens) {
+  const price = priceOfModel(id);
+  if (!price) return null;
+  const inTok = Number(inputTokens) || 0;
+  const outTok = Number(outputTokens) || 0;
+  return (inTok / 1e6) * price.inputPrice + (outTok / 1e6) * price.outputPrice;
+}
+
+/** Four-decimal USD amount, matching the precision shown by /cost. */
+export function formatUsd(amount) {
+  return "$" + Number(amount).toFixed(4);
+}
+
+/** The single user-visible line that explains why an estimate is unavailable. */
+export const NO_PRICE_NOTICE = "该模型未配置价格，仅显示 token 用量";
+
+/** Pricing line for /cost: either a four-decimal amount or the explicit notice. */
+export function costLineFor(id, inputTokens, outputTokens) {
+  const usd = estimateCostUsd(id, inputTokens, outputTokens);
+  return usd === null ? NO_PRICE_NOTICE : formatUsd(usd);
+}

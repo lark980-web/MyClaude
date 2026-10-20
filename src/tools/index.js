@@ -1,11 +1,12 @@
 import { readFile, writeFile, mkdir, readdir, stat, access } from "node:fs/promises";
 import { exec, spawn, spawnSync } from "node:child_process";
 import { basename, dirname, extname, resolve, join, relative, isAbsolute } from "node:path";
-import { constants, existsSync } from "node:fs";
+import { constants, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { startBackground, killTask, readTaskOutput, waitTask, taskSummaries } from "./tasks.js";
 import { todoWriteTool, webFetchTool } from "./extra.js";
 import { GIT_TOOLS } from "./git.js";
+import { tmpdir } from "node:os";
 
 
 const require = createRequire(import.meta.url);
@@ -23,6 +24,49 @@ function err(content) {
 function truncate(text, limit = MAX_OUTPUT) {
   if (text.length <= limit) return text;
   return `${text.slice(0, limit)}\n\n...[truncated ${text.length - limit} chars]`;
+}
+
+/** Output beyond this size is written to disk instead of being pasted back. */
+const PERSIST_THRESHOLD = 30000;
+/** Where persisted output lives; one file per oversized result. */
+function persistDir() {
+  return join(tmpdir(), "myclaude-output");
+}
+
+/**
+ * Return a small version of an oversized tool result, keeping the full text on disk.
+ *
+ * Build logs and test output routinely exceed the truncation limit, and a clipped
+ * tail is exactly where the failure usually is. Writing the whole thing out and
+ * handing back a path preserves it; the caller can read the file if it needs more.
+ *
+ * Writing must never break the command: if the disk is full or the directory is
+ * read-only, fall back to the previous truncation behaviour.
+ *
+ * @returns {{content: string, persistedPath: string|null, persistedSize: number}}
+ */
+function persistLargeOutput(text) {
+  const body = String(text);
+  if (body.length <= PERSIST_THRESHOLD) { return { content: body, persistedPath: null, persistedSize: 0 }; }
+
+  let file = null;
+  try {
+    const dir = persistDir();
+    mkdirSync(dir, { recursive: true });
+    file = join(dir, `bash-${Date.now()}-${process.pid}-${Math.random().toString(36).slice(2, 8)}.log`);
+    writeFileSync(file, body, "utf8");
+  } catch {
+    // Unwritable disk: keep the old behaviour rather than failing the command.
+    return { content: truncate(body), persistedPath: null, persistedSize: 0 };
+  }
+
+  const lineCount = body.split("\n").length;
+  // Keep the head so the command output is still recognisable, and say plainly
+  // where the rest went. The size is what tells the model how big a file it is.
+  const kept = body.slice(0, PERSIST_THRESHOLD);
+  const note =
+    `\n[完整输出已保存到 ${file}，共 ${lineCount} 行 ${body.length} 字符]`;
+  return { content: kept + note, persistedPath: file, persistedSize: body.length };
 }
 
 export const readTool = {
@@ -688,7 +732,15 @@ export const bashTool = {
         if (stdout) parts.push(stdout);
         if (stderr) parts.push(`[stderr]\n${stderr}`);
         if (code !== 0) parts.push(`[exit ${code ?? "?"}]${timedOut ? " (timeout)" : ""}`);
-        resolvePromise({ ok: code === 0, content: truncate(parts.join("\n") || "(no output)") });
+        const raw = parts.join("\n") || "(no output)";
+        // Big output goes to disk: a clipped tail hides the actual failure.
+        const persisted = persistLargeOutput(raw);
+        const result = { ok: code === 0, content: persisted.content };
+        if (persisted.persistedPath) {
+          result.persistedOutputPath = persisted.persistedPath;
+          result.persistedOutputSize = persisted.persistedSize;
+        }
+        resolvePromise(result);
       };
       child.on("error", (e) => {
         clearTimeout(timer);

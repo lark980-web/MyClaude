@@ -20,7 +20,7 @@ import { resolveAttachments, describeAttachment } from "./attachments.js";
 import { loadCommands, findCommand, expandCommand } from "./commands.js";
 import { normalizeMode, PERMISSION_MODES } from "./agent/modes.js";
 import { VERSION } from "./version.js";
-import { findModel, GATEWAY_KEY_ENV } from "./models.js";
+import { GATEWAY_KEY_ENV, costLineFor, NO_PRICE_NOTICE } from "./models.js";
 import { inspectProject, renderProjectMemory, renderTranscriptMarkdown } from "./project-memory.js";
 import { withCommandScope } from "./command-scope.js";
 import { writeFileSync, existsSync } from "node:fs";
@@ -354,22 +354,36 @@ async function handleCommand(raw, ctx) {
       return {};
     }
     case "cost": {
-      // Rough spend estimate from the token counters the agent already keeps.
-      // Prices vary per model, so the estimate uses the catalogue when it has a
-      // rate and otherwise reports tokens only.
-      const inTok = agent.totalInputTokens || 0;
-      const outTok = agent.totalOutputTokens || 0;
-      const model = findModel(config.model);
-      ui.info(`model      ${config.model}`);
-      ui.info(`input      ${inTok.toLocaleString()} tokens`);
-      ui.info(`output     ${outTok.toLocaleString()} tokens`);
-      ui.info(`total      ${(inTok + outTok).toLocaleString()} tokens`);
-      if (model && typeof model.inputPrice === "number" && typeof model.outputPrice === "number") {
-        const usd = (inTok / 1e6) * model.inputPrice + (outTok / 1e6) * model.outputPrice;
-        ui.info(`estimated  $${usd.toFixed(4)}`);
-      } else {
-        ui.info("estimated  n/a (no price in the model catalogue)");
-      }
+      // Prices come from the catalogue, not from a second table, so /cost can
+      // never disagree with the model picker. An entry without a verified rate
+      // reports that explicitly: showing $0.0000 would look like a free model.
+      const inTok = Number(agent.totalInputTokens) || 0;
+      const outTok = Number(agent.totalOutputTokens) || 0;
+      const usage = agent.usage || agent.lastUsage || {};
+      const cachedTok =
+        Number(
+          agent.totalCachedTokens ??
+            agent.totalCachedInputTokens ??
+            agent.totalCacheReadTokens ??
+            usage.cachedTokens ??
+            usage.cached_tokens ??
+            usage.promptTokensDetails?.cachedTokens ??
+            usage.prompt_tokens_details?.cached_tokens ??
+            0
+        ) || 0;
+      const priceLine = costLineFor(config.model, inTok, outTok);
+      const priced = priceLine !== NO_PRICE_NOTICE;
+
+      ui.info(`模型        ${config.model}`);
+      ui.info(`输入        ${inTok.toLocaleString()} tokens`);
+      ui.info(`输出        ${outTok.toLocaleString()} tokens`);
+      if (cachedTok > 0) ui.info(`缓存命中    ${cachedTok.toLocaleString()} tokens`);
+      ui.info(`总计        ${(inTok + outTok).toLocaleString()} tokens`);
+      ui.info(
+        priced
+          ? `计价        ${priceLine}（按公开标价估算，未应用缓存折扣）`
+          : `计价        ${priceLine}`
+      );
       return {};
     }
     case "doctor": {

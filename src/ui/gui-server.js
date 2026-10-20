@@ -265,6 +265,12 @@ function buildConfirmDiff(name, args) {
     if (result.git) { out.git = result.git; }
     if (Array.isArray(result.diff)) { out.diff = result.diff; }
     if (result.taskId) { out.taskId = result.taskId; }
+    // Bash writes oversized output to a file and returns the path; forward it so
+    // the client can offer a way to open the full log.
+    if (result.persistedOutputPath) {
+      out.persistedOutputPath = result.persistedOutputPath;
+      out.persistedOutputSize = result.persistedOutputSize || 0;
+    }
     return Object.keys(out).length ? out : null;
   };
 
