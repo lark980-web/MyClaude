@@ -9,6 +9,20 @@ import { HookRunner } from "../hooks.js";
 import { stripReasoning } from "./think.js";
 import { CheckpointStore } from "./checkpoint.js";
 import { contextWindowOf, maxTokensOf, supportsVision, findModel } from "../models.js";
+import { CONFIG_DIR } from "../config.js";
+import { join } from "node:path";
+
+/**
+ * Turn a session key into a directory name.
+ *
+ * Session keys are timestamps plus an id, but a caller may pass anything, so
+ * path separators and drive letters are stripped before the key becomes part of
+ * a filesystem path.
+ */
+function safeSessionKey(key) {
+  const cleaned = String(key || "default").replace(/[\\/:*?"<>|]+/g, "-");
+  return cleaned || "default";
+}
 
 /** Tools that never touch the filesystem, so they never need approval. */
 const NON_MUTATING_TOOLS = new Set([
@@ -45,7 +59,10 @@ export class Agent {
     this.maxTokens = maxTokensOf(config.model);
     this.turnCount = 0;
     // Files touched by the current turn, so /rewind can put them back.
-    this.checkpoints = new CheckpointStore();
+    // Snapshots go under ~/.myclaude/checkpoints/<session> so /rewind can undo a
+    // change after a restart. A session without a key writes to "default".
+    const checkpointDir = join(CONFIG_DIR, "checkpoints", safeSessionKey(sessionKey));
+    this.checkpoints = new CheckpointStore({ persistDir: checkpointDir });
     // Guards the Stop hook so it can only extend a run once.
     this.stopHookUsed = false;
     // Session identity comes from the caller: the GUI keeps one agent per tab,
