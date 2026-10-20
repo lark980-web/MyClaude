@@ -1919,6 +1919,26 @@ function toMarkdown(data) {
 }
 
 /** Derive a readable chat title from the first user message. */
+/**
+ * Strip the instruction blocks the composer prepends to a user message.
+ *
+ * The browser injects bracketed directives (extended thinking, project
+ * context, response style, system prompt) ahead of what the user actually
+ * typed. Deriving a title from the raw text therefore produced a list full of
+ * identical "[深度思考模式已开启…]" rows that said nothing about the chat.
+ */
+function stripInjectedPrefixes(text) {
+  let s = String(text || "");
+  // Every injected block is wrapped in [...]; drop leading ones only, so a
+  // bracketed phrase the user typed later survives.
+  for (;;) {
+    const m = /^\s*\[[^\]]{0,600}\]\s*/.exec(s);
+    if (!m || m[0].length >= s.length) { break; }
+    s = s.slice(m[0].length);
+  }
+  return s.trim();
+}
+
 function withTitle(s) {
   if (s.title) return s;
   // Titles are stored on save once the user renames a chat; otherwise they are
@@ -1933,10 +1953,12 @@ function withTitle(s) {
         typeof first.content === "string"
           ? first.content
           : (first.content || []).filter((p) => p.type === "text").map((p) => p.text).join(" ");
-      const clean = String(text || "").replace(/\s+/g, " ").trim();
-      title = clean.length > 60 ? clean.slice(0, 57) + "..." : clean;
+      const clean = stripInjectedPrefixes(String(text || "")).replace(/\s+/g, " ").trim();
+      if (clean) { title = clean.length > 60 ? clean.slice(0, 57) + "..." : clean; }
     }
   } catch {}
-  return { ...s, title: title || s.id };
+  // Fall back to a readable timestamp rather than the raw session id, which
+  // looks like machine noise in the sidebar.
+  return { ...s, title: title || (s.savedAt ? String(s.savedAt).slice(0, 16).replace("T", " ") : s.id) };
 }
 
