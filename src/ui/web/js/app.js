@@ -30,6 +30,7 @@
     toolsExpanded: false,
     lastUserText: "",
     autoScroll: true,
+    replayingHistory: false,
     history: [],
     histIdx: -1,
     style: "normal",
@@ -657,7 +658,7 @@
       listHost.appendChild(box);
       updateToolGroupHeader(prev);
     } else if (prev && prev.classList && prev.classList.contains("tool")) {
-      var group = createToolGroup();
+      var group = createToolGroup(S.replayingHistory);
       root.replaceChild(group, prev);
       var gList = group.querySelector(".tool-group-list");
       gList.appendChild(prev);
@@ -671,7 +672,7 @@
     return { box: box, time: time, secOut: secOut, preOut: preOut, diffHost: diffHost, name: name, args: args };
   }
 
-  function createToolGroup() {
+  function createToolGroup(openByDefault) {
     var group = el("div", "tool-group");
     var head = el("button", "tool-group-head");
     head.type = "button";
@@ -685,6 +686,9 @@
     head.addEventListener("click", function () {
       group.classList.toggle("open");
     });
+    // Restored history opens expanded: a collapsed group hid the whole record,
+    // which read as "the history is incomplete". Live runs stay collapsed.
+    if (openByDefault) { group.classList.add("open"); }
     group.appendChild(head);
     group.appendChild(list);
     return group;
@@ -3466,6 +3470,7 @@
    * re-parsed from the raw text so Edit/GitDiff cards render as diffs again.
    */
   function replayTranscript(messages) {
+    S.replayingHistory = true;
     var root = logRoot();
     msgSeqCounter = 0;
     S.artifacts = [];
@@ -3520,6 +3525,7 @@
     syncPinnedDomNodes();
     renderTopMeta();
     scrollStream(true);
+    S.replayingHistory = false;
   }
 
   /** Rebuild one tool card from stored text, re-parsing diffs where possible. */
@@ -8873,6 +8879,17 @@
       renderUsage();
       renderInspector();
       refreshSessions();
+      // Reopen the conversation the user was last in. Without this every
+      // launch started on the welcome screen and the history felt lost, even
+      // though the session was saved — nothing ever read the stored id back.
+      if (!params.get("resume") && params.get("new") !== "1") {
+        var lastId = null;
+        try { lastId = localStorage.getItem(LS_SESSION); } catch (e) { }
+        if (lastId) {
+          // Defer so the first paint is not blocked on a restore request.
+          setTimeout(function () { resumeSession(lastId); }, 60);
+        }
+      }
     }).catch(function (e) {
       addNotice("无法连接服务：" + e.message, "err");
     });
