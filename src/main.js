@@ -61,6 +61,9 @@ Commands (interactive):
   /cost              show token usage and estimated spend for this session
   /doctor            check config, gateway, tools and permissions
   /skills            list available skills
+  /plugin [名]        列出已安装的插件
+  /mcp login <名>      登录需要 OAuth 的 MCP 服务器
+  /mcp logout <名>     清除已保存的 MCP 令牌
   /model [name]      show or set model
   /provider [name]   show or set provider
   /base [url]        show or set base URL
