@@ -1,107 +1,98 @@
 /**
  * Which shell commands may run without asking.
  *
- * Claude Code answers this by parsing the PowerShell AST and rejecting
- * anything it cannot prove safe (chunk-41tke5jp.js in claude-src). Its list of
- * reasons is long, and every entry is a real way to run code or plant
- * persistence: Invoke-Expression, encoded arguments, writing into .git/hooks,
+ * Claude Code gates the same decision on a PowerShell AST: it parses the
+ * command and refuses anything it cannot prove safe (chunk-41tke5jp.js in
+ * claude-src). The list of reasons in that module is a catalogue of real
+ * escapes — Invoke-Expression, encoded arguments, writing into .git/hooks,
  * schtasks, downloading and running remote code, and so on.
  *
- * This module is the same idea without a parser. It is deliberately
- * conservative: a command is auto-approved only when every part of it is
- * known and harmless. Anything unknown asks.
+ * This module keeps that idea without a parser. The rule is:
  *
- * The difference from the plain isDestructiveCommand() list is important: that
- * one asks about commands that are obviously destructive, while this one
- * decides whether a command may run unattended, which includes refusing to
- * guess about constructs that hide what they do.
+ *   acceptEdits means "edits and the commands around them", so ordinary work
+ *   (build, test, install, git add/commit, mkdir, writing a file) is approved.
+ *   What still asks is what can escape the workspace or hide what it does.
+ *
+ * An earlier version of this file used a read-only allowlist and refused
+ * anything else, which turned `git add`, `mkdir` and even `node -e` into
+ * prompts. That is not what acceptEdits is for, so the check now asks
+ * "is this dangerous?" instead of "is this on a list?".
  */
 
-/**
- * Commands that only read. They are safe in any mode.
- *
- * The names are the bare executable, lower-cased, without a path.
- */
-const READ_ONLY_COMMANDS = new Set([
-  // File inspection
-  "ls", "dir", "cat", "type", "head", "tail", "wc", "more", "less",
-  // Search
-  "grep", "rg", "find", "fd", "ag", "which", "where", "whereis",
-  // Version and help
-  "node", "npm", "npx", "pnpm", "yarn", "bun", "deno", "python", "python3",
-  "pip", "pip3", "go", "cargo", "rustc", "java", "javac", "mvn", "gradle",
-  "dotnet", "ruby", "gem", "php", "composer", "perl", "make", "cmake", "ninja",
-  "tsc", "eslint", "prettier", "jest", "vitest", "pytest", "mocha",
-  // git is handled separately: only its read-only subcommands may run
-  // unattended, so it is not listed here.
-  // System inspection
-  "echo", "printf", "pwd", "cd", "date", "time", "whoami", "hostname",
-  "uname", "env", "set", "printenv", "id", "df", "du", "stat", "file",
-  "ps", "tasklist", "ipconfig", "ifconfig", "ping", "netstat", "systeminfo",
-]);
+/** Buffer cap for one command's parsed form. */
+const MAX_COMMAND_CHARS = 8000;
 
 /**
- * git subcommands that only read. Anything else in git can change state.
+ * Commands that always ask, whatever the arguments.
+ *
+ * These either destroy data outright or run code the user never saw.
  */
-const READ_ONLY_GIT = new Set([
-  "status", "log", "diff", "show", "branch", "remote", "tag", "config",
-  "blame", "describe", "rev-parse", "ls-files", "ls-tree", "ls-remote",
-  "shortlog", "reflog", "cat-file", "check-ignore", "check-attr",
-  "diff-tree", "diff-index", "name-rev", "symbolic-ref", "var", "whatchanged",
-]);
+const ALWAYS_ASK = [
+  [/\brm\b.*\s-[a-z]*[rf]/i, "recursive or forced delete"],
+  [/\brmdir\s+\/s/i, "recursive directory delete"],
+  [/\bdel\b.*\s\/[sq]\s*\/[sq]/i, "forced delete"],
+  [/\bformat\b/i, "disk format"],
+  [/\bmkfs\b/i, "filesystem creation"],
+  [/\bdd\b.*\bof=/i, "raw disk write"],
+  [/--no-preserve-root/, "root delete"],
+  [/\bshutdown\b/i, "system shutdown"],
+  [/\breboot\b/i, "system reboot"],
+  // A push leaves the machine: it publishes work, so it is not an edit. Any
+  [/\bgit\s+push\b/i, "push"],
+  // These rewrite what is already on disk or on the remote.
+  [/\bgit\s+reset\s+--hard\b/i, "hard reset"],
+  [/\bgit\s+clean\b.*-[a-z]*[fd]/i, "git clean"],
+  [/\b(npm|pnpm|yarn|bun)\s+publish\b/i, "package publish"],
+  [/\bdrop\s+(?:table|database)\b/i, "database drop"],
+  [/\bdelete\s+from\b/i, "SQL delete"],
+  // Windows-specific escapes
+  [/\bschtasks\b/i, "scheduled task"],
+  [/\breg\s+(?:add|delete)\b/i, "registry write"],
+  [/\b(?:cacls|icacls)\b.*\/grant/i, "ACL grant"],
+  [/\bnet\s+user\b.*\/add/i, "user creation"],
+  [/\btaskkill\b.*\/f\s+\/t\s+\/fi/i, "broad process kill"],
+];
 
 /**
- * Constructs that make a command impossible to reason about statically.
+ * Constructs that hide what a command does.
  *
- * Claude refuses all of these under acceptEdits. Each one can smuggle in
- * code that the visible text does not describe.
+ * Each one can turn visible text into arbitrary code. These are narrower than
+ * the Claude catalogue on purpose: only the forms that genuinely obscure the
+ * command are listed, so writing a file or passing a flag stays approved.
  */
 const OPAQUE_CONSTRUCTS = [
-  // $() runs a subshell; its output becomes part of the command.
+  // A subshell or a backtick splices another command's output into this one.
   [/\$\(/, "subshell $(...)"],
-  // Backticks are the other subshell syntax.
-  [/`/, "backtick subshell"],
-  // A here-string or here-doc carries arbitrary text into the shell.
-  [/<<</, "here-string"],
-  // PowerShell splatting and stop-parsing defeat static analysis.
-  [/@[A-Za-z_]\w*\b/, "splatting"],
-  [/--%/,"stop-parsing token"],
-  // -EncodedCommand hides the real command behind base64.
-  [/(?:^|\s)-(?:e|ec|en|enc|enco|encod|encode|encoded|EncodedCommand)\s/i, "encoded command"],
-  // Invoke-Expression executes its argument as code.
-  [/\binvoke-(?:expression|iex)\b/i, "Invoke-Expression"],
-  // Invoke-Item runs a file with the default handler.
+  [/\x60/, "backtick subshell"],
+  // Invoke-Expression evaluates its argument as code.
+  [/\binvoke-expression\b/i, "Invoke-Expression"],
+  [/\biex\b/i, "Invoke-Expression"],
+  // -EncodedCommand carries a base64 payload. The long spellings only: a bare
+  // -e is node's own flag and must stay approved.
+  [/-encodedcommand\b/i, "encoded command"],
+  [/(?:^|\s)-enc\s+[A-Za-z0-9+/=]{20,}/i, "encoded command"],
+  // A script block or .NET load can contain anything.
   [/\binvoke-item\b/i, "Invoke-Item"],
-  // Start-Process and nested shells escape the checked command.
   [/\bstart-process\b/i, "Start-Process"],
-  // .NET and COM can load and run arbitrary code.
   [/\bnew-object\b/i, "New-Object"],
   [/\badd-type\b/i, "Add-Type"],
-  // wmic can create processes and write files.
+  // wmic and certutil are both remote-execution vectors.
   [/\bwmic\b/i, "wmic"],
-  // Scheduled tasks are a persistence mechanism.
-  [/\bschtasks\b/i, "schtasks"],
-  // Certutil downloads files.
-  [/\bcertutil\b/i, "certutil"],
-  // BitsTransfer downloads files too.
-  [/\b(?:start|bitsadmin)\b.*\bbits/i, "BITS transfer"],
-  // A script block may contain a dangerous cmdlet.
-  [/\{[^{}]*\}/, "script block"],
-  // Changing the working directory makes relative paths ambiguous.
-  [/\b(?:set-location|push-location|pop-location|cd)\b/i, "working directory change"],
-  // Environment variables change how later commands resolve.
-  [/\bset-item\s+env:/i, "environment variable change"],
-  // A redirect can write anywhere.
-  [/[^>]>{1,2}(?!>)/, "output redirection"],
+  [/\bcertutil\b.*-urlcache/i, "certutil download"],
+  [/\bbitsadmin\b/i, "BITS transfer"],
+  // Downloading and immediately running something.
+  [/\b(?:curl|wget)\b[^|]*\|\s*(?:sh|bash|zsh|powershell|cmd)\b/i, "piped remote script"],
+  // PowerShell elevation.
+  [/\bsudo\b/i, "sudo"],
+  [/Start-Process\b.*-Verb\s+RunAs/i, "elevation"],
 ];
 
 /**
  * Split a command line into the separate commands it runs.
  *
- * A pipeline or a chained command is only as safe as its riskiest part, so
- * every part has to pass on its own. Splitting on the shell operators is
- * deliberately conservative: a quoted string containing a pipe is rare, and
- * treating it as a separator only makes the check stricter.
+ * A chain is only as safe as its riskiest part, so every part is checked. The
+ * split is deliberately conservative: a quoted string containing a pipe is
+ * rare and treating it as a separator only makes the check stricter.
  *
  * @param {string} command
  * @returns {string[]}
@@ -114,46 +105,6 @@ export function splitCommands(command) {
 }
 
 /**
- * The bare executable of a command, lower-cased and without its path.
- *
- * @param {string} part
- * @returns {string}
- */
-export function commandName(part) {
-  const raw = String(part || "").trim();
-  // A quoted path may contain spaces, so the first token is taken before the
-  // string is split: "C:\Program Files\node\node.exe" is one executable.
-  let first = "";
-  if (raw.startsWith('"') || raw.startsWith("'")) {
-    const quote = raw[0];
-    const end = raw.indexOf(quote, 1);
-    first = end > 0 ? raw.slice(1, end) : raw.slice(1);
-  } else {
-    first = raw.split(/\s+/)[0] || "";
-  }
-  // Strip a drive letter and any directory part: C:\tools\foo.exe -> foo.exe
-  return first.replace(/^.*[\\/]/, "").toLowerCase();
-}
-
-/**
- * True when the command is a git invocation that only reads.
- *
- * @param {string} part
- * @returns {boolean}
- */
-function isReadOnlyGit(part) {
-  const words = String(part || "").trim().split(/\s+/);
-  if (commandName(words[0]) !== "git") { return false; }
-  // Skip global options such as -C or --no-pager to find the subcommand.
-  for (let i = 1; i < words.length; i++) {
-    const w = words[i];
-    if (!w || w.startsWith("-")) { continue; }
-    return READ_ONLY_GIT.has(w.toLowerCase());
-  }
-  return false;
-}
-
-/**
  * The reason a command may not run unattended, or null when it may.
  *
  * @param {string} command
@@ -162,28 +113,19 @@ function isReadOnlyGit(part) {
 export function autoApprovalBlocker(command) {
   const raw = String(command || "").trim();
   if (!raw) { return "empty command"; }
+  if (raw.length > MAX_COMMAND_CHARS) { return "command is too long to inspect"; }
 
-  const parts = splitCommands(raw);
-  if (!parts.length) { return "no command found"; }
-
-  for (const part of parts) {
-    for (const [re, label] of OPAQUE_CONSTRUCTS) {
-      if (re.test(part)) {
-        return label + " cannot be checked statically";
-      }
-    }
+  for (const [re, label] of OPAQUE_CONSTRUCTS) {
+    if (re.test(raw)) { return label + " cannot be checked statically"; }
   }
 
-  for (const part of parts) {
-    const name = commandName(part);
-    if (!name) { continue; }
-    // git is checked on its subcommand: "git status" is a read, "git push" is not.
-    if (name === "git") {
-      if (isReadOnlyGit(part)) { continue; }
-      return "`git` may only run read-only subcommands unattended";
-    }
-    if (READ_ONLY_COMMANDS.has(name)) { continue; }
-    return "`" + name + "` is not on the list of commands that may run unattended";
+  for (const [re, label] of ALWAYS_ASK) {
+    if (re.test(raw)) { return label + " needs approval"; }
+  }
+
+  // Writing into .git can plant a hook that git runs on the next command.
+  if (/\.git[\\/](?:hooks|config)\b/i.test(raw)) {
+    return "writing into .git can plant a hook";
   }
 
   return null;
@@ -200,34 +142,17 @@ export function isAutoApprovable(command) {
 }
 
 /**
- * Commands that are known to be safe but are not in the read-only list,
- * because they do change state in a way the user expects.
- */
-export const WRITE_COMMANDS = new Set([
-  "mkdir", "touch", "cp", "copy", "xcopy", "robocopy", "tee", "install",
-]);
-
-/**
- * A write command is allowed unattended only when it stays predictable.
- *
- * Claude does the same check with the real path, and refuses commands that
- * change the working directory because the relative paths would then be
- * resolved against a stale root.
+ * A command that changes the working directory makes relative paths in the
+ * rest of the line ambiguous. It is not blocked, only reported, because a
+ * "cd build && npm test" is ordinary work.
  *
  * @param {string} command
- * @returns {string|null} the reason, or null when the command is fine
+ * @returns {string|null}
  */
-export function pathCheckBlocker(command) {
+export function directoryChangeNote(command) {
   const raw = String(command || "").trim();
-  if (!raw) { return null; }
-  // A command that changes the directory cannot be checked against the
-  // original root.
-  if (/\b(?:set-location|push-location|pop-location|cd)\b/i.test(raw)) {
+  if (/\b(?:set-location|push-location|pop-location)\b/i.test(raw)) {
     return "the command changes the working directory";
-  }
-  // Writing into .git can plant a hook that git runs on the next command.
-  if (/\.git[\\/]/.test(raw) || /\.git\b/.test(raw)) {
-    return "the command touches .git";
   }
   return null;
 }

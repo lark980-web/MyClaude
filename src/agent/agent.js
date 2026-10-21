@@ -350,12 +350,11 @@ export class Agent {
     if (mode === "bypassPermissions") return true;
 
     if (mode === "acceptEdits") {
-      // File edits and routine build/test commands go through; anything that
-      // could delete, publish or reach the network still asks.
-      // The command has to be one that can be checked statically. Claude Code
-      // parses the shell AST and refuses anything it cannot prove safe; this
-      // uses the same rule set, so a command that hides what it does (a
-      // subshell, an encoded argument, a write into .git) still asks.
+      // acceptEdits covers edits and the commands that surround them: build,
+      // test, install, git add/commit, mkdir, redirect a file. What still asks
+      // is what can destroy data or hide its own behaviour — a forced delete,
+      // a force push, a subshell, an encoded payload, a write into .git.
+      // Claude gates the same decision on a shell AST (chunk-41tke5jp.js);
       if (FILE_EDIT_TOOLS.has(toolName)) return true;
       if (toolName === "Bash" && isAutoApprovable(args && args.command)) return true;
     }
