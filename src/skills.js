@@ -15,6 +15,7 @@ import { readdirSync, readFileSync, existsSync, statSync } from "node:fs";
 import { join, resolve, basename } from "node:path";
 import { CONFIG_DIR } from "./config.js";
 import { splitFrontMatter } from "./commands.js";
+import { pluginComponentPaths } from "./plugins.js";
 
 /** The only file name Claude recognises as a skill definition. */
 const SKILL_FILE = "SKILL.md";
@@ -33,6 +34,13 @@ export function skillDirs(cwd = process.cwd()) {
     const parent = resolve(cur, "..");
     if (!parent || parent === cur) { break; }
     cur = parent;
+  }
+  // Plugins may ship skills; they come after the direct ones so a project
+  // skill of the same name wins.
+  try {
+    for (const dir of pluginComponentPaths(cwd).skills) { dirs.push({ dir, scope: "plugin" }); }
+  } catch {
+    // A broken plugin must not stop the ordinary skills from loading.
   }
   return dirs;
 }

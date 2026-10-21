@@ -27,6 +27,7 @@ import { withCommandScope } from "./command-scope.js";
 import { writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { registry as taskRegistry } from "./tasks/registry.js";
+import { loadPlugins, pluginSummaries } from "./plugins.js";
 
 const HELP = `MyClaude — terminal AI coding agent
 
@@ -542,6 +543,33 @@ async function handleCommand(raw, ctx) {
         return {};
       }
       ui.success(deleteSession(arg) ? `deleted ${arg}` : `not found: ${arg}`);
+      return {};
+    }
+    case "plugin": {
+      // "/plugin <name>" shows one plugin in detail.
+      if (rest[0]) {
+        const all = loadPlugins(process.cwd());
+        const one = all.find((x) => x.name === rest[0] || x.name.toLowerCase() === rest[0].toLowerCase());
+        if (!one) {
+          ui.info(`没有名为 "${rest[0]}" 的插件。`);
+          return {};
+        }
+        ui.info(`插件 ${one.name}（${one.scope}）`);
+        ui.info(`  目录      ${one.root}`);
+        ui.info(`  版本      ${one.manifest.version || "未标注"}`);
+        if (one.manifest.description) { ui.info(`  说明      ${one.manifest.description}`); }
+        ui.info(`  组件      ${one.components.length ? one.components.join(", ") : "无"}`);
+        if (one.problem) {
+          ui.warn(`  未加载    ${one.problem} — ${one.reason}`);
+        }
+        return {};
+      }
+      const summaries = pluginSummaries(process.cwd());
+      if (!summaries.length) {
+        ui.info("(no plugins) — add a directory with plugin.json under .myclaude/plugins/ or ~/.myclaude/plugins/");
+        return {};
+      }
+      ui.info(`plugins (${summaries.length}):\n${summaries.join("\n")}`);
       return {};
     }
     case "skills": {

@@ -16,6 +16,25 @@ import { readFileSync, readdirSync, existsSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, basename, resolve } from "node:path";
 import { CONFIG_DIR } from "./config.js";
+import { pluginComponentPaths } from "./plugins.js";
+
+/**
+ * The command directories that come from installed plugins.
+ *
+ * A plugin is a bundle, so its commands are ordinary commands that happen to
+ * live in a plugin directory.
+ *
+ * @param {string} cwd
+ * @returns {string[]}
+ */
+function pluginCommandDirs(cwd = process.cwd()) {
+  try {
+    return pluginComponentPaths(cwd).commands;
+  } catch {
+    // A broken plugin must not stop the ordinary commands from loading.
+    return [];
+  }
+}
 
 /** Directories scanned for command files, lowest precedence first. */
 export function commandDirs(cwd = process.cwd()) {
@@ -32,6 +51,9 @@ export function commandDirs(cwd = process.cwd()) {
     if (!parent || parent === cur) { break; }
     cur = parent;
   }
+  // Plugins ship their own commands; they are searched after the direct ones
+  // so a project command of the same name wins.
+  for (const dir of pluginCommandDirs(cwd)) { dirs.push({ dir, scope: "plugin" }); }
   return dirs;
 }
 
