@@ -236,9 +236,16 @@ export function createAutoSaver({ id, getMessages, getMeta, intervalMs = DEFAULT
     return file;
   }
 
-  /** Start a fresh session id (used by /clear and the GUI reset button). */
-  function rotate(nextId = null) {
-    write();
+  /**
+   * Start a fresh session id (used by /clear and the GUI reset button).
+   *
+   * The write that happens first archives the conversation being left behind,
+   * which is right for /clear and wrong for a resume: resuming a session that
+   * is already on disk must not leave a copy of it under the saver's old id.
+   * That is how one conversation ended up as two entries in the sidebar.
+   */
+  function rotate(nextId = null, { archive = true } = {}) {
+    if (archive) write();
     sessionId = nextId || newSessionId();
     lastSaved = 0;
     pending = false;

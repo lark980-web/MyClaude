@@ -1781,7 +1781,9 @@ function buildConfirmDiff(name, args) {
         const id = decodeURIComponent(path.slice("/api/sessions/".length));
         const removed = deleteSession(id);
         if (removed) {
-          savers.get(id)?.dispose?.();
+          // discard(), not dispose(): the conversation is being deleted, so a
+          // final flush would write the very file that was just removed.
+          savers.get(id)?.discard?.() ?? savers.get(id)?.dispose?.();
           savers.delete(id);
           sessions.delete(id);
         }
@@ -1799,12 +1801,27 @@ function buildConfirmDiff(name, args) {
           sendJson(res, 404, { ok: false, error: "session not found" });
           return;
         }
-        const key = keyOf(body);
+        // Resume has to adopt the identity of the session it is restoring, not the
+        // identity the browser happens to be holding. Taking the body key instead
+        // left a saver under that old key alive: it kept auto-saving the same
+        // messages into its own file, which is how one conversation ended up as
+        // two entries in the sidebar.
+        const wanted = keyOf(body);
+        const key = wanted === target.id ? wanted : target.id;
         const agent = await agentFor(key, makeUi({ write: () => {}, writableEnded: true }));
         agent.messages = target.messages || [];
         agent.turnCount = target.turnCount || 0;
         const saver = saverFor(key, agent);
-        saver.rotate(target.id);
+                // archive: false — the conversation is already on disk under this id;
+        // writing it once more under the saver's old id is what duplicated it.
+        saver.rotate(target.id, { archive: false });
+        // The old key no longer owns this conversation: drop its agent and saver so
+        // nothing else keeps writing on its behalf.
+        if (wanted !== key) {
+          savers.get(wanted)?.discard?.() ?? savers.get(wanted)?.dispose?.();
+          savers.delete(wanted);
+          sessions.delete(wanted);
+        }
         sendJson(res, 200, {
           ok: true,
           id: target.id,
