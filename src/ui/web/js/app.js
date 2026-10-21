@@ -3463,7 +3463,11 @@
     }).catch(function () {});
   }
 
-  function resumeSession(id) {
+  function resumeSession(id, opts) {
+    // Restoring is silent when the user did not ask for it: reopening the app
+    // picks up the last conversation on its own, and announcing that every time
+    // turns a convenience into noise. Only an explicit click reports back.
+    var quiet = opts && opts.quiet;
     if (S.busy) { toast("请等待当前回复结束", "warn"); return; }
     postJSON("/api/session", { action: "resume", id: id }).then(function (j) {
       S.sessionKey = j.id;
@@ -3471,7 +3475,7 @@
       replayTranscript(j.transcript || []);
       refreshSessions();
       refreshStats();
-      toast("已恢复 " + j.messages + " 条消息", "ok");
+      if (!quiet) { toast("已恢复 " + j.messages + " 条消息", "ok"); }
     }).catch(function (e) { toast("恢复失败：" + e.message, "err"); });
   }
 
@@ -8880,7 +8884,7 @@
     if (params.get("commands") === "1") { setTimeout(openCommandsModal, 500); }
     if (params.get("slash")) { var sq = params.get("slash"); setTimeout(function () { updateSlashMenu("/" + (sq === "1" ? "" : sq)); }, 500); }
     if (params.get("modelmenu") === "1") { setTimeout(toggleModelMenu, 500); }
-    if (params.get("resume")) { setTimeout(function () { resumeSession(params.get("resume")); }, 400); }
+    if (params.get("resume")) { setTimeout(function () { resumeSession(params.get("resume"), { quiet: true }); }, 400); }
 
     getJSON("/api/config").then(function (j) {
       S.config = j;
@@ -8908,7 +8912,7 @@
         try { lastId = localStorage.getItem(LS_SESSION); } catch (e) { }
         if (lastId) {
           // Defer so the first paint is not blocked on a restore request.
-          setTimeout(function () { resumeSession(lastId); }, 60);
+          setTimeout(function () { resumeSession(lastId, { quiet: true }); }, 60);
         }
       }
     }).catch(function (e) {
