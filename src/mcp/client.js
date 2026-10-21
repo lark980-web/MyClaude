@@ -2,6 +2,13 @@ import { spawn } from "node:child_process";
 import { existsSync, statSync } from "node:fs";
 import { isAbsolute, extname } from "node:path";
 import { StreamableHttpTransport, SseHttpTransport } from "./http-transport.js";
+import {
+  OAuthTokenStore,
+  discoverMetadata,
+  registerClient,
+  startDeviceAuthorization,
+  pollForToken,
+} from "./oauth.js";
 
 /**
  * Should this command be launched through a shell?
@@ -210,7 +217,7 @@ function describeHttpFailure(serverName, status) {
   return `MCP server "${serverName}" returned HTTP ${status}.`;
 }
 
-export function createTransport(name, spec) {
+export function createTransport(name, spec, authProvider = null) {
   if (spec.command) {
     return new StdioTransport({
       command: spec.command,
@@ -224,18 +231,20 @@ export function createTransport(name, spec) {
     // transport: "sse" forces the legacy split protocol; "http" forces the
     // modern one; omit to let the client negotiate (see McpClient.connect).
     if (spec.transport === "sse") {
-      return new SseHttpTransport({ url: spec.url, headers: buildAuthHeaders(spec), timeoutMs: spec.timeoutMs });
+      return new SseHttpTransport({ url: spec.url, headers: buildAuthHeaders(spec), timeoutMs: spec.timeoutMs, authProvider });
     }
-    return new StreamableHttpTransport({ url: spec.url, headers: buildAuthHeaders(spec), timeoutMs: spec.timeoutMs });
+    return new StreamableHttpTransport({ url: spec.url, headers: buildAuthHeaders(spec), timeoutMs: spec.timeoutMs, authProvider });
   }
   throw new Error("MCP server needs either command (stdio) or url (http)");
 }
 
 export class McpClient {
-  constructor(name, spec) {
+  constructor(name, spec, authProvider = null) {
     this.name = name;
     this.spec = spec;
-    this.transport = createTransport(name, spec);
+    // OAuth servers hand out a token that expires, so the transport asks for
+    // the current one before every request instead of capturing it once.
+    this.transport = createTransport(name, spec, authProvider);
     this.tools = [];
     this.prompts = [];
     this.resources = [];
@@ -370,6 +379,7 @@ export class McpClient {
       url: this.spec.url,
       headers: buildAuthHeaders(this.spec),
       timeoutMs: this.spec.timeoutMs,
+      authProvider: this.authProvider,
     });
     await this.transport.start();
     return true;
@@ -407,9 +417,84 @@ export class McpClient {
   }
 }
 
+/**
+ * Owns the connected MCP servers.
+ *
+ * Servers that need a login are handled here: the manager holds the token
+ * store and, when a server rejects the request, runs the OAuth device flow
+ * before retrying the connection.
+ */
 export class McpManager {
-  constructor() {
+  constructor({ tokenStore = null, onAuthPrompt = null } = {}) {
     this.clients = new Map();
+    /** @type {OAuthTokenStore} */
+    this.tokenStore = tokenStore || new OAuthTokenStore();
+    /** @type {Function|null} Called with the device code details. */
+    this.onAuthPrompt = onAuthPrompt;
+  }
+
+  /**
+   * The Authorization header for a server, or null when it needs no token.
+   *
+   * @param {string} name
+   * @param {Object} spec
+   * @returns {Promise<Object|null>}
+   */
+  async bearerFor(name, spec) {
+    if (!spec.url) { return null; }
+    // A static credential always wins: it needs no login round trip.
+    if (spec.bearer || spec.apiKey || (spec.headers && Object.keys(spec.headers).length)) {
+      return null;
+    }
+    const row = this.tokenStore.get(name);
+    if (!row || !row.access_token) { return null; }
+    let meta = null;
+    try {
+      meta = await discoverMetadata(spec.url);
+    } catch {
+      // Without metadata the token cannot be refreshed, but the stored access
+      // token may still be valid, so use it as-is.
+      return { Authorization: "Bearer " + row.access_token };
+    }
+    const token = await this.tokenStore.accessToken(name, meta);
+    return token ? { Authorization: "Bearer " + token } : null;
+  }
+
+  /**
+   * Run the device authorization flow for one server and store the token.
+   *
+   * @param {string} name
+   * @param {Object} spec
+   * @returns {Promise<string>} the access token
+   */
+  async authorize(name, spec) {
+    const meta = await discoverMetadata(spec.url);
+    const registration = await registerClient(meta, { clientId: spec.clientId });
+    const clientId = registration.client_id;
+    const device = await startDeviceAuthorization(meta, clientId, { scope: spec.scope });
+
+    if (this.onAuthPrompt) {
+      await this.onAuthPrompt({
+        server: name,
+        userCode: device.user_code,
+        verificationUri: device.verification_uri,
+        verificationUriComplete: device.verification_uri_complete || "",
+      });
+    }
+
+    const tokens = await pollForToken(meta, clientId, device.device_code, {
+      expiresIn: device.expires_in,
+      intervalMs: (device.interval || 5) * 1000,
+    });
+    const now = Date.now();
+    this.tokenStore.set(name, {
+      access_token: tokens.access_token || tokens.id_token,
+      refresh_token: tokens.refresh_token || "",
+      expires_at: tokens.expires_in ? now + tokens.expires_in * 1000 : 0,
+      client_id: clientId,
+      scope: tokens.scope || spec.scope || "",
+    });
+    return tokens.access_token || tokens.id_token;
   }
 
   async loadFromConfig(mcpServers = {}) {
@@ -421,13 +506,41 @@ export class McpManager {
         results.push({ name, error: "needs either command (stdio) or url (http/sse)" });
         continue;
       }
-      try {
-        const client = new McpClient(name, spec);
+      const wantsOAuth = spec.oauth === true;
+      const connect = async () => {
+        // A stored OAuth token is attached to every request; the transport
+        // asks for it fresh so a refreshed token is used straight away.
+        const authProvider = wantsOAuth
+          ? async () => this.bearerFor(name, spec)
+          : null;
+        const client = new McpClient(name, spec, authProvider);
         await client.connect();
+        return client;
+      };
+      try {
+        const client = await connect();
         this.clients.set(name, client);
         this.failed.delete(name);
         results.push({ name, tools: client.tools.length, info: client.serverInfo });
       } catch (e) {
+        // A server that wants a login answers 401. Only then is it worth
+        // running the authorization flow, and only for servers that opted in.
+        const status = Number(e && e.status) || 0;
+        const rejected = status === 401 || /\b401\b/.test(String(e && e.message));
+        if (wantsOAuth && spec.url && rejected) {
+          try {
+            await this.authorize(name, spec);
+            const client = await connect();
+            this.clients.set(name, client);
+            this.failed.delete(name);
+            results.push({ name, tools: client.tools.length, info: client.serverInfo });
+            continue;
+          } catch (authError) {
+            results.push({ name, error: "OAuth failed: " + authError.message });
+            this.failed.set(name, "OAuth failed: " + authError.message);
+            continue;
+          }
+        }
         results.push({ name, error: e.message });
         this.failed.set(name, e.message);
       }

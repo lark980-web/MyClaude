@@ -273,6 +273,39 @@ async function handleCommand(raw, ctx) {
       return {};
     }
     case "mcp": {
+      // "/mcp login <server>" starts the OAuth device flow for one server.
+      if (rest[0] === "login") {
+        const target = rest[1];
+        if (!target) {
+          ui.info("用法：/mcp login <服务器名>");
+          return {};
+        }
+        const spec = (config.mcpServers || {})[target];
+        if (!spec) {
+          ui.info(`没有名为 "${target}" 的 MCP 服务器。`);
+          return {};
+        }
+        const manager = agent.mcpManager;
+        if (!manager || !manager.authorize) {
+          ui.info("当前会话没有可用的 MCP 管理器。");
+          return {};
+        }
+        try {
+          ui.info(`正在为 "${target}" 发起 OAuth 登录…`);
+          await manager.authorize(target, spec);
+          ui.info(`"${target}" 登录成功，令牌已保存。`);
+        } catch (e) {
+          ui.warn(`"${target}" 登录失败：${e.message}`);
+        }
+        return {};
+      }
+      // "/mcp logout <server>" forgets the stored token.
+      if (rest[0] === "logout") {
+        const target = rest[1];
+        const manager = agent.mcpManager;
+        if (!target) {
+          ui.info("用法：/mcp logout <服务器名>");
+          return {};
       const status = agent.mcpManager?.status?.() || [];
       if (!status.length) {
         ui.info("(no MCP servers connected) — add them under mcpServers in " + configPath());
@@ -283,7 +316,11 @@ async function handleCommand(raw, ctx) {
             .join("\n")
         );
       }
-      return {};
+        }
+        manager?.tokenStore?.clear?.(target);
+        ui.info(`已清除 "${target}" 的令牌。`);
+        return {};
+      }
     }
     case "tools":
       ui.info(allRegisteredTools().map((t) => `${t.name.padEnd(18)} ${t.description.split(".")[0]}`).join("\n"));

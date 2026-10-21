@@ -49,7 +49,16 @@ export async function createAgent({ provider, config, ui, providerFactory, sessi
   // Connect MCP servers and expose their tools under "<server>__<tool>".
   const mcpConfig = config.mcpServers || {};
   if (Object.keys(mcpConfig).length) {
-    const mcp = new McpManager();
+    const mcp = new McpManager({
+      // OAuth servers need the user to approve a device code in a browser;
+      // the prompt shows the code and the address to visit.
+      onAuthPrompt: async ({ server, userCode, verificationUri, verificationUriComplete }) => {
+        ui.info(`MCP ${server} 需要登录：`);
+        ui.info(`  请在浏览器打开 ${verificationUriComplete || verificationUri}`);
+        ui.info(`  输入代码：${userCode}`);
+        ui.info("  批准后会自动继续…");
+      },
+    });
     const results = await mcp.loadFromConfig(mcpConfig);
     for (const r of results) {
       if (r.error) ui.warn(`MCP ${r.name}: ${r.error}`);

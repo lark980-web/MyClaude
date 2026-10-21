@@ -6,7 +6,7 @@
  * hosted servers still ship only this shape.
  */
 export class SseHttpTransport {
-  constructor({ url, headers = {}, timeoutMs = 60000 }) {
+  constructor({ url, headers = {}, timeoutMs = 60000, authProvider = null }) {
     this.url = String(url).replace(/\/+$/, "");
     this.headers = { "Content-Type": "application/json", Accept: "application/json, text/event-stream", ...headers };
     this.timeoutMs = timeoutMs;
@@ -25,6 +25,19 @@ export class SseHttpTransport {
    * The read loop runs in the background: awaiting it here would never return,
    * because the stream is meant to stay open for the life of the session.
    */
+  /** Headers for one request, including a freshly minted bearer token. */
+  async authHeaders() {
+    if (!this.authProvider) { return this.headers; }
+    try {
+      const extra = await this.authProvider();
+      return extra ? { ...this.headers, ...extra } : this.headers;
+    } catch {
+      // A failed token refresh must not block the request; the server will
+      // answer 401 and the caller can then run the login flow.
+      return this.headers;
+    }
+  }
+
   async start() {
     if (this.started) { return; }
     this.started = true;
@@ -107,11 +120,11 @@ export class SseHttpTransport {
     }
     this.pending.clear();
   }
-  send(msg) {
-    if (!this.endpoint) { return Promise.resolve(); }
+  async send(msg) {
+    if (!this.endpoint) { return; }
     return fetch(this.endpoint, {
       method: "POST",
-      headers: this.headers,
+      headers: await this.authHeaders(),
       body: JSON.stringify(msg),
       signal: AbortSignal.timeout(this.timeoutMs),
     }).then(() => {}).catch(() => {});
@@ -127,6 +140,10 @@ export class SseHttpTransport {
     const id = nextId();
     const body = JSON.stringify({ jsonrpc: "2.0", id, method, params });
 
+    // The bearer token is fetched before the promise starts: the callback below
+    // is not async, so it cannot await.
+    const requestHeaders = await this.authHeaders();
+
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id);
@@ -136,7 +153,7 @@ export class SseHttpTransport {
 
       fetch(this.endpoint, {
         method: "POST",
-        headers: this.headers,
+        headers: requestHeaders,
         body,
         signal: AbortSignal.timeout(this.timeoutMs),
       }).catch((e) => {
@@ -179,14 +196,30 @@ function fatal(e) {
 /* --------------------------------------------- Streamable HTTP (modern) --- */
 
 export class StreamableHttpTransport {
-  constructor({ url, headers = {}, timeoutMs = 60000 }) {
+  constructor({ url, headers = {}, timeoutMs = 60000, authProvider = null }) {
     this.url = String(url).replace(/\/+$/, "");
     this.headers = { "Content-Type": "application/json", Accept: "application/json, text/event-stream", ...headers };
+    // OAuth tokens are minted at runtime and can expire, so request headers
+    // are rebuilt per call instead of being captured once.
+    this.authProvider = authProvider;
     this.timeoutMs = timeoutMs;
     this.sessionId = null;
     this.onNotification = null;
     this.onClose = null;
     this.closed = false;
+  }
+
+  /** Headers for one request, including a freshly minted bearer token. */
+  async authHeaders() {
+    if (!this.authProvider) { return this.headers; }
+    try {
+      const extra = await this.authProvider();
+      return extra ? { ...this.headers, ...extra } : this.headers;
+    } catch {
+      // A failed token refresh must not block the request; the server answers
+      // 401 and the caller can then run the login flow.
+      return this.headers;
+    }
   }
 
   async start() {
