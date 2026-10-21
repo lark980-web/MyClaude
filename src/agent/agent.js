@@ -15,6 +15,32 @@ import { CONFIG_DIR } from "../config.js";
 import { join } from "node:path";
 
 /**
+ * The heading that marks the part of the project memory which governs how
+ * work is done, rather than what the project contains.
+ *
+ * It is pulled out of the memory and put at the front of the system prompt,
+ * because a rule that shapes every later decision should not arrive after
+ * the details it governs.
+ */
+const CORE_RULES_HEADING = "## 核心要义";
+
+/**
+ * Split the project memory into the core rules and the rest.
+ *
+ * @param {string} memory
+ * @returns {{core: string, rest: string}}
+ */
+function splitCoreRules(memory) {
+  const text = String(memory || "");
+  const at = text.indexOf(CORE_RULES_HEADING);
+  if (at < 0) { return { core: "", rest: text }; }
+  // The section runs until the next heading of the same level.
+  const after = text.indexOf("\n## ", at + CORE_RULES_HEADING.length);
+  const end = after < 0 ? text.length : after;
+  return { core: text.slice(at, end).trim(), rest: (text.slice(0, at) + text.slice(end)).trim() };
+}
+
+/**
  * Turn a session key into a directory name.
  *
  * Session keys are timestamps plus an id, but a caller may pass anything, so
@@ -144,11 +170,25 @@ export class Agent {
     return this.config.vision !== false;
   }
 
+
+
   buildSystemPrompt() {
-    const parts = [SYSTEM_PROMPT];
-    if (this.memory) {
+    // The core rules come first: they decide how the rest is done.
+    const { core, rest } = splitCoreRules(this.memory || "");
+    const parts = [];
+    if (core) {
+      parts.push(`\n\n# Core project rules\n\n${core}\n\n` +
+        "These rules govern how work is done here. They are not suggestions: when they " +
+        "conflict with a habit or a general assumption, follow them.");
+    }
+    parts.push(SYSTEM_PROMPT);
+    if (rest) {
       parts.push(
-        `\n\n# Project memory (MYCLAUDE.md)\n\nThe following project instructions take precedence over generic defaults:\n\n${this.memory}`
+        "\n\n# Project memory (MYCLAUDE.md)\n\n" +
+        "These are the instructions of this project, not suggestions. They take precedence " +
+        "over the generic defaults above: when they conflict with a habit or a general " +
+        "assumption, follow them.\n\n" +
+        rest
       );
     }
     // Skills are advertised by name and description only. The model asks for a

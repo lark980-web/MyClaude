@@ -40,6 +40,47 @@ An original terminal coding agent with tool use, plus a Claude-style web GUI
 
 18 test file(s). Run them before claiming a change works.
 
+## 核心要义：一切以 claude-src 为准
+
+本项目是 Claude Code 的复刻，参考实现在 `E:\WorkSpaces\Test09\claude-src`
+（Claude Code 2.1.276 的反编译产物，1554 个 Bun bytecode 模块）。
+
+**任何功能开发都必须先从 claude-src 提取 Claude 的真实实现，再动手写代码。**
+不要凭记忆、凭经验或凭"应该就是这样"来设计。
+
+### 为什么要这样
+
+凭直觉实现会得到一个"看起来差不多"的复刻，而照着真实实现做才能得到行为一致的
+复刻。已经验证过的例子：
+
+- 权限模式集合来自 `1070_unnamed.js`，不是猜的
+- "要不要问用户"的判定来自 `1057_unnamed.js` 的 `Z()`
+- acceptEdits 的命令安全规则来自 `chunk-41tke5jp.js` 的 40 余条拒绝理由
+- Claude 在 Windows 上也做不到真沙箱 —— `1379_unnamed.js` 里的
+  `eval kept-sandbox seal unavailable on windows`，
+  所以本项目用命令分级替代沙箱是合理选择
+
+### 怎么提取
+
+claude-src 是 bytecode，字符串常量仍可读。做法：
+
+1. 用关键词在 `claude-src/modules-named/*.js` 里定位模块
+   （文件名带哈希后缀，用正则匹配前缀）
+2. 提取字符串常量：`matchAll(/"([^"\\]{3,80})"/g)`，按特征过滤
+3. 看上下文：`slice()` 取出命中位置前后若干字符，能还原出结构
+4. 交叉验证：同一概念在多个模块出现时，出现的模式应当一致
+
+### 文档里要标注出处
+
+本项目的文档（`docs/`）凡涉及 Claude 行为的部分，都标注 claude-src 的模块名，
+便于日后核对。`docs/PERMISSION-MODEL.md` 是范例。
+
+### 做不到的时候要说
+
+如果某个功能在 claude-src 里找不到对应实现，或者提取不出来，
+如实说明"claude-src 中未找到对应实现"，并说明依据是什么。
+不要用"我认为 Claude 是这样做的"来填空。
+
 ## Notes for the agent
 
 - Read the relevant files before editing; do not guess at contents.
