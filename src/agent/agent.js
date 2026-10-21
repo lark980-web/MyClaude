@@ -2,6 +2,7 @@ import { findTool, toolSchemas } from "../tools/index.js";
 import { ProviderRouter } from "../providers/router.js";
 import { PermissionEngine, loadMemory } from "./permissions.js";
 import { normalizeMode, isCommonFileCommand, isDestructiveCommand, FILE_EDIT_TOOLS } from "./modes.js";
+import { isAutoApprovable } from "./command-safety.js";
 import { SYSTEM_PROMPT } from "./prompt.js";
 import { buildUserContent, buildToolAttachmentContent, resolveAttachments } from "../attachments.js";
 import { setQuestionPresenter } from "../tools/extended.js";
@@ -311,8 +312,12 @@ export class Agent {
     if (mode === "acceptEdits") {
       // File edits and routine build/test commands go through; anything that
       // could delete, publish or reach the network still asks.
+      // The command has to be one that can be checked statically. Claude Code
+      // parses the shell AST and refuses anything it cannot prove safe; this
+      // uses the same rule set, so a command that hides what it does (a
+      // subshell, an encoded argument, a write into .git) still asks.
       if (FILE_EDIT_TOOLS.has(toolName)) return true;
-      if (toolName === "Bash" && isCommonFileCommand(args && args.command)) return true;
+      if (toolName === "Bash" && isAutoApprovable(args && args.command)) return true;
     }
 
     // "auto" is the user saying "do not ask me". A destructive command still
