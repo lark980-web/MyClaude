@@ -60,7 +60,7 @@ MyClaude 已有 **29 个**，Claude 侧提取到 **57 个候选**，确认缺 **
 | P1 | `/init` | 生成 MYCLAUDE.md 项目记忆 |
 | P1 | `/export` | 导出对话（GUI 有，CLI 缺） |
 | P1 | `/rewind` | 回退文件改动（见下） |
-| P2 | `/hooks` `/skills` `/plugin` | 扩展生态 |
+| P2 | `/hooks` `/skills` `/plugin` | 扩展生态 | ✅ 已完成（hooks 7 事件、skills 目录制、plugin 组件打包） |
 | P3 | `/login` `/remote` `/share` `/branch` `/fork` `/loop` | 依赖云端服务 |
 
 ## 四、关键机制缺口
@@ -92,7 +92,7 @@ MyClaude 已有 **29 个**，Claude 侧提取到 **57 个候选**，确认缺 **
 ### 第三梯队（架构级）
 7. 任务编排层（多类型任务 + 并行子代理）
 8. MCP OAuth
-9. `/skills` `/plugin` 扩展体系
+9. ~~`/skills` `/plugin` 扩展体系~~ ✅ 已完成（2026-10-21）
 
 ## 六、方法论
 
