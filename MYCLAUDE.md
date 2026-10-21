@@ -81,6 +81,16 @@ claude-src 是 bytecode，字符串常量仍可读。做法：
 如实说明"claude-src 中未找到对应实现"，并说明依据是什么。
 不要用"我认为 Claude 是这样做的"来填空。
 
+## 推送用代理
+
+直连 github.com:443 在本机会被阻断。推送时带上代理：
+
+```bash
+git -c http.proxy=http://127.0.0.1:7897 -c https.proxy=http://127.0.0.1:7897 push origin main
+```
+
+排查步骤见 `docs/NETWORK.md`。
+
 ## Notes for the agent
 
 - Read the relevant files before editing; do not guess at contents.
