@@ -30,7 +30,7 @@ test("Task calls issued in one turn run concurrently, not one by one", async () 
   let calls = 0;
 
   const provider = {
-    async streamChat({ messages }) {
+    async streamChat({ messages, system }) {
       calls++;
       // The parent asks for three Task calls in a single assistant turn.
       if (calls === 1) {
@@ -45,7 +45,11 @@ test("Task calls issued in one turn run concurrently, not one by one", async () 
       }
       // Sub-agent turns: delay, then answer with the prompt echoed back so the
       // test can prove results were not mixed up.
-      await sleep(SLOW);
+      // Only the sub-agents delay. The parent agent's follow-up turn has to
+      // answer at once, otherwise it would add another SLOW to the total and
+      // hide whether the three Task calls really ran at the same time.
+      const isSubAgent = String(system || "").includes("Sub-agent mode");
+      if (isSubAgent) { await sleep(SLOW); }
       const last = messages[messages.length - 1];
       const content = typeof last.content === "string" ? last.content : "?";
       const tag = /alpha/.test(content) ? "ALPHA" : /beta/.test(content) ? "BETA" : "GAMMA";

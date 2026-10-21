@@ -26,6 +26,7 @@ import { inspectProject, renderProjectMemory, renderTranscriptMarkdown } from ".
 import { withCommandScope } from "./command-scope.js";
 import { writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
+import { registry as taskRegistry } from "./tasks/registry.js";
 
 const HELP = `MyClaude — terminal AI coding agent
 
@@ -326,17 +327,21 @@ async function handleCommand(raw, ctx) {
       ui.info(allRegisteredTools().map((t) => `${t.name.padEnd(18)} ${t.description.split(".")[0]}`).join("\n"));
       return {};
     case "tasks": {
-      const { taskSummaries } = await import("./tools/tasks.js");
-      const list = taskSummaries();
-      if (!list.length) {
-        ui.info("(no background tasks) — start one with Bash(run_in_background=true)");
-      } else {
-        ui.info(
-          list
-            .map((t) => `${t.id}  ${t.status}${t.exitCode != null ? ` (exit ${t.exitCode})` : ""}  ${t.command}`)
-            .join("\n")
-        );
+      // Every kind of long-running job, not just shell commands.
+      const all = taskRegistry.list();
+      if (!all.length) {
+        ui.info("(no tasks) — start one with Bash(run_in_background=true) or Task(run_in_background=true)");
+        return {};
       }
+      ui.info(
+        all
+          .map((t) => {
+            const age = Math.round(((t.finishedAt || Date.now()) - t.createdAt) / 1000);
+            const label = t.label ? t.label.slice(0, 40) : "";
+            return `  ${t.id}  ${t.type.padEnd(12)} ${t.status.padEnd(10)} ${age}s  ${label}`;
+          })
+          .join("\n")
+      );
       return {};
     }
     case "memory": {

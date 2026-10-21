@@ -10,13 +10,14 @@ import {
   findTool,
 } from "../tools/index.js";
 import { EXTENDED_TOOLS, setQuestionPresenter, answerQuestion } from "../tools/extended.js";
+import { taskOutputTool } from "../tools/task-output.js";
 
 /**
  * Build an Agent wired with the extended tool set and any configured MCP servers.
  */
 export async function createAgent({ provider, config, ui, providerFactory, sessionKey }) {
   // Register the built-in extended tools once per process.
-  registerTools([multiEditTool, todoWriteTool, webFetchTool, ...EXTENDED_TOOLS]);
+  registerTools([multiEditTool, todoWriteTool, webFetchTool, taskOutputTool, ...EXTENDED_TOOLS]);
 
   const agent = new Agent({
     provider,

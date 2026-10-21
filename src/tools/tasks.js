@@ -1,26 +1,22 @@
 /**
  * Background task registry: Bash(run_in_background=true) spawns a detached
  * child whose stdout/stderr stream into an owned output file. BashOutput and
- * KillShell read/stop those tasks by id. Mirrors Claude Code's task model
- * closely enough that the agent can reason about "task_id" style results.
+ * KillShell read/stop those tasks by id.
+ *
+ * The state lives in the shared task registry (src/tasks/registry.js) so a
+ * shell command shows up next to the other kinds of long-running work
+ * instead of in a registry of its own. This module keeps the shell
+ * specific parts: spawning the process and streaming its output to a file.
  */
 import { spawn } from "node:child_process";
-import { readFile, stat, unlink } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
+import { createWriteStream } from "node:fs";
+import { mkdir } from "node:fs/promises";
+import { registry, TASK_TYPES, TASK_STATUS, isTerminal } from "../tasks/registry.js";
 
-const MAX_OUTPUT_BYTES = 4 * 1024 * 1024;
-
-/**
- * @typedef {{ id: string, command: string, cwd: string, shell: string,
- *             startedAt: number, status: "running"|"exited"|"killed"|"error",
- *             exitCode: number|null, signal: string|null, pid: number|null,
- *             outputPath: string, notifyOnExit: boolean }} Task
- */
-
-/** @type {Map<string, Task>} */
-const tasks = new Map();
 /** @type {Map<string, import("node:child_process").ChildProcess>} */
 const procs = new Map();
 /** @type {Set<import("node:fs").WriteStream>} */
@@ -30,32 +26,30 @@ let outputDir = null;
 
 async function getOutputDir() {
   if (outputDir) return outputDir;
-  const { mkdir } = await import("node:fs/promises");
   outputDir = join(tmpdir(), "myclaude-tasks");
   await mkdir(outputDir, { recursive: true });
   return outputDir;
 }
 
-function describe(t) {
-  return `${t.id}\t${t.status}\t${t.command}`;
-}
-
 export function listTasks() {
-  return [...tasks.values()].map(describe).join("\n") || "(no tasks)";
+  const list = registry.list({ type: TASK_TYPES.LOCAL_BASH });
+  if (!list.length) return "(no tasks)";
+  return list.map((t) => `${t.id}\t${t.status}\t${t.meta.command || ""}`).join("\n");
 }
 
 export function getTask(id) {
-  return tasks.get(id) || null;
+  const t = registry.get(id);
+  return t && t.type === TASK_TYPES.LOCAL_BASH ? t : null;
 }
 
 export function taskSummaries() {
-  return [...tasks.values()].map((t) => ({
+  return registry.list({ type: TASK_TYPES.LOCAL_BASH }).map((t) => ({
     id: t.id,
-    command: t.command,
-    cwd: t.cwd,
+    command: t.meta.command || "",
+    cwd: t.meta.cwd || "",
     status: t.status,
-    exitCode: t.exitCode,
-    pid: t.pid,
+    exitCode: t.meta.exitCode ?? null,
+    pid: t.meta.pid ?? null,
     startedAt: t.startedAt,
   }));
 }
@@ -69,7 +63,6 @@ export async function startBackground({ command, cwd = process.cwd(), timeout_ms
   const id = `task_${randomUUID().slice(0, 8)}`;
   const outputPath = join(dir, `${id}.log`);
 
-  const { createWriteStream } = await import("node:fs");
   const out = createWriteStream(outputPath, { flags: "w" });
   streams.add(out);
 
@@ -80,26 +73,18 @@ export async function startBackground({ command, cwd = process.cwd(), timeout_ms
   const shell = isWin ? "cmd.exe" : "/bin/sh";
   const args = isWin ? ["/d", "/s", "/c", command] : ["-c", command];
 
-  /** @type {Task} */
-  const task = {
+  const task = registry.create({
+    type: TASK_TYPES.LOCAL_BASH,
     id,
-    command,
-    cwd,
-    shell,
-    startedAt: Date.now(),
-    status: "running",
-    exitCode: null,
-    signal: null,
-    pid: null,
-    outputPath,
-    notifyOnExit: notify,
-  };
-  tasks.set(id, task);
+    label: command,
+    meta: { command, cwd, shell, outputPath, exitCode: null, signal: null, pid: null, notifyOnExit: notify },
+  });
 
   return new Promise((resolve) => {
-  const child = spawn(shell, args, { cwd, windowsHide: true, detached: false, windowsVerbatimArguments: isWin });
-    task.pid = child.pid ?? null;
+    const child = spawn(shell, args, { cwd, windowsHide: true, detached: false, windowsVerbatimArguments: isWin });
+    task.meta.pid = child.pid ?? null;
     procs.set(id, child);
+    registry.start(task);
 
     const write = (buf) => {
       if (!out.write(buf)) {
@@ -113,20 +98,36 @@ export async function startBackground({ command, cwd = process.cwd(), timeout_ms
       killTask(id);
     }, timeout_ms);
 
+    task.cancel = () => {
+      try {
+        if (process.platform === "win32") {
+          spawn("taskkill", ["/pid", String(child.pid), "/T", "/F"], { windowsHide: true });
+        } else {
+          child.kill("SIGTERM");
+        }
+      } catch {
+        // The process may already be gone; the close handler settles it.
+      }
+    };
+
     child.on("error", (e) => {
-      task.status = "error";
-      task.exitCode = -1;
+      task.meta.exitCode = -1;
       out.write(`[spawn error] ${e.message}\n`);
+      registry.fail(task, e.message);
       cleanup();
     });
 
     child.on("close", (code, signal) => {
-      // A kill is recorded immediately so callers never observe "running"
-      // between killTask() and the process actually exiting.
-      if (task.status !== "killed") task.status = signal ? "killed" : "exited";
-      task.exitCode = code;
-      task.signal = signal;
+      task.meta.exitCode = code;
+      task.meta.signal = signal;
       out.write(`\n[task ${id} finished with exit code ${code ?? "?"}${signal ? ` (signal ${signal})` : ""}]\n`);
+      if (signal) {
+        registry.cancel(task);
+      } else if (code === 0) {
+        registry.complete(task, { exitCode: code });
+      } else {
+        registry.fail(task, `exit code ${code}`);
+      }
       cleanup();
     });
 
@@ -140,37 +141,27 @@ export async function startBackground({ command, cwd = process.cwd(), timeout_ms
     // Resolve once we know the child actually started (or failed immediately).
     setImmediate(() =>
       resolve({
-        ok: task.status === "running",
+        ok: task.status === TASK_STATUS.RUNNING,
         id,
-        pid: task.pid,
+        pid: task.meta.pid,
         outputPath,
         status: task.status,
       })
     );
   });
 }
-
 export function killTask(id) {
-  const proc = procs.get(id);
-  const task = tasks.get(id);
-  if (!proc || !task) {
-    if (task && task.status !== "running") return { ok: true, id, note: "already finished" };
+  const task = registry.get(id);
+  if (!task || task.type !== TASK_TYPES.LOCAL_BASH) {
     return { ok: false, id, error: `unknown task: ${id}` };
   }
-  try {
-    if (process.platform === "win32") {
-      spawn("taskkill", ["/pid", String(proc.pid), "/T", "/F"], { windowsHide: true });
-    } else {
-      proc.kill("SIGTERM");
-    }
-  } catch (e) {
-    return { ok: false, id, error: e.message };
+  if (isTerminal(task.status)) {
+    return { ok: true, id, note: "already finished" };
   }
-  // Mark as killed right away: taskkill is asynchronous, and callers poll
-  // immediately after this returns.
-  task.status = "killed";
-  task.signal = "SIGTERM";
-  return { ok: true, id, pid: proc.pid };
+  // The cancel hook is what actually stops the process; the registry records
+  // the outcome so a poll right afterwards already sees the final state.
+  const res = registry.cancel(task);
+  return { ok: res.ok, id, pid: task.meta.pid };
 }
 
 /**
@@ -178,19 +169,21 @@ export function killTask(id) {
  * new bytes without re-reading the whole log.
  */
 export async function readTaskOutput(id, { offset = 0, limit = 60000 } = {}) {
-  const task = tasks.get(id);
-  if (!task) return { ok: false, error: `unknown task: ${id}` };
+  const task = registry.get(id);
+  if (!task || task.type !== TASK_TYPES.LOCAL_BASH) {
+    return { ok: false, error: `unknown task: ${id}` };
+  }
   try {
-    const raw = await readFile(task.outputPath, "utf8");
+    const raw = await readFile(task.meta.outputPath, "utf8");
     const slice = raw.slice(offset, offset + limit);
     const hasMore = raw.length > offset + limit;
     return {
       ok: true,
       id,
       status: task.status,
-      exitCode: task.exitCode,
-      pid: task.pid,
-      command: task.command,
+      exitCode: task.meta.exitCode,
+      pid: task.meta.pid,
+      command: task.meta.command,
       output: slice,
       nextOffset: offset + slice.length,
       hasMore,
@@ -206,26 +199,33 @@ export async function readTaskOutput(id, { offset = 0, limit = 60000 } = {}) {
 
 /** Stop reading a task and wait for it to settle. */
 export async function waitTask(id, { timeout = 120000 } = {}) {
-  const task = tasks.get(id);
-  if (!task) return { ok: false, error: `unknown task: ${id}` };
-  if (task.status !== "running") return { ok: true, status: task.status, exitCode: task.exitCode };
+  const task = registry.get(id);
+  if (!task || task.type !== TASK_TYPES.LOCAL_BASH) {
+    return { ok: false, error: `unknown task: ${id}` };
+  }
+  if (isTerminal(task.status)) {
+    return { ok: true, status: task.status, exitCode: task.meta.exitCode };
+  }
   const deadline = Date.now() + timeout;
   while (Date.now() < deadline) {
     await new Promise((r) => setTimeout(r, 100));
-    if (task.status !== "running") break;
+    if (isTerminal(task.status)) break;
   }
-  return { ok: task.status !== "running", status: task.status, exitCode: task.exitCode, timedOut: task.status === "running" };
+  return {
+    ok: isTerminal(task.status),
+    status: task.status,
+    exitCode: task.meta.exitCode,
+    timedOut: !isTerminal(task.status),
+  };
 }
 
 export function clearFinishedTasks() {
-  for (const [id, t] of tasks) {
-    if (t.status !== "running") tasks.delete(id);
-  }
+  registry.clearFinished();
 }
 
 /** Best-effort cleanup for process exit. */
 export function killAllTasks() {
-  for (const id of [...procs.keys()]) killTask(id);
+  registry.cancelAll();
 }
 
 for (const sig of ["exit", "SIGINT", "SIGTERM"]) {
