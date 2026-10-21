@@ -69,6 +69,9 @@ export const DEFAULT_CONFIG = {
   // value used before a model is chosen.
   contextWindow: contextWindowOf(DEFAULT_MODEL),
   compactThreshold: 0.8,
+  // Permission rules for the agent. askOnDestructive makes auto mode ask
+  // before a command that can delete, force-push or reformat.
+  permissions: { askOnDestructive: false },
   mcpServers: {},
   providers: {}
 };

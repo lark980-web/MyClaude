@@ -1,7 +1,7 @@
 import { findTool, toolSchemas } from "../tools/index.js";
 import { ProviderRouter } from "../providers/router.js";
 import { PermissionEngine, loadMemory } from "./permissions.js";
-import { normalizeMode, isCommonFileCommand, FILE_EDIT_TOOLS } from "./modes.js";
+import { normalizeMode, isCommonFileCommand, isDestructiveCommand, FILE_EDIT_TOOLS } from "./modes.js";
 import { SYSTEM_PROMPT } from "./prompt.js";
 import { buildUserContent, buildToolAttachmentContent, resolveAttachments } from "../attachments.js";
 import { setQuestionPresenter } from "../tools/extended.js";
@@ -76,6 +76,11 @@ export class Agent {
       permissions instanceof PermissionEngine
         ? permissions
         : new PermissionEngine(config.permissions || {});
+    // Auto mode normally never asks. A destructive command can still ask
+    // when the user opted in, because running one unattended is expensive
+    // to undo. The switch lives in the config so the default behaviour of
+    // existing setups does not change.
+    this.askOnDestructive = !!(config.permissions && config.permissions.askOnDestructive);
     this.planMode = normalizeMode(config.permissionMode) === "plan";
     this.memory = loadMemory(process.cwd());
     this.hooks = new HookRunner({ config, cwd: process.cwd(), ui });
@@ -310,7 +315,16 @@ export class Agent {
       if (toolName === "Bash" && isCommonFileCommand(args && args.command)) return true;
     }
 
-    if (mode === "auto") return true;
+    // "auto" is the user saying "do not ask me". A destructive command still
+    // asks when the user opted in, because the mode only covers the tools
+    // that are safe to run unattended.
+    if (mode === "auto") {
+      if (toolName === "Bash" && this.askOnDestructive && isDestructiveCommand(args && args.command)) {
+        this.ui.warn("auto mode: this command looks destructive, asking first");
+        return this.ui.confirmTool(toolName, args);
+      }
+      return true;
+    }
 
     if (mode === "dontAsk") {
       // The user opted out of prompts entirely: refuse rather than ask.
