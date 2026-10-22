@@ -6167,6 +6167,7 @@ body.no-motion *, body.no-motion *::before, body.no-motion *::after { animation:
 /* Keep the long config label inside the button instead of pushing the bar. */
 .topbar-model-config-btn .cfg-btn-text {
   overflow: hidden;
+  overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -6194,6 +6195,11 @@ body.no-motion *, body.no-motion *::before, body.no-motion *::after { animation:
   background: transparent;
   color: var(--fg-2);
   font: 500 12px/1 var(--sans);
+  /* The composer is a tight row of controls: a long option label must not
+     stretch this past its share and push the buttons off the line. */
+  overflow: hidden;
+  max-width: 84px;
+  text-overflow: ellipsis;
   padding: 0 14px 0 0;
   cursor: pointer;
   outline: none;

@@ -2356,7 +2356,9 @@
     }
     sel.value = mode;
     var opt = sel.options[sel.selectedIndex];
-    if (opt) { sel.title = opt.textContent; }
+    // The option text stays short so the row keeps its shape; the sentence
+    // lives on the option title, which is what the user hovers for.
+    if (opt) { sel.title = opt.title || opt.textContent; }
   }
 
   var lastRenderedModel = null;
