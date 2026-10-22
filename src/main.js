@@ -360,6 +360,28 @@ async function handleCommand(raw, ctx) {
       );
       return {};
     }
+    case "title": {
+      // Name the current conversation. With no argument it reports the name.
+      const saver = ctx.autoSaver;
+      if (!saver) {
+        ui.info("(no active session to name)");
+        return {};
+      }
+      const name = rest.join(" ").trim();
+      if (!name) {
+        const cur = loadSession(saver.id);
+        ui.info(cur && cur.title ? `当前会话标题：${cur.title}` : "(未命名)");
+        ui.info("用法：/title <名称>");
+        return {};
+      }
+      const { setSessionTitle } = await import("./session.js");
+      if (!setSessionTitle(saver.id, name)) {
+        ui.warn(`无法命名会话 ${saver.id}（会话不存在）`);
+        return {};
+      }
+      ui.info(`已将会话命名为「${name.slice(0, 120)}」`);
+      return {};
+    }
     case "status": {
       // One line per thing worth knowing about the current session.
       // Claude shows the same cluster in /status; keeping it in one place

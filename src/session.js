@@ -123,6 +123,39 @@ export function latestSession({ cwd = null } = {}) {
   return list[0] ?? null;
 }
 
+/**
+ * Name a session.
+ *
+ * The title is capped the way the GUI rename already caps it: a sidebar row
+ * is one line, so a very long name would only push the rest of the row out.
+ *
+ * @param {string} id
+ * @param {string} title
+ * @returns {boolean} false when the session does not exist
+ */
+export function setSessionTitle(id, title) {
+  ensureSessionsDir();
+  const file = join(SESSIONS_DIR, `${id}.json`);
+  // Naming a conversation before it has messages is legitimate, so a missing
+  // file is created rather than rejected: the title is the reason to keep it.
+  let data = null;
+  if (existsSync(file)) {
+    try { data = JSON.parse(readFileSync(file, "utf8")); } catch { data = null; }
+  }
+  if (!data) {
+    const now = new Date().toISOString();
+    data = { id, savedAt: now, updatedAt: now, messages: [], turnCount: 0 };
+  }
+  data.title = String(title || "").slice(0, 120) || null;
+  data.updatedAt = new Date().toISOString();
+  // Write through a temp file and rename, the way saveSession does: an
+  // interrupted write must not leave a truncated session behind.
+  const tmp = `${file}.${process.pid}.tmp`;
+  writeFileSync(tmp, JSON.stringify(data, null, 2), "utf8");
+  renameSync(tmp, file);
+  return true;
+}
+
 export function deleteSession(id) {
   const file = join(SESSIONS_DIR, `${id}.json`);
   if (!existsSync(file)) return false;
