@@ -22,10 +22,10 @@ Claude 的基础工具集（从 `allowed_tools` 与 schema 定义确认）：
 | 项 | Claude | MyClaude | 差距 |
 |---|---|---|---|
 | 工具数量 | 21 | 21 | ✅ 对齐 |
-| Bash | 支持沙箱、`dangerouslyDisableSandbox`、超时自动转后台、输出持久化 | 基础执行 | ⚠️ 无沙箱、无大输出持久化 |
-| Grep | ripgrep | 手写 JS 遍历 | ⚠️ 大仓库慢约 10 倍 |
-| Task | 10 种任务类型（见下） | 1 种 | ⚠️ 差距最大 |
-| 权限提示 | 带 diff 预览 + 「不再询问此命令」 | 只有 y/n | ⚠️ 最高频交互缺失 |
+| Bash | 支持沙箱、`dangerouslyDisableSandbox`、超时自动转后台、输出持久化 | 基础执行 + 大输出落盘（超 30000 字符写入临时文件，回退路径保留） | ⚠️ 无沙箱（Claude 在 Windows 上也无，见下） |
+| Grep | ripgrep | ✅ 已接 ripgrep（无 rg 自动回落 JS） | ✅ 对齐 |
+| Task | 10 种任务类型（见下） | 6 种（local_bash/local_agent/mcp_task/monitor_mcp/monitor_ws/workflow） | ⚠️ 缺 auto_mode_scan / dream / in_process_teammate / yank
+| 权限提示 | 带 diff 预览 + 「不再询问此命令」 | ✅ diff 彩色预览 + 不再询问 | ✅ 对齐 |
 
 ## 二、任务体系（Claude 的核心架构差异）
 
@@ -54,12 +54,12 @@ MyClaude 已有 **29 个**，Claude 侧提取到 **57 个候选**，确认缺 **
 
 | 优先级 | 命令 | 理由 |
 |---|---|---|
-| **P0** | `/compact` | 手动压缩，长对话必需 |
-| **P0** | `/cost` | 花费统计（token 数据已有，只需聚合） |
-| **P0** | `/doctor` | 环境自检（配置/网关/MCP/权限） |
-| P1 | `/init` | 生成 MYCLAUDE.md 项目记忆 |
-| P1 | `/export` | 导出对话（GUI 有，CLI 缺） |
-| P1 | `/rewind` | 回退文件改动（见下） |
+| ~~P0~~ | ~~`/compact`~~ | ✅ 已完成 |
+| ~~P0~~ | ~~`/cost`~~ | ✅ 已完成（按模型真实计价） |
+| ~~P0~~ | ~~`/doctor`~~ | ✅ 已完成 |
+| ~~P1~~ | ~~`/init`~~ | ✅ 已完成 |
+| ~~P1~~ | ~~`/export`~~ | ✅ 已完成 |
+| ~~P1~~ | ~~`/rewind`~~ | ✅ 已完成 |
 | P2 | `/hooks` `/skills` `/plugin` | 扩展生态 | ✅ 已完成（hooks 7 事件、skills 目录制、plugin 组件打包） |
 | P1 | `/effort` `/fast` | 思考深度与快速模式 | ✅ 已完成（2026-10-23） |
 | P1 | `/status` | 一行显示会话状态 | ✅ 已完成（2026-10-23） |
@@ -73,13 +73,13 @@ MyClaude 已有 **29 个**，Claude 侧提取到 **57 个候选**，确认缺 **
 
 | 机制 | Claude | MyClaude | 影响 |
 |---|---|---|---|
-| **文件改动回滚** | `/rewind` 回退文件到改动前 | `agent.js:185` 只回退**对话**，不碰文件 | 🔴 改错了无法撤销 |
-| **diff 审批** | 渲染彩色 unified diff | `confirm` 事件只传 `name, args`（裸 JSON） | 🔴 最高频交互，看不到改了什么 |
-| **checkpoint 快照** | 每轮记录文件快照 | 无 | 🔴 依赖上一条 |
-| **任务编排层** | 10 种任务类型 + 状态机 | 1 种 | 🟡 无法并行子代理 |
-| **hooks 配置** | 有界面与 CRUD | 只有引擎，无接口 | 🟡 用户无法配置 |
-| **hooks 事件** | 含 `PreCompact` / `SubagentStop` | 5/7 | 🟡 压缩前无钩子 |
-| **MCP OAuth** | 支持 | 无 | 🟡 只能连无鉴权服务器 |
+| **文件改动回滚** | `/rewind` 回退文件到改动前 | ✅ `/rewind` 同时恢复文件与对话 | ✅ 已完成 |
+| **diff 审批** | 渲染彩色 unified diff | ✅ buildConfirmDiff 渲染 unified diff | ✅ 已完成 |
+| **checkpoint 快照** | 每轮记录文件快照 | ✅ CheckpointStore 且落盘（~/.myclaude/checkpoints） | ✅ 已完成 |
+| **任务编排层** | 10 种任务类型 + 状态机 | ✅ 统一注册表 + 6 种类型，支持并行子代理 | 🟡 缺 4 种类型 |
+| **hooks 配置** | 有界面与 CRUD | ✅ `/api/hooks` CRUD + `/hooks` 命令 | ✅ 已完成 |
+| **hooks 事件** | 含 `PreCompact` / `SubagentStop` | ✅ 7/7 | ✅ 已完成 |
+| **MCP OAuth** | 支持 | ✅ RFC 8628 设备流 + `/mcp login` | ✅ 已完成 |
 | **Bash 沙箱** | 有（`dangerouslyDisableSandbox` 可绕过） | 无沙箱 | 🟡 权限模式下仍有风险 |
 | **工具并发** | 并行 | ✅ 已实现（三阶段） | — |
 | **checkpoint 快照** | 每轮记录 | ✅ 已实现并落盘（~/.myclaude/checkpoints） | — |
