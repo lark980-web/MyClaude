@@ -2338,9 +2338,23 @@
     var sel = $("mode-select");
     if (!sel) { return; }
     var mode = (S.config && S.config.permissionMode) || "ask";
-    // Unknown values must not blank the control.
+    // A mode outside the picker (fullAccess is reachable with /mode) still
+    // has to show itself: falling back to "ask" would tell the user they are
+    // protected at the moment they are not.
     var known = Array.prototype.some.call(sel.options, function (o) { return o.value === mode; });
-    sel.value = known ? mode : "ask";
+    if (!known) {
+      var stale = sel.querySelector('option[data-extra="1"]');
+      if (stale) { stale.parentNode.removeChild(stale); }
+      var extra = document.createElement("option");
+      extra.value = mode;
+      extra.setAttribute("data-extra", "1");
+      extra.textContent = modeName(mode) + " · 高级模式";
+      sel.appendChild(extra);
+    } else {
+      var old = sel.querySelector('option[data-extra="1"]');
+      if (old) { old.parentNode.removeChild(old); }
+    }
+    sel.value = mode;
     var opt = sel.options[sel.selectedIndex];
     if (opt) { sel.title = opt.textContent; }
   }

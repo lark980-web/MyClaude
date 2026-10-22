@@ -7,13 +7,21 @@
  */
 
 export const PERMISSION_MODES = [
-  { id: "ask", label: "ask", zh: "询问", desc: "每次写入前确认" },
-  { id: "acceptEdits", label: "accept edits", zh: "接受编辑", desc: "自动批准文件编辑与常见文件命令" },
-  { id: "auto", label: "auto", zh: "自动", desc: "不再询问任何工具" },
-  { id: "dontAsk", label: "don't ask", zh: "不再提问", desc: "需要确认的一律拒绝" },
-  { id: "plan", label: "plan mode", zh: "计划", desc: "只读：探索放行，改动拒绝" },
-  { id: "bypassPermissions", label: "bypass permissions", zh: "全部放行", desc: "跳过确认（deny 规则仍然生效）" },
-  { id: "fullAccess", label: "full access", zh: "完全放行", desc: "跳过确认与 deny 规则，完全按指令执行" },
+  // Everyday modes: the three a normal session moves between. Phrased the way
+  // Claude describes them (933_chunk-0qdm07jf.js) so the difference is readable
+  // without opening the docs.
+  { id: "ask", label: "ask", zh: "询问", desc: "每次写入前确认", group: "normal" },
+  { id: "acceptEdits", label: "accept edits", zh: "接受编辑", desc: "自动批准文件编辑与常见文件命令", group: "normal" },
+  { id: "auto", label: "auto", zh: "自动", desc: "常规操作不再询问", group: "normal" },
+  // Restrictive and workflow modes: chosen for a reason, not by default.
+  { id: "dontAsk", label: "don't ask", zh: "不再提问", desc: "需要确认的一律拒绝", group: "special" },
+  { id: "plan", label: "plan mode", zh: "计划", desc: "只读：探索放行，改动拒绝", group: "special" },
+  // Dangerous: it removes the guard rails, so it is kept visually apart.
+  { id: "bypassPermissions", label: "bypass permissions", zh: "全部放行", desc: "跳过确认（deny 规则仍生效）", group: "danger" },
+  // MyClaude-only escape hatch. Not offered in the picker: a mode that also
+  // ignores deny rules should take a deliberate act, not a stray click. It is
+  // still reachable with --full-access or /mode fullAccess.
+  { id: "fullAccess", label: "full access", zh: "完全放行", desc: "跳过确认与 deny 规则", group: "danger", advanced: true },
 ];
 
 export const MODE_IDS = PERMISSION_MODES.map((m) => m.id);
