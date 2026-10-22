@@ -3290,8 +3290,9 @@ body.no-motion *, body.no-motion *::before, body.no-motion *::after { animation:
   flex-wrap: wrap;
   align-items: center;
   gap: 7px;
-  margin-top: 12px;
-  padding-top: 4px;
+  /* Sits under the answer: same left edge as the message body, a little
+  air above so the pills do not collide with the text. */
+  margin: 14px 0 2px;
   animation: rise 220ms var(--ease-out) both;
 }
 .followup-label {
@@ -3304,6 +3305,9 @@ body.no-motion *, body.no-motion *::before, body.no-motion *::after { animation:
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  /* A suggestion reads as one phrase, not a sentence: cap it so the row keeps
+     its rhythm instead of one chip swallowing a whole line. */
+  max-width: 100%;
   padding: 5px 11px;
   border-radius: 999px;
   border: 1px solid var(--line-strong);
@@ -3321,6 +3325,15 @@ body.no-motion *, body.no-motion *::before, body.no-motion *::after { animation:
 }
 .followup-chip:active {
   transform: scale(0.98);
+}
+/* The text node inside a chip: the part that actually truncates. */
+.followup-chip > span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  /* Ten characters or so: long enough for a question, short enough that
+     three of them share a line without one swallowing the row. */
+  max-width: 11em;
 }
 .followup-arrow {
   font-size: 11px;
