@@ -24,7 +24,7 @@ import { VERSION } from "./version.js";
 import { GATEWAY_KEY_ENV, costLineFor, NO_PRICE_NOTICE } from "./models.js";
 import { inspectProject, renderProjectMemory, renderTranscriptMarkdown } from "./project-memory.js";
 import { withCommandScope } from "./command-scope.js";
-import { writeFileSync, existsSync } from "node:fs";
+import { writeFileSync, readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { registry as taskRegistry } from "./tasks/registry.js";
 import { loadPlugins, pluginSummaries } from "./plugins.js";
@@ -460,6 +460,47 @@ async function handleCommand(raw, ctx) {
       config.fastMode = on;
       saveConfig({ fastMode: on });
       ui.info(on ? "已开启快速模式" : "已关闭快速模式");
+      return {};
+    }
+    // /loop runs a prompt repeatedly. Claude drives its loop from a cron and
+    // reads the tasks from loop.md; here the prompt can be given inline or
+    // come from loop.md, and the run is bounded by default — an unbounded loop
+    // would keep spending tokens after the user has stopped watching.
+    case "loop": {
+      const rest2 = rest.slice();
+      let cycles = 1;
+      let intervalSec = 0;
+      // Flags first: --cycles N --every SEC
+      const words = [];
+      for (let i = 0; i < rest2.length; i++) {
+        const w = rest2[i];
+        if (w === "--cycles") { cycles = Number(rest2[++i]) || 1; continue; }
+        if (w === "--every") { intervalSec = Number(rest2[++i]) || 0; continue; }
+        words.push(w);
+      }
+      let prompt = words.join(" ").trim();
+      // No inline prompt: fall back to loop.md in the working directory.
+      if (!prompt) {
+        const loopFile = join(process.cwd(), "loop.md");
+        if (!existsSync(loopFile)) {
+          ui.info("用法：/loop <提示词> [--cycles N] [--every 秒]");
+          ui.info("或在工作目录放一个 loop.md，然后直接 /loop");
+          return {};
+        }
+        prompt = readFileSync(loopFile, "utf8").trim();
+        ui.info(`使用 loop.md（${prompt.length} 字符）`);
+      }
+      if (cycles < 1) cycles = 1;
+      if (cycles > 25) { ui.warn("循环次数上限 25，已按 25 处理"); cycles = 25; }
+      ui.info(`开始循环：${cycles} 次${intervalSec ? `，间隔 ${intervalSec}s` : ""}`);
+      for (let n = 1; n <= cycles; n++) {
+        ui.info(`--- 第 ${n}/${cycles} 次 ---`);
+        await agent.run(prompt);
+        if (n < cycles && intervalSec > 0) {
+          await new Promise((r) => setTimeout(r, intervalSec * 1000));
+        }
+      }
+      ui.success(`循环结束，共 ${cycles} 次`);
       return {};
     }
     case "memory": {
