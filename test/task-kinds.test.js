@@ -24,10 +24,11 @@ import {
 const scratch = () => mkdtempSync(join(process.env.TEMP || ".", "kind-"));
 
 test("the kinds Claude models that MyClaude implements are all known", () => {
-  // Claude has ten; these are the ones implemented so far. Still missing:
-  // auto_mode_scan, in_process_teammate, yank.
+  // The ones implemented so far. Still missing: in_process_teammate, teammate,
+  // remote_agent (the last two depend on Claude's cloud team feature).
   assert.deepEqual([...TASK_TYPE_LIST].sort(), [
-    "dream", "local_agent", "local_bash", "mcp_task", "monitor_mcp", "monitor_ws", "workflow",
+    "auto_mode_scan", "dream", "local_agent", "local_bash",
+    "mcp_task", "monitor_mcp", "monitor_ws", "workflow",
   ]);
 });
 

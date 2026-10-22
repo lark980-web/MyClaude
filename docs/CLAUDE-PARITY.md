@@ -29,19 +29,25 @@ Claude 的基础工具集（从 `allowed_tools` 与 schema 定义确认）：
 
 ## 二、任务体系（Claude 的核心架构差异）
 
-Claude 有 **10 种任务类型**，每种带独立的 `kill()` 与状态机：
+Claude 的任务类型（从 `964_chunk-0qdm07jf.js` 的 case 分支实测）：
 
 ```
-local_agent          子代理任务
 local_bash           后台 shell
+local_agent          子代理任务
 local_workflow       工作流
 mcp_task             MCP 调用
+monitor_mcp          MCP 连接监控
 monitor_ws           WebSocket 监控
+dream                后台整理记忆
 auto_mode_scan       自动模式审查（reviewer model 扫描动作）
-dream                后台思考/整理
-in_process_teammate  进程内队友（Team）
-yank / yanked        任务占位与回收
+in_process_teammate  进程内队友
+teammate             队友
+remote_agent         远程代理
 ```
+
+> 订正说明：早期把 `yank / yanked` 列为任务类型是误读。实测它们是
+> Vim 模拟器的 kill-ring 状态（`chunk-jpr2vtnw.js` 的
+> `mode: { type: "yanked", start, length, index }`），与任务系统无关。
 
 MyClaude 现状：**只有后台 Bash 一种**。
 
@@ -80,7 +86,7 @@ MyClaude 已有 **29 个**，Claude 侧提取到 **57 个候选**，确认缺 **
 | **hooks 配置** | 有界面与 CRUD | ✅ `/api/hooks` CRUD + `/hooks` 命令 | ✅ 已完成 |
 | **hooks 事件** | 含 `PreCompact` / `SubagentStop` | ✅ 7/7 | ✅ 已完成 |
 | **MCP OAuth** | 支持 | ✅ RFC 8628 设备流 + `/mcp login` | ✅ 已完成 |
-| **Bash 沙箱** | 有（`dangerouslyDisableSandbox` 可绕过） | 无沙箱 | 🟡 权限模式下仍有风险 |
+| **Bash 沙箱** | 有（`dangerouslyDisableSandbox` 可绕过） | 无沙箱；用命令分级 + auto 审查模型替代 | 🟡 Windows 上 Claude 同样不可用 |
 | **工具并发** | 并行 | ✅ 已实现（三阶段） | — |
 | **checkpoint 快照** | 每轮记录 | ✅ 已实现并落盘（~/.myclaude/checkpoints） | — |
 | **Grep** | ripgrep | ✅ 已接 ripgrep（无 rg 回落 JS） | — |

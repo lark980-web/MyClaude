@@ -3,6 +3,7 @@ import { ProviderRouter } from "../providers/router.js";
 import { PermissionEngine, loadMemory } from "./permissions.js";
 import { normalizeMode, isCommonFileCommand, isDestructiveCommand, FILE_EDIT_TOOLS } from "./modes.js";
 import { isAutoApprovable } from "./command-safety.js";
+import { reviewToolCall } from "./auto-review.js";
 import { SYSTEM_PROMPT } from "./prompt.js";
 import { buildUserContent, buildToolAttachmentContent, resolveAttachments } from "../attachments.js";
 import { setQuestionPresenter } from "../tools/extended.js";
@@ -366,6 +367,22 @@ export class Agent {
       if (toolName === "Bash" && this.askOnDestructive && isDestructiveCommand(args && args.command)) {
         this.ui.warn("auto mode: this command looks destructive, asking first");
         return this.ui.confirmTool(toolName, args);
+      }
+      // Auto mode promises "no routine prompts", and in Claude a reviewer model
+      // decides what counts as routine. Without it this was "run everything",
+      // which is a different promise. The reviewer only answers whether a human
+      // should look; an unreadable answer falls through to asking rather than
+      // being taken as permission.
+      if (this.config.autoReview) {
+        const verdict = await reviewToolCall(this.router, toolName, args);
+        if (verdict.allow === false) {
+          this.ui.warn(`auto review: ${verdict.reason} — asking`);
+          return this.ui.confirmTool(toolName, args);
+        }
+        if (verdict.allow === null) {
+          this.ui.warn(`auto review: ${verdict.reason} — falling back to asking`);
+          return this.ui.confirmTool(toolName, args);
+        }
       }
       return true;
     }

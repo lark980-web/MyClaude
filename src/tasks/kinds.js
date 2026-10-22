@@ -174,3 +174,24 @@ export function setDreamPhase(task, phase, files = []) {
   registry.appendOutput(task, `[dream] ${phase}\n`);
   return task;
 }
+
+/**
+ * Start an auto-mode scan: the reviewer pass that screens an action.
+ *
+ * Claude describes auto mode as "no routine prompts; a reviewer model screens
+ * actions" (933_chunk-0qdm07jf.js). The scan is quiet work — it only carries a
+ * description and a status — so it is its own task type rather than a dream.
+ *
+ * @param {{description: string, cancel?: Function}} spec
+ * @returns {object} the registered task
+ */
+export function startAutoModeScan({ description, cancel = null }) {
+  const task = registry.create({
+    type: TASK_TYPES.AUTO_MODE_SCAN,
+    label: String(description || "审查动作"),
+    meta: { description: String(description || "") },
+  });
+  registry.start(task);
+  if (typeof cancel === "function") { task.cancel = cancel; }
+  return task;
+}
