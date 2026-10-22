@@ -466,6 +466,39 @@ async function handleCommand(raw, ctx) {
     // reads the tasks from loop.md; here the prompt can be given inline or
     // come from loop.md, and the run is bounded by default — an unbounded loop
     // would keep spending tokens after the user has stopped watching.
+    // A dream is Claude’s background pass that tidies project memory: it merges
+    // duplicates, drops stale notes and checks them against CLAUDE.md.
+    // It is not a command in Claude — it runs on its own — but exposing it
+    // makes the work visible and lets it be cancelled.
+    // MyClaude keeps one memory file rather than Claude’s personal/team split,
+    // so the consolidation targets that file.
+    case "dream": {
+      const { startDream, setDreamPhase } = await import("./tasks/kinds.js");
+      const { memoryFilePath } = await import("./agent/permissions.js");
+      const file = memoryFilePath(process.cwd());
+      const task = startDream({ sessionsReviewing: 1 });
+      setDreamPhase(task, "reading", [file]);
+      let existing = "";
+      if (existsSync(file)) {
+        try { existing = readFileSync(file, "utf8"); } catch { existing = ""; }
+      }
+      if (!existing.trim()) {
+        setDreamPhase(task, "nothing-to-do");
+        taskRegistry.complete(task, null);
+        ui.info("记忆文件为空，没有需要整理的内容。");
+        return {};
+      }
+      setDreamPhase(task, "consolidating", [file]);
+      const prompt =
+        "整理项目记忆文件。删除重复或过时的条目，合并相近的内容，" +
+        "保留仍然准确的说明。不要添加新内容，也不要改变意思。" +
+        "只输出整理后的完整文件内容，不要解释。\n\n当前内容：\n" + existing;
+      await agent.run(prompt);
+      setDreamPhase(task, "done", [file]);
+      taskRegistry.complete(task, null);
+      ui.success("记忆整理完成（" + file + "）");
+      return {};
+    }
     case "loop": {
       const rest2 = rest.slice();
       let cycles = 1;

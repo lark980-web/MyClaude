@@ -128,3 +128,49 @@ export function setWorkflowStep(task, index, name = "") {
   if (name) { registry.appendOutput(task, `[step ${index + 1}] ${name}\n`); }
   return task;
 }
+
+
+/**
+ * Start a dream: a background pass that consolidates project memory.
+ *
+ * In Claude a dream is not a command; it runs on its own to merge duplicate
+ * memories, prune stale ones and check them against CLAUDE.md
+ * (95_chunk-rcj0vzxn.js). It carries skipTranscript, a phase and the list of
+ * files it touched, because it is quiet work that must not pollute the
+ * conversation transcript.
+ *
+ * @param {{sessionsReviewing?: number, cancel?: Function}} [spec]
+ * @returns {object} the registered task
+ */
+export function startDream({ sessionsReviewing = 0, cancel = null } = {}) {
+  const task = registry.create({
+    type: TASK_TYPES.DREAM,
+    label: "整理项目记忆",
+    meta: {
+      skipTranscript: true,
+      phase: "starting",
+      sessionsReviewing,
+      filesTouched: [],
+    },
+  });
+  registry.start(task);
+  if (typeof cancel === "function") { task.cancel = cancel; }
+  return task;
+}
+
+/**
+ * Move a dream to a new phase and record it.
+ *
+ * @param {object} task
+ * @param {string} phase
+ * @param {string[]} [files] files the phase touched
+ */
+export function setDreamPhase(task, phase, files = []) {
+  if (!task) { return task; }
+  task.meta.phase = String(phase || "");
+  for (const f of files || []) {
+    if (f && !task.meta.filesTouched.includes(f)) { task.meta.filesTouched.push(f); }
+  }
+  registry.appendOutput(task, `[dream] ${phase}\n`);
+  return task;
+}

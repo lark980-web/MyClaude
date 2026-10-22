@@ -31,6 +31,7 @@ export const TASK_TYPES = Object.freeze({
   MONITOR_MCP: "monitor_mcp",
   MONITOR_WS: "monitor_ws",
   WORKFLOW: "workflow",
+  DREAM: "dream",
 });
 
 /** Every type the registry understands, in the order they are reported. */

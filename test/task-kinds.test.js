@@ -23,11 +23,11 @@ import {
 
 const scratch = () => mkdtempSync(join(process.env.TEMP || ".", "kind-"));
 
-test("the six kinds Claude models are all known", () => {
-  // local_bash and local_agent were already here; the rest are the ones a
-  // session can start that are not a shell command.
+test("the kinds Claude models that MyClaude implements are all known", () => {
+  // Claude has ten; these are the ones implemented so far. Still missing:
+  // auto_mode_scan, in_process_teammate, yank.
   assert.deepEqual([...TASK_TYPE_LIST].sort(), [
-    "local_agent", "local_bash", "mcp_task", "monitor_mcp", "monitor_ws", "workflow",
+    "dream", "local_agent", "local_bash", "mcp_task", "monitor_mcp", "monitor_ws", "workflow",
   ]);
 });
 
