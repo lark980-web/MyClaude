@@ -463,7 +463,26 @@ async function handleCommand(raw, ctx) {
       return {};
     }
     case "memory": {
-      const { loadMemory } = await import("./agent/permissions.js");
+      // /memory shows the project memory; "/memory add <text>" appends to it.
+      // Editing was display-only before, which meant the file could be read
+      // but not changed without leaving the agent.
+      const sub = String(rest[0] || "").toLowerCase();
+      if (sub === "add") {
+        const text = rest.slice(1).join(" ").trim();
+        if (!text) {
+          ui.warn("用法：/memory add <要记住的内容>");
+          return {};
+        }
+        const { memoryFilePath, appendMemory } = await import("./agent/permissions.js");
+        const file = appendMemory(text, process.cwd());
+        ui.success(`已记入 ${file}`);
+        return {};
+      }
+      if (sub === "path") {
+        const { memoryFilePath } = await import("./agent/permissions.js");
+        ui.info(memoryFilePath(process.cwd()));
+        return {};
+      }
       const mem = loadMemory(process.cwd());
       if (mem) ui.info(mem);
       else ui.info("(no MYCLAUDE.md found in this project or ancestors)");

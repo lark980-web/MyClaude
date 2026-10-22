@@ -11,8 +11,8 @@
  * name matches every invocation. The most specific match wins, evaluated in
  * the order deny > ask > allow.
  */
-import { readFileSync, existsSync } from "node:fs";
-import { join } from "node:path";
+import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import { join, resolve } from "node:path";
 
 export class PermissionEngine {
   constructor(rules = {}) {
@@ -196,3 +196,68 @@ export function loadMemory(cwd = process.cwd(), { maxBytes = 100_000 } = {}) {
   }
   return body;
 }
+
+/**
+ * The memory file closest to cwd: the one /memory edits.
+ *
+ * Walking up matters because a project may keep its memory at the repo root
+ * while the agent runs in a subdirectory. Editing has to land on the file the
+ * agent actually reads, so this mirrors the search loadMemory does.
+ *
+ * @param {string} cwd
+ * @returns {string|null}
+ */
+export function memoryFilePath(cwd = process.cwd()) {
+  let dir = resolve(cwd);
+  for (let depth = 0; depth < 12; depth++) {
+    for (const name of MEMORY_FILES) {
+      const file = join(dir, name);
+      if (existsSync(file)) { return file; }
+    }
+    if (existsSync(join(dir, ".git"))) { break; }
+    const parent = resolve(dir, "..");
+    if (parent === dir) { break; }
+    dir = parent;
+  }
+  // Nothing found yet: the natural place to create one is the working root.
+  return join(resolve(cwd), MEMORY_FILES[0]);
+}
+
+/**
+ * Write project memory.
+ *
+ * @param {string} text
+ * @param {string} [cwd]
+ * @returns {string} the file written
+ */
+export function saveMemory(text, cwd = process.cwd()) {
+  const file = memoryFilePath(cwd);
+  writeFileSync(file, String(text || ""), "utf8");
+  return file;
+}
+
+/**
+ * Append a line to project memory, creating the file if needed.
+ *
+ * Appending is the safe primitive: overwriting a memory file from a single
+ * command would silently discard whatever was already there, and memory is
+ * exactly the kind of content that accumulates.
+ *
+ * @param {string} text
+ * @param {string} [cwd]
+ * @returns {string} the file written
+ */
+export function appendMemory(text, cwd = process.cwd()) {
+  const file = memoryFilePath(cwd);
+  const line = String(text || "").trim();
+  if (!line) { return file; }
+  let existing = "";
+  if (existsSync(file)) {
+    try { existing = readFileSync(file, "utf8"); } catch { existing = ""; }
+  }
+  // Keep a blank line between entries so appended notes stay readable.
+  const sep = existing.trim() ? "\n\n" : "";
+  writeFileSync(file, existing.trimEnd() + sep + line + "\n", "utf8");
+  return file;
+}
+
