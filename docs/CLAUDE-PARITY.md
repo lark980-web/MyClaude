@@ -106,6 +106,8 @@ MyClaude 已有 **29 个**，Claude 侧提取到 **57 个候选**，确认缺 **
 
 ### 说明
 
+`teammate` / `in_process_teammate` / `remote_agent` 三种类型依赖 Claude 的进程内多智能体协作架构（`teammate_mailbox` 消息队列、`teammate-spawn` 生命周期、iTerm2 分屏等）。这是架构级改造，不是补一个类型就能对齐的，因此未复刻。
+
 `/new` 不是 Claude 的斜杠命令（它只是内部的 `newsession` 动作，由 `/clear` 触发），因此不复刻。
 
 ### 第三梯队（架构级）

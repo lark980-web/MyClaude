@@ -91,9 +91,11 @@ export function createTaskTool({ provider, config, ui, maxTurns = 40, depth = 0 
         },
         subagent_type: {
           type: "string",
-          enum: ["general", "explore"],
+          enum: ["general-purpose", "explore", "plan"],
           description:
-            "general: full tool access. explore: read-only investigation (no Write/Edit).",
+            "general-purpose: full tool access. explore: read-only investigation " +
+            "(no Write/Edit). plan: research first, then propose; it does not edit " +
+            "either, because a plan is for the caller to approve.",
         },
         run_in_background: {
           type: "boolean",
@@ -105,7 +107,7 @@ export function createTaskTool({ provider, config, ui, maxTurns = 40, depth = 0 
       },
       required: ["description", "prompt"],
     },
-    async run({ description, prompt, subagent_type = "general", run_in_background = false }) {
+    async run({ description, prompt, subagent_type = "general-purpose", run_in_background = false }) {
       // Without a cap a sub-agent can delegate to another sub-agent
       // indefinitely, each burning tokens and holding a provider slot.
       if (depth >= MAX_TASK_DEPTH) {
@@ -114,7 +116,14 @@ export function createTaskTool({ provider, config, ui, maxTurns = 40, depth = 0 
           content: "task depth limit reached (" + MAX_TASK_DEPTH + "): do the work directly instead of delegating",
         };
       }
-      const readOnly = subagent_type === "explore";
+      // Claude names the default agent "general-purpose". Accept the short form
+      // too, so a prompt written for either spelling works.
+      const agentType = String(subagent_type || "general-purpose") === "general"
+        ? "general-purpose"
+        : String(subagent_type || "general-purpose");
+      // Both "explore" and "plan" investigate without editing: one is a search, the
+      // other ends in a proposal the caller is expected to approve.
+      const readOnly = agentType === "explore" || agentType === "plan";
 
       // In the background the sub-agent keeps working while the main agent
       // moves on. The agent gets a task id and can read the result later,
