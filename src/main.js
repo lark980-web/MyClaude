@@ -360,6 +360,34 @@ async function handleCommand(raw, ctx) {
       );
       return {};
     }
+    case "effort": {
+      // /effort controls how long the model thinks before answering.
+      // No argument reports the current value; "off" restores the default.
+      const valid = ["high", "medium", "low", "off"];
+      const want = String(rest[0] || "").toLowerCase();
+      if (!want) {
+        ui.info(`思考深度：${config.effort || "默认（未设置）"}`);
+        ui.info("用法：/effort high|medium|low|off");
+        return {};
+      }
+      if (!valid.includes(want)) {
+        ui.warn(`无效值 ${want}，可选：${valid.join(" / ")}`);
+        return {};
+      }
+      const value = want === "off" ? null : want;
+      config.effort = value;
+      saveConfig({ effort: value });
+      ui.info(value ? `思考深度已设为 ${value}` : "思考深度已恢复默认");
+      return {};
+    }
+    case "fast": {
+      // /fast toggles fast mode: the same model, tuned for quicker output.
+      const on = "1" === rest[0] ? true : "0" === rest[0] ? false : !config.fastMode;
+      config.fastMode = on;
+      saveConfig({ fastMode: on });
+      ui.info(on ? "已开启快速模式" : "已关闭快速模式");
+      return {};
+    }
     case "memory": {
       const { loadMemory } = await import("./agent/permissions.js");
       const mem = loadMemory(process.cwd());

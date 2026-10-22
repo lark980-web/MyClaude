@@ -69,6 +69,12 @@ export const DEFAULT_CONFIG = {
   // value used before a model is chosen.
   contextWindow: contextWindowOf(DEFAULT_MODEL),
   compactThreshold: 0.8,
+  // How long the model thinks before answering (Claude calls this /effort).
+  // high for tricky bugs, low when you only need a quick edit; null leaves the
+  // model default alone.
+  effort: null,
+  // /fast: the same model, tuned for faster output.
+  fastMode: false,
   // Permission rules for the agent. askOnDestructive makes auto mode ask
   // before a command that can delete, force-push or reformat.
   permissions: { askOnDestructive: false },
