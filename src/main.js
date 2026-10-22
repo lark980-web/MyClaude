@@ -360,6 +360,25 @@ async function handleCommand(raw, ctx) {
       );
       return {};
     }
+    case "status": {
+      // One line per thing worth knowing about the current session.
+      // Claude shows the same cluster in /status; keeping it in one place
+      // saves digging through /config, /models and /tasks separately.
+      const mode = config.permissionMode || "ask";
+      const st = agent && agent.stats ? agent.stats() : {};
+      const mcpCount = Object.keys(config.mcpServers || {}).length;
+      const rows = [
+        `模型        ${config.model}`,
+        `供应商      ${config.provider || "-"}`,
+        `权限模式    ${mode}`,
+        `思考深度    ${config.effort || "默认"}`,
+        `MCP 服务器  ${mcpCount} 个`,
+        `后台任务    ${Object.keys(st.tasks || st || {}).length} 个`,
+        `快速模式    ${config.fastMode ? "开" : "关"}`
+      ];
+      ui.info(rows.join("\n"));
+      return {};
+    }
     case "effort": {
       // /effort controls how long the model thinks before answering.
       // No argument reports the current value; "off" restores the default.
