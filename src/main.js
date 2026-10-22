@@ -360,6 +360,39 @@ async function handleCommand(raw, ctx) {
       );
       return {};
     }
+    // /fork (and its alias /branch) split the conversation at this point so
+    // two approaches can be tried from the same history. The original is left
+    // untouched and nothing outside the sessions directory is involved, so
+    // git history stays clean.
+    case "fork":
+    case "branch": {
+      const saver = ctx.autoSaver;
+      if (!saver) {
+        ui.info("(no active session to fork)");
+        return {};
+      }
+      // Flush first: the fork must include the turn that was just written,
+      // otherwise the new branch starts one message behind.
+      try { saver.save({ force: true }); } catch {}
+      const { forkSession } = await import("./session.js");
+      const res = forkSession(saver.id, { title: rest.join(" ").trim() || null });
+      if (!res.ok) {
+        // "no such session" nearly always means the conversation has not been
+        // written yet, which is the case when there is nothing in it to fork.
+        const hint = /no such session/.test(res.error)
+          ? "（当前会话还没有内容，先对话再分叉）"
+          : "";
+        ui.warn(`分叉失败：${res.error}${hint}`);
+        return {};
+      }
+      // Continue in the fork, exactly as /resume would.
+      const data = loadSession(res.id);
+      agent.messages = (data && data.messages) || [];
+      ctx.autoSaver?.rotate(res.id);
+      ui.success(`已分叉出 ${res.id}（${res.messages} 条消息），当前会话已切换过去`);
+      ui.info(`原会话 ${saver.id} 保持不变`);
+      return {};
+    }
     case "title": {
       // Name the current conversation. With no argument it reports the name.
       const saver = ctx.autoSaver;

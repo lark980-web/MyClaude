@@ -156,6 +156,41 @@ export function setSessionTitle(id, title) {
   return true;
 }
 
+/**
+ * Fork a session into a new one with the same history.
+ *
+ * Claude offers this as /fork and /branch: the conversation splits so you can
+ * try two approaches from the same point. The original is left untouched, and
+ * nothing on disk outside the sessions directory is involved, so git history
+ * stays clean.
+ *
+ * The copy is a snapshot: later turns in one branch never appear in the other.
+ *
+ * @param {string} id the session to fork
+ * @param {{title?: string}} [opts]
+ * @returns {{ok: true, id: string, messages: number} | {ok: false, error: string}}
+ */
+export function forkSession(id, { title = null } = {}) {
+  const source = loadSession(id);
+  if (!source) { return { ok: false, error: `no such session: ${id}` }; }
+  const messages = Array.isArray(source.messages) ? source.messages : [];
+  const newId = newSessionId();
+  // An empty fork would be indistinguishable from a fresh chat, so refuse.
+  if (!messages.length) { return { ok: false, error: "the session has no history to fork" }; }
+  const meta = {
+    cwd: source.cwd || null,
+    model: source.model || null,
+    provider: source.provider || null,
+    permissionMode: source.permissionMode || null,
+    turnCount: source.turnCount || 0,
+    forkedFrom: id,
+  };
+  const file = saveSession(newId, messages, meta);
+  if (!file) { return { ok: false, error: "could not write the forked session" }; }
+  if (title) { setSessionTitle(newId, title); }
+  return { ok: true, id: newId, messages: messages.length };
+}
+
 export function deleteSession(id) {
   const file = join(SESSIONS_DIR, `${id}.json`);
   if (!existsSync(file)) return false;
