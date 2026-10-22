@@ -9,6 +9,8 @@ import {
   startDeviceAuthorization,
   pollForToken,
 } from "./oauth.js";
+import { registry } from "../tasks/registry.js";
+import { startMcpTask } from "../tasks/kinds.js";
 
 /**
  * Should this command be launched through a shell?
@@ -397,19 +399,29 @@ export class McpClient {
   }
 
   async callTool(name, args) {
-    const result = await this.transport.request(
-      "tools/call",
-      { name, arguments: args || {} },
-      120000
-    );
-    const parts = [];
-    for (const item of result?.content || []) {
-      if (item.type === "text") parts.push(item.text);
-      else if (item.type === "resource") parts.push(`[resource ${item.resource?.uri}]`);
-      else if (item.type === "image") parts.push(`[image ${item.mimeType}]`);
-      else parts.push(JSON.stringify(item));
+    // A call can take a while, so it is registered as a task: /tasks then shows
+    // what the agent is waiting on, the same way a shell command does.
+    const task = startMcpTask({ serverName: this.name, toolName: name, args });
+    try {
+      const result = await this.transport.request(
+        "tools/call",
+        { name, arguments: args || {} },
+        120000
+      );
+      const parts = [];
+      for (const item of result?.content || []) {
+        if (item.type === "text") parts.push(item.text);
+        else if (item.type === "resource") parts.push(`[resource ${item.resource?.uri}]`);
+        else if (item.type === "image") parts.push(`[image ${item.mimeType}]`);
+        else parts.push(JSON.stringify(item));
+      }
+      const out = { ok: !result?.isError, content: parts.join("\n") || "(empty)" };
+      if (out.ok) { registry.complete(task, null); } else { registry.fail(task, out.content); }
+      return out;
+    } catch (e) {
+      registry.fail(task, e);
+      throw e;
     }
-    return { ok: !result?.isError, content: parts.join("\n") || "(empty)" };
   }
 
   close() {

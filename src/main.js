@@ -331,18 +331,30 @@ async function handleCommand(raw, ctx) {
       ui.info(allRegisteredTools().map((t) => `${t.name.padEnd(18)} ${t.description.split(".")[0]}`).join("\n"));
       return {};
     case "tasks": {
-      // Every kind of long-running job, not just shell commands.
+      // Every kind of long-running job, not just shell commands. Each type has
+      // one field worth showing beyond the label: what the agent is waiting on,
+      // or how far a workflow has got.
       const all = taskRegistry.list();
       if (!all.length) {
         ui.info("(no tasks) — start one with Bash(run_in_background=true) or Task(run_in_background=true)");
         return {};
       }
+      const detailOf = (t) => {
+        if (t.type === "mcp_task") { return `${t.meta.serverName}/${t.meta.toolName}`; }
+        if (t.type === "monitor_mcp" || t.type === "monitor_ws") { return t.meta.statusMessage || t.meta.description || ""; }
+        if (t.type === "workflow") {
+          const step = Number(t.meta.currentStep);
+          const total = Array.isArray(t.meta.steps) ? t.meta.steps.length : 0;
+          return step >= 0 && total ? `step ${step + 1}/${total}` : "";
+        }
+        return t.label || "";
+      };
       ui.info(
         all
           .map((t) => {
             const age = Math.round(((t.finishedAt || Date.now()) - t.createdAt) / 1000);
-            const label = t.label ? t.label.slice(0, 40) : "";
-            return `  ${t.id}  ${t.type.padEnd(12)} ${t.status.padEnd(10)} ${age}s  ${label}`;
+            const detail = String(detailOf(t)).slice(0, 44);
+            return `  ${t.id}  ${t.type.padEnd(12)} ${t.status.padEnd(10)} ${String(age).padStart(4)}s  ${detail}`;
           })
           .join("\n")
       );

@@ -71,7 +71,7 @@ test("a failed task keeps the reason", () => {
 
 test("cancelling runs the task hook and records the state", () => {
   const reg = new TaskRegistry();
-  const t = reg.create({ type: TASK_TYPES.MONITOR });
+  const t = reg.create({ type: TASK_TYPES.MONITOR_MCP });
   reg.start(t);
   let called = 0;
   t.cancel = () => { called++; };

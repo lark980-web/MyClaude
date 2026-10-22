@@ -12,7 +12,8 @@
  *   local_bash   a detached shell command
  *   local_agent  a sub-agent working in its own context
  *   mcp_task     a call into an MCP server
- *   monitor      a long-lived connection watched for events
+ *   monitor_mcp  a long-lived MCP connection watched for events
+ *   monitor_ws   a WebSocket watched for events
  *   workflow     several steps run in order
  *
  * Every task shares the same lifecycle and the same output buffer, so the
@@ -27,7 +28,8 @@ export const TASK_TYPES = Object.freeze({
   LOCAL_BASH: "local_bash",
   LOCAL_AGENT: "local_agent",
   MCP_TASK: "mcp_task",
-  MONITOR: "monitor",
+  MONITOR_MCP: "monitor_mcp",
+  MONITOR_WS: "monitor_ws",
   WORKFLOW: "workflow",
 });
 
