@@ -62,6 +62,7 @@ Commands (interactive):
   /doctor            check config, gateway, tools and permissions
   /skills            list available skills
   /plugin [名]        列出已安装的插件
+  /hooks [events]    列出已配置的钩子 / 可用事件
   /mcp login <名>      登录需要 OAuth 的 MCP 服务器
   /mcp logout <名>     清除已保存的 MCP 令牌
   /model [name]      show or set model
@@ -534,6 +535,48 @@ async function handleCommand(raw, ctx) {
         }
       }
       ui.success(`循环结束，共 ${cycles} 次`);
+      return {};
+    }
+    case "hooks": {
+      // The engine and the GUI CRUD existed, but there was no way to see or
+      // change hooks from the terminal.
+      const { HOOK_EVENTS } = await import("./hooks.js");
+      const configured = (config.hooks && typeof config.hooks === "object") ? config.hooks : {};
+      const sub = String(rest[0] || "").toLowerCase();
+      if (sub === "events") {
+        ui.info(HOOK_EVENTS.join("\n"));
+        return {};
+      }
+      if (sub === "remove" || sub === "rm") {
+        const event = rest[1];
+        if (!event || !configured[event]) {
+          ui.warn("用法：/hooks remove <事件名>");
+          return {};
+        }
+        delete config.hooks[event];
+        saveConfig({ hooks: config.hooks });
+        ui.success(`已移除 ${event} 的钩子`);
+        return {};
+      }
+      // No argument: list what is configured, grouped by event.
+      const rows = [];
+      for (const event of HOOK_EVENTS) {
+        const groups = configured[event];
+        if (!Array.isArray(groups) || !groups.length) { continue; }
+        const cmds = [];
+        for (const g of groups) {
+          for (const h of (g && g.hooks) || []) {
+            if (h && h.command) { cmds.push(String(h.command)); }
+          }
+        }
+        rows.push(`  ${event}  ${cmds.join("; ") || "(无命令)"}`);
+      }
+      if (!rows.length) {
+        ui.info("(no hooks) — 在 config.json 的 hooks 里配置，或用 /hooks events 看可用事件");
+        return {};
+      }
+      ui.info("已配置的钩子：\n" + rows.join("\n"));
+      ui.info("事件清单：/hooks events ｜ 移除：/hooks remove <事件>");
       return {};
     }
     case "memory": {

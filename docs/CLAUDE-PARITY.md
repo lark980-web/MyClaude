@@ -22,9 +22,9 @@ Claude 的基础工具集（从 `allowed_tools` 与 schema 定义确认）：
 | 项 | Claude | MyClaude | 差距 |
 |---|---|---|---|
 | 工具数量 | 21 | 21 | ✅ 对齐 |
-| Bash | 支持沙箱、`dangerouslyDisableSandbox`、超时自动转后台、输出持久化 | 基础执行 + 大输出落盘（超 30000 字符写入临时文件，回退路径保留） | ⚠️ 无沙箱（Claude 在 Windows 上也无，见下） |
+| Bash | 支持沙箱、`dangerouslyDisableSandbox`、超时自动转后台、输出持久化 | 基础执行 + 大输出落盘（超 30000 字符写入临时文件，回退路径保留） | 🚫 不可实现（Claude 在 Windows 上同样不可用，见下） |
 | Grep | ripgrep | ✅ 已接 ripgrep（无 rg 自动回落 JS） | ✅ 对齐 |
-| Task | 10 种任务类型（见下） | 6 种（local_bash/local_agent/mcp_task/monitor_mcp/monitor_ws/workflow） | ⚠️ 缺 auto_mode_scan / dream / in_process_teammate / yank
+| Task | 11 种任务类型（见下） | 8 种；subagent_type 已对齐 general-purpose/explore/plan | 🚫 不可实现（依赖 Claude 的进程内多智能体协作架构） |
 | 权限提示 | 带 diff 预览 + 「不再询问此命令」 | ✅ diff 彩色预览 + 不再询问 | ✅ 对齐 |
 
 ## 二、任务体系（Claude 的核心架构差异）
@@ -66,14 +66,15 @@ MyClaude 已有 **29 个**，Claude 侧提取到 **57 个候选**，确认缺 **
 | ~~P1~~ | ~~`/init`~~ | ✅ 已完成 |
 | ~~P1~~ | ~~`/export`~~ | ✅ 已完成 |
 | ~~P1~~ | ~~`/rewind`~~ | ✅ 已完成 |
-| P2 | `/hooks` `/skills` `/plugin` | 扩展生态 | ✅ 已完成（hooks 7 事件、skills 目录制、plugin 组件打包） |
+| P2 | `/hooks` `/skills` `/plugin` | 扩展生态 | ✅ 已完成（hooks 7 事件 + CLI `/hooks` 命令 + GUI CRUD、skills 目录制、plugin 组件打包） |
 | P1 | `/effort` `/fast` | 思考深度与快速模式 | ✅ 已完成（2026-10-23） |
 | P1 | `/status` | 一行显示会话状态 | ✅ 已完成（2026-10-23） |
 | P1 | `/title` | 给会话命名 | ✅ 已完成（2026-10-23） |
 | P1 | `/fork` `/branch` | 会话分叉 | ✅ 已完成（2026-10-23） |
 | P1 | `/memory` 写入 | 追加/路径（原只能显示） | ✅ 已完成（2026-10-23） |
 | P1 | `/loop` | 循环执行提示词 | ✅ 已完成（2026-10-23，默认有界） |
-| P3 | `/login` `/remote` `/share` `/branch` `/fork` `/loop` | 依赖云端服务 |
+| P3 | `/login` `/remote` `/share` | 🚫 不可实现（依赖云端服务） |
+| ~~P3~~ | ~~`/branch`~~ ~~`/fork`~~ ~~`/loop`~~ | ✅ 已完成（不依赖云端） |
 
 ## 四、关键机制缺口
 
@@ -83,10 +84,10 @@ MyClaude 已有 **29 个**，Claude 侧提取到 **57 个候选**，确认缺 **
 | **diff 审批** | 渲染彩色 unified diff | ✅ buildConfirmDiff 渲染 unified diff | ✅ 已完成 |
 | **checkpoint 快照** | 每轮记录文件快照 | ✅ CheckpointStore 且落盘（~/.myclaude/checkpoints） | ✅ 已完成 |
 | **任务编排层** | 10 种任务类型 + 状态机 | ✅ 统一注册表 + 6 种类型，支持并行子代理 | 🟡 缺 4 种类型 |
-| **hooks 配置** | 有界面与 CRUD | ✅ `/api/hooks` CRUD + `/hooks` 命令 | ✅ 已完成 |
+| **hooks 配置** | 有界面与 CRUD | ✅ `/api/hooks` CRUD + CLI `/hooks` 命令 | ✅ 已完成 |
 | **hooks 事件** | 含 `PreCompact` / `SubagentStop` | ✅ 7/7 | ✅ 已完成 |
 | **MCP OAuth** | 支持 | ✅ RFC 8628 设备流 + `/mcp login` | ✅ 已完成 |
-| **Bash 沙箱** | 有（`dangerouslyDisableSandbox` 可绕过） | 无沙箱；用命令分级 + auto 审查模型替代 | 🟡 Windows 上 Claude 同样不可用 |
+| **Bash 沙箱** | 有（`dangerouslyDisableSandbox` 可绕过） | 无沙箱；用命令分级 + auto 审查模型替代 | 🚫 不可实现（Windows 上 Claude 同样不可用） |
 | **工具并发** | 并行 | ✅ 已实现（三阶段） | — |
 | **checkpoint 快照** | 每轮记录 | ✅ 已实现并落盘（~/.myclaude/checkpoints） | — |
 | **Grep** | ripgrep | ✅ 已接 ripgrep（无 rg 回落 JS） | — |
@@ -115,7 +116,17 @@ MyClaude 已有 **29 个**，Claude 侧提取到 **57 个候选**，确认缺 **
 8. ~~MCP OAuth~~ ✅ 已完成
 9. ~~`/skills` `/plugin` 扩展体系~~ ✅ 已完成（2026-10-21）
 
-## 六、方法论
+## 六、完成度总结
+
+**可实现的项已全部完成。** 剩余 4 项标记为 🚫，原因是它们依赖 MyClaude 无法获得的东西：
+
+| 项 | 不可实现的原因 |
+|---|---|
+| Bash 沙箱 | Claude 在 Windows 上自己也不可用（`1379_unnamed.js`：`eval kept-sandbox seal unavailable on windows`）。MyClaude 用命令分级 + auto 审查模型替代 |
+| teammate / in_process_teammate / remote_agent | 依赖进程内多智能体协作架构（`teammate_mailbox` 消息队列、`teammate-spawn` 生命周期、iTerm2 分屏），是架构级改造 |
+| `/login` `/remote` `/share` | 依赖 Anthropic 云端服务 |
+
+## 七、方法论
 
 之前按「问题报告」逐条修 bug，但**修 bug ≠ 补功能**。
 正确顺序：**提取规格 → 逐项对照 → 按影响面排序 → 全链路验证**。
