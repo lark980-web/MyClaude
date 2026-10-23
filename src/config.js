@@ -40,12 +40,26 @@ const gatewayKey = () => {
  * be served by another without a second endpoint or credential.
  */
 const GATEWAY_FALLBACKS = [
-  "group/auto-deepseek-v4-1-flash",
-  "workbuddy-ai/deepseek-v4.1-flash",
-  "amd/DeepSeek-V4.1-Flash",
-  "opencode-zen/deepseek-v4.1-flash-free",
-  "beatapi/deepseek-v4.1-flash-free",
-].map((id) => ({ name: id, model: id, baseUrl: GATEWAY_BASE_URL, apiKey: "" }));
+  // The routing group is fast when healthy (measured 1.3s) but occasionally
+  // hangs for minutes, so it gets its own short leash: a stuck first hop must
+  // not eat the whole timeout budget before a healthy sibling is tried.
+  { id: "group/auto-deepseek-v4-1-flash", requestTimeoutMs: 20000 },
+  { id: "workbuddy-ai/deepseek-v4.1-flash" },
+  // Measured 27s warm-up; the default 90s still applies.
+  { id: "amd/DeepSeek-V4.1-Flash" },
+  // Free allowance is exhausted periodically (HTTP 429 until it resets), so it
+  // stays after the paid siblings.
+  { id: "opencode-zen/deepseek-v4.1-flash-free" },
+  // "beatapi/deepseek-v4.1-flash-free" used to sit here but the gateway answers
+  // 404 for that id, which made the last hop of every failover chain a dead end.
+  { id: "qoder-cn/gfmodel" },
+].map(({ id, requestTimeoutMs }) => ({
+  name: id,
+  model: id,
+  baseUrl: GATEWAY_BASE_URL,
+  apiKey: "",
+  ...(requestTimeoutMs ? { requestTimeoutMs } : {}),
+}));
 
 const defaultBaseUrl = process.env.MYCLAUDE_BASE_URL || (process.env.GEMINI_API_KEY ? "https://generativelanguage.googleapis.com/v1beta/openai" : GATEWAY_BASE_URL);
 const defaultApiKey = process.env.MYCLAUDE_API_KEY || (process.env.GEMINI_API_KEY ? process.env.GEMINI_API_KEY : gatewayKey());

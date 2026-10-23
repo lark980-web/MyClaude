@@ -1,0 +1,54 @@
+feature,area,priority,original,clone,notes
+工具集 21 个,tools,must,21,yes,Read Write Edit MultiEdit LS Glob Grep Bash BashOutput KillShell Notebook TodoWrite WebFetch WebSearch
+工具并发执行,agent,must,parallel,yes,三阶段 权限检查 并发执行 有序回写
+权限模式 7 种,permissions,must,7,yes,ask acceptEdits auto dontAsk plan bypassPermissions fullAccess；fullAccess 不进下拉
+diff 审批,permissions,must,yes,yes,buildConfirmDiff 渲染差异
+命令安全分级,permissions,must,yes,yes,command-safety.js
+auto 审查模型,permissions,must,yes,yes,auto-review.js 默认关
+文件快照,agent,must,yes,yes,checkpoint.js 落盘
+rewind 回退,commands,must,yes,yes,快照恢复并截断对话
+会话持久化,session,must,yes,yes,session.js
+sessions 列表,commands,must,yes,yes,按标题与时间
+resume 恢复,commands,must,yes,yes,
+fork 与 branch 分叉,commands,should,yes,yes,forkSession 空会话拒绝分叉
+title 命名,commands,should,yes,yes,120 字符上限
+rm 删除会话,commands,must,yes,yes,
+任务注册表,tasks,must,yes,yes,registry.js
+local_bash 后台任务,tasks,must,yes,yes,
+local_agent 子代理,tasks,must,yes,yes,subagent_type 已对齐 Claude 命名
+mcp_task,tasks,should,yes,yes,startMcpTask
+monitor_mcp 与 monitor_ws,tasks,should,yes,yes,startMonitor
+workflow,tasks,should,yes,yes,startWorkflow 脚本校验
+dream 记忆整理,tasks,could,yes,yes,结果不自动写回
+auto_mode_scan,tasks,could,yes,yes,startAutoModeScan
+TaskOutput,tools,must,yes,yes,task-output.js
+tasks 列表按类型,commands,must,yes,yes,显示 phase step
+多智能体协作类型,tasks,skip,yes,no,不可克隆
+skills 目录制,skills,must,yes,yes,skills.js
+skills 命令,commands,must,yes,yes,
+plugin 清单与目录,plugins,should,yes,yes,plugins.js
+plugin 命令,commands,should,yes,yes,
+hooks 七事件,hooks,must,7,yes,含 PreCompact SubagentStop
+hooks 命令,commands,should,yes,yes,列出 事件 移除
+hooks 的 CRUD,hooks,should,yes,yes,api/hooks
+MCP 三种传输,mcp,must,yes,yes,stdio http sse
+MCP OAuth 设备流,mcp,must,yes,yes,RFC 8628
+compact 压缩,commands,must,yes,yes,
+cost 按模型计价,commands,must,yes,yes,
+doctor 自检,commands,must,yes,yes,
+init 生成 MYCLAUDE.md,commands,should,yes,yes,
+export 导出,commands,should,yes,yes,
+effort 思考深度,commands,should,yes,yes,high medium low off
+fast 快速模式,commands,could,yes,yes,
+status 会话状态,commands,should,yes,yes,模型 供应商 权限 思考 MCP 任务数
+memory 读写,commands,should,yes,yes,默认追加
+loop 循环,commands,could,yes,yes,默认有界
+plan 命令,commands,could,yes,todo,待评估是否补
+云端命令,commands,skip,yes,no,login remote share
+new 命令,commands,skip,no,no,非 Claude 命令
+composer 控件审计,ui,must,yes,yes,audit 脚本与测试
+会话重复修复,ui,must,yes,yes,清理旧 key
+自动恢复不弹提示,ui,must,yes,yes,quiet 参数
+追问胶囊排版,ui,should,yes,yes,截断
+空态文案,ui,should,yes,yes,统一
+错误态统一,ui,should,yes,todo,待逐条核对
