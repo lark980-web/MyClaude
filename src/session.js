@@ -20,6 +20,44 @@ import { randomBytes } from "node:crypto";
 import { CONFIG_DIR } from "./config.js";
 
 const SESSIONS_DIR = join(CONFIG_DIR, "sessions");
+const PLANS_DIR = join(CONFIG_DIR, "plans");
+
+/**
+ * Where the plan for one session is kept.
+ *
+ * Claude keeps the plan in a project file and offers "/plan open" to edit it in
+ * the user`s editor. The plan is written when ExitPlanMode is approved, so a
+ * session has at most one live plan and /plan can show it again later.
+ *
+ * @param {string} id session id
+ * @returns {string} absolute path
+ */
+export function planFile(id) {
+  return join(PLANS_DIR, String(id || "unknown") + ".md");
+}
+
+/** Read the plan for a session, or null when there is none. */
+export function readPlan(id) {
+  const f = planFile(id);
+  if (!existsSync(f)) { return null; }
+  try { return readFileSync(f, "utf8"); } catch { return null; }
+}
+
+/** Save the plan for a session. Returns the path written. */
+export function savePlan(id, text) {
+  if (!existsSync(PLANS_DIR)) { mkdirSync(PLANS_DIR, { recursive: true }); }
+  const f = planFile(id);
+  writeFileSync(f, String(text || ""), "utf8");
+  return f;
+}
+
+/** Forget the plan for a session. Returns true when one was removed. */
+export function clearPlan(id) {
+  const f = planFile(id);
+  if (!existsSync(f)) { return false; }
+  try { unlinkSync(f); return true; } catch { return false; }
+}
+
 
 export const DEFAULT_AUTOSAVE_INTERVAL_MS = 1000;
 export const DEFAULT_SESSION_KEEP = 50;

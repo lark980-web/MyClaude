@@ -15,6 +15,7 @@ import {
   pruneSessions,
   createAutoSaver,
   sessionFile,
+  savePlan,
 } from "./session.js";
 import { resolveAttachments, describeAttachment } from "./attachments.js";
 import { loadCommands, findCommand, expandCommand } from "./commands.js";
@@ -26,8 +27,10 @@ import { inspectProject, renderProjectMemory, renderTranscriptMarkdown } from ".
 import { withCommandScope } from "./command-scope.js";
 import { writeFileSync, readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
+import { spawn } from "node:child_process";
 import { registry as taskRegistry } from "./tasks/registry.js";
 import { loadPlugins, pluginSummaries } from "./plugins.js";
+import { setPlanSessionId } from "./tools/extended.js";
 
 const HELP = `MyClaude — terminal AI coding agent
 
@@ -537,6 +540,44 @@ async function handleCommand(raw, ctx) {
       ui.success(`循环结束，共 ${cycles} 次`);
       return {};
     }
+    case "plan": {
+      // Claude shows the current plan and offers "/plan open" to edit it in the
+      // user`s editor. The plan is whatever ExitPlanMode last proposed, or the
+      // copy saved for this session.
+      const { readPlan, planFile } = await import("./session.js");
+      const { getLastPlan } = await import("./tools/extended.js");
+      const sub = String(rest[0] || "").toLowerCase();
+      const id = ctx.autoSaver && ctx.autoSaver.id ? ctx.autoSaver.id : null;
+      const fromDisk = id ? readPlan(id) : null;
+      const plan = fromDisk != null ? fromDisk : getLastPlan();
+      if (plan == null || !String(plan).trim()) {
+        ui.info("(no plan yet) — 在计划模式下让模型先提出方案，批准后这里会显示");
+        return {};
+      }
+      if (sub === "open") {
+        const target = id ? planFile(id) : null;
+        if (!target || !existsSync(target)) {
+          // Nothing on disk yet: write it out so the editor has a file to open.
+          if (id) { savePlan(id, plan); } else {
+            ui.warn("当前会话没有计划文件可打开");
+            return {};
+          }
+        }
+        const file = planFile(id);
+        const editor = process.env.EDITOR || (process.platform === "win32" ? "notepad" : "vi");
+        try {
+          spawn(editor, [file], { detached: true, stdio: "ignore", shell: process.platform === "win32" }).unref();
+          ui.success(`已在 ${editor} 中打开：${file}`);
+        } catch (e) {
+          ui.warn(`打开编辑器失败：${e && e.message}\n文件：${file}`);
+        }
+        return {};
+      }
+      ui.info(String(plan));
+      ui.info("在编辑器中修改：/plan open");
+      return {};
+    }
+
     case "hooks": {
       // The engine and the GUI CRUD existed, but there was no way to see or
       // change hooks from the terminal.
@@ -1058,6 +1099,10 @@ async function main() {
     getMessages: () => agent.messages,
     getMeta: () => sessionMeta(agent, config),
   });
+
+  // The tools need the session id so an approved plan can be written to disk
+  // and shown again later by /plan.
+  setPlanSessionId(autoSaver.id);
 
   // --resume <id> / --continue: restore history before the first prompt.
   if (opts.resume || opts.continueSession) {

@@ -204,6 +204,35 @@ function splitPercentCells(text) {
 /* ------------------------------------------------------------ AskUserQuestion */
 
 let pendingQuestion = null;
+
+/**
+ * The plan most recently proposed through ExitPlanMode.
+ *
+ * Claude keeps the plan in a file and offers "/plan open" to edit it. Here the
+ * approved plan is held so /plan can show it again, and saved to disk when a
+ * session id is known.
+ */
+let lastPlan = null;
+
+/** The plan most recently proposed, or null when there is none. */
+export function getLastPlan() {
+  return lastPlan;
+}
+
+let planSessionId = null;
+
+/**
+ * Tell the tools which session a plan belongs to, so an approved plan can be
+ * written to disk and shown again later by /plan.
+ *
+ * @param {string|null} id
+ */
+export function setPlanSessionId(id) {
+  planSessionId = id || null;
+  return planSessionId;
+}
+
+
 let pendingResolver = null;
 
 export function setQuestionPresenter(presenter) {
@@ -300,6 +329,15 @@ export const exitPlanModeTool = {
     ]);
     const first = Array.isArray(answer) ? answer[0] : answer;
     if (String(first).toLowerCase().startsWith("approve")) {
+      // Remember the approved plan: /plan shows it again, and "/plan open"
+      // hands it to the editor the way Claude does.
+      lastPlan = String(plan || "");
+      if (planSessionId) {
+        try {
+          const { savePlan } = await import("../session.js");
+          savePlan(planSessionId, lastPlan);
+        } catch { /* a lost plan must not block execution */ }
+      }
       return ok("plan approved — you may now execute");
     }
     return err("plan rejected — stay in plan mode");

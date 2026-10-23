@@ -43,7 +43,7 @@ fast 快速模式,commands,could,yes,yes,
 status 会话状态,commands,should,yes,yes,模型 供应商 权限 思考 MCP 任务数
 memory 读写,commands,should,yes,yes,默认追加
 loop 循环,commands,could,yes,yes,默认有界
-plan 命令,commands,could,yes,todo,待评估是否补
+plan 命令,commands,could,yes,yes,实现 /plan 与 /plan open，计划落盘至 plans 目录
 云端命令,commands,skip,yes,no,login remote share
 new 命令,commands,skip,no,no,非 Claude 命令
 composer 控件审计,ui,must,yes,yes,audit 脚本与测试
@@ -51,4 +51,4 @@ composer 控件审计,ui,must,yes,yes,audit 脚本与测试
 自动恢复不弹提示,ui,must,yes,yes,quiet 参数
 追问胶囊排版,ui,should,yes,yes,截断
 空态文案,ui,should,yes,yes,统一
-错误态统一,ui,should,yes,todo,待逐条核对
+错误态统一,ui,should,yes,yes,提示语统一为中文：用法 未找到 未知命令 无效模式
