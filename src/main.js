@@ -641,7 +641,8 @@ async function handleCommand(raw, ctx) {
         ui.info(memoryFilePath(process.cwd()));
         return {};
       }
-      const mem = loadMemory(process.cwd());
+      const { loadMemory } = await import("./agent/permissions.js");
+      const mem = loadMemory(process.cwd());
       if (mem) ui.info(mem);
       else ui.info("(no MYCLAUDE.md found in this project or ancestors)");
       return {};
