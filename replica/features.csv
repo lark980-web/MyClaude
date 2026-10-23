@@ -1,5 +1,5 @@
 feature,area,priority,original,clone,notes
-工具集 21 个,tools,must,21,yes,Read Write Edit MultiEdit LS Glob Grep Bash BashOutput KillShell Notebook TodoWrite WebFetch WebSearch
+工具集 23 个,tools,must,23,yes,"实测 23：核心 16 + taskOutput + EXTENDED 5 + Task；含 4 个 Git 扩展（GitCommit/GitDiff/GitLog/GitStatus），Claude 用 Bash git 而非独立工具"
 工具并发执行,agent,must,parallel,yes,三阶段 权限检查 并发执行 有序回写
 权限模式 7 种,permissions,must,7,yes,ask acceptEdits auto dontAsk plan bypassPermissions fullAccess；fullAccess 不进下拉
 diff 审批,permissions,must,yes,yes,buildConfirmDiff 渲染差异
