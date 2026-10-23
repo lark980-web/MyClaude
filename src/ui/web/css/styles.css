@@ -169,7 +169,7 @@ svg { flex: none; }
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  height: 28px;
+  height: 32px;
   padding: 0 11px;
   border: 1px solid var(--line);
   border-radius: 999px;
@@ -2464,7 +2464,7 @@ body.no-motion *, body.no-motion *::before, body.no-motion *::after { animation:
 .artifact-select {
   width: 100%;
   max-width: 280px;
-  height: 30px;
+  height: 32px;
   padding: 0 8px;
   border-radius: 7px;
   border: 1px solid var(--line-strong);
@@ -6186,17 +6186,21 @@ body.no-motion *, body.no-motion *::before, body.no-motion *::after { animation:
 }
 
 /* ------------------------------------------------- 权限模式下拉 -------- */
+/* The mode pill sits in the same row as .round-btn and .style-btn, so it takes
+/* the same height, radius and edge as they do. It was a 999px pill on a 28px
+/* box among 32px squares, which is why the row read as three different widgets. */
 .mode-select-wrap {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  height: 28px;
-  padding: 0 8px;
-  border-radius: 999px;
-  border: 1px solid var(--line);
+  height: 32px;
+  padding: 0 10px;
+  border-radius: 9px;
+  border: 1px solid var(--line-strong);
   background: var(--panel-2);
   color: var(--fg-2);
-  flex: none;
+  flex: 0 1 auto;
+  min-width: 0;
   transition: border-color var(--t) var(--ease), background var(--t) var(--ease);
 }
 .mode-select-wrap:hover { background: var(--hover); border-color: var(--line-strong); }
