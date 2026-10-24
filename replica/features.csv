@@ -52,3 +52,15 @@ composer 控件审计,ui,must,yes,yes,audit 脚本与测试
 追问胶囊排版,ui,should,yes,yes,截断
 空态文案,ui,should,yes,yes,统一
 错误态统一,ui,should,yes,yes,提示语统一为中文：用法 未找到 未知命令 无效模式
+effort 接线,permissions,should,yes,todo,config.effort 有存储无消费者，provider 不发送；Claude /effort 是真实命令
+SessionStart 钩子,hooks,should,yes,todo,claude-src 权威序列 9 事件，MyClaude 缺
+SessionEnd 钩子,hooks,should,yes,todo,同上
+MCP 资源工具,mcp,could,yes,todo,ListMcpResources ReadMcpResource；传输层已有，未桥接成工具
+context 命令,commands,could,yes,todo,上下文明细可视化
+todos 命令,commands,could,yes,todo,查看待办
+add-dir 命令,commands,could,yes,todo,追加工作目录
+skill 调用命令,commands,could,yes,todo,按名调用技能
+agents 命令,commands,could,yes,todo,子代理定义文件管理
+release-notes 命令,commands,could,yes,todo,版本说明
+终端专用命令,commands,skip,yes,no,vim terminal-setup statusline output-style ide，GUI 形态不同
+云账号命令补充,commands,skip,yes,no,usage desktop feedback bug install-github-app
