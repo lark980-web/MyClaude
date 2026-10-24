@@ -93,6 +93,13 @@ export class OpenAIProvider {
       stream: true,
       max_tokens: maxTokens || this.config.maxTokens,
       temperature: this.config.temperature,
+      // /effort wiring: high|medium|low forward as the standard reasoning_effort
+      // field. off and unset send nothing, so gateways that do not know the
+      // field keep seeing exactly the old request. Failover inherits it:
+      // candidates spread over {...config, ...cfg} keep the setting.
+      ...(["high", "medium", "low"].includes(this.config.effort)
+        ? { reasoning_effort: this.config.effort }
+        : {}),
       // Ask for a final usage chunk; endpoints that ignore it simply never
       // send one, and usage stays null instead of lying.
       stream_options: { include_usage: true },

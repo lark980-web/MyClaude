@@ -483,6 +483,7 @@ function buildConfirmDiff(name, args) {
     modelContextWindow: agent ? agent.contextWindow
       : Math.min(contextWindowOf(config.model), Number(config.contextWindow) || contextWindowOf(config.model)),
           modelSupportsVision: supportsVision(config.model),
+  effort: config.effort ?? null,
           routing: agent ? agent.routingStatus?.() : null,
           tools: toolList(),
           ...statsOf(agent)
@@ -506,6 +507,12 @@ function buildConfirmDiff(name, args) {
           config.providers = { ...(config.providers || {}), ...body.providers };
           saveConfig({ providers: config.providers });
         }
+      if (body.effort !== undefined) {
+        // /effort and the thinking toggle share this one setting.
+        const allowed = ["high", "medium", "low", "off"];
+        config.effort = allowed.includes(body.effort) ? body.effort : null;
+        saveConfig({ effort: config.effort });
+      }
         if (body.permissionMode) {
           const wanted = normalizeMode(body.permissionMode);
           if (wanted) {

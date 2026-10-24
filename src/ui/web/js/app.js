@@ -62,7 +62,6 @@
   var LS_VOICE_ENGINE = "myclaude.voice.engine";
   var LS_STYLE = "myclaude.style";
   var LS_ARCHIVE_POLICY = "myclaude.archive.policy";
-  var LS_THINKING = "myclaude.thinking";
   var LS_WEB_SEARCH = "myclaude.websearch";
 
   /* ================================================================ 工具 === */
@@ -3716,6 +3715,9 @@
   function refreshStats() {
     getJSON("/api/config").then(function (j) {
       S.config = j;
+    // 深度思考按钮镜像 config.effort（与 /effort 同一设置）
+    S.thinking = ["high", "medium", "low"].indexOf(S.config && S.config.effort) >= 0;
+    renderThinkingButton();
       S.vision = j.vision !== false;
       S.stats = {
         messages: j.messages != null ? j.messages : S.stats.messages,
@@ -5160,9 +5162,8 @@
       parts.push("[Projects 项目上下文文件列表 (供 AI 参考的代码与文档)：\n" + kText + "]");
     }
     // 2. 深度思考模式（Extended Thinking）
-    if (S.thinking) {
-      parts.push("[深度思考模式已开启：在正式回答前，请先在 <think>...</think> 标签内进行结构化、多角度的严密推理与方案权衡，再输出最终解答]");
-    }
+  // 深度思考由 config.effort 驱动（按钮只写配置，注入在 agent/provider 侧）。
+
     // 3. 回答风格（Style）
     var st = STYLE_PRESETS.filter(function (x) { return x.id === S.style; })[0];
     if (st && st.prompt) {
@@ -5188,9 +5189,12 @@
 
   function toggleThinkingMode() {
     S.thinking = !S.thinking;
-    try { localStorage.setItem(LS_THINKING, S.thinking ? "1" : "0"); } catch (e) {}
+    // One setting, two entry points: the button and /effort both write
+    // config.effort; the provider turns it into reasoning_effort. The old
+    // localStorage flag and the client-side prompt injection are gone.
+    postJSON("/api/config", { effort: S.thinking ? "high" : "off" }).catch(function () {});
     renderThinkingButton();
-    toast(S.thinking ? "已开启「深度思考 (Extended Thinking)」模式" : "已关闭深度思考模式", S.thinking ? "ok" : "info");
+    toast(S.thinking ? "已开启深度思考（effort=high）" : "已关闭深度思考", S.thinking ? "ok" : "info");
   }
 
 
@@ -7367,9 +7371,9 @@
       if (savedStyle) { S.style = savedStyle; }
       var savedArchive = localStorage.getItem(LS_ARCHIVE_POLICY);
       if (savedArchive) { S.archivePolicy = savedArchive; }
-      var savedThinking = localStorage.getItem(LS_THINKING);
-      if (savedThinking === "1") { S.thinking = true; }
     } catch (e) {}
+  // S.thinking mirrors config.effort; it is set once the config loads
+  // (syncThinkingFromConfig) instead of from localStorage.
     renderStyleButton();
     renderThinkingButton();
     renderArchivePolicyButton();
@@ -8904,6 +8908,9 @@
 
     getJSON("/api/config").then(function (j) {
       S.config = j;
+    // 深度思考按钮镜像 config.effort（与 /effort 同一设置）
+    S.thinking = ["high", "medium", "low"].indexOf(S.config && S.config.effort) >= 0;
+    renderThinkingButton();
       S.vision = j.vision !== false;
       S.stats = {
         messages: j.messages || 0,
