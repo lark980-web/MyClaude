@@ -477,7 +477,11 @@ function buildConfirmDiff(name, args) {
           // plus the current model's resolved limits.
           models: MODELS,
           currentModel: findModel(config.model) || null,
-          modelContextWindow: contextWindowOf(config.model),
+  // The window the agent actually uses: catalogue ceiling with the user cap
+  // applied (config.contextWindow). Reporting the raw catalogue value here
+    // made the UI ring disagree with the stats limit once a cap was set.
+    modelContextWindow: agent ? agent.contextWindow
+      : Math.min(contextWindowOf(config.model), Number(config.contextWindow) || contextWindowOf(config.model)),
           modelSupportsVision: supportsVision(config.model),
           routing: agent ? agent.routingStatus?.() : null,
           tools: toolList(),

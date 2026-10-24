@@ -88,7 +88,14 @@ export class Agent {
     // Resolve the model's real limits instead of assuming one global number:
     // the catalogue carries per-model context window and token ceiling, and a
     // 1M-token model must not be compacted on a 200k model's schedule.
-    this.contextWindow = contextWindowOf(config.model);
+    // The catalogue is the hard ceiling; the config value is a user CAP on
+    // top of it. The gateway advertises 1M for this model, but every turn
+    // re-sends the whole history, so a wide window meant slow, expensive
+    // turns rather than better answers - the config value existed and did
+    // nothing.
+    const catalogueWindow = contextWindowOf(config.model);
+    const configuredWindow = Number(config.contextWindow) || 0;
+    this.contextWindow = configuredWindow > 0 ? Math.min(catalogueWindow, configuredWindow) : catalogueWindow;
     this.maxTokens = maxTokensOf(config.model);
     this.turnCount = 0;
     // Files touched by the current turn, so /rewind can put them back.
@@ -295,7 +302,27 @@ export class Agent {
   }
 
   buildRequestMessages() {
-    return [{ role: "system", content: this.systemPrompt }, ...this.messages];
+    const system = [{ role: "system", content: this.systemPrompt }];
+    if (!this.config.fastMode) { return system.concat(this.messages); }
+    return system.concat(this.fastWindow());
+  }
+
+  /**
+   * The fast-mode slice of history.
+   *
+   * The newest fastModeMessages entries, extended backwards to the nearest
+   * user message: a turn always begins with a user message, so the window
+   * never opens mid-turn and every tool_call it contains keeps its tool
+   * result. A window that orphaned a tool result would be rejected by the
+   * provider outright.
+   */
+  fastWindow() {
+    const msgs = this.messages;
+    const max = Math.max(2, Number(this.config.fastModeMessages) || 24);
+    if (msgs.length <= max) { return msgs; }
+    let start = msgs.length - max;
+    while (start > 0 && msgs[start].role !== "user") { start--; }
+    return msgs.slice(start);
   }
 
   /** Tools that never mutate the workspace; allowed without prompting in plan mode. */

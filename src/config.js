@@ -89,6 +89,9 @@ export const DEFAULT_CONFIG = {
   effort: null,
   // /fast: the same model, tuned for faster output.
   fastMode: false,
+  // Fast mode carries only the newest N history messages per request
+  // (sliced at a user boundary so tool pairs stay intact).
+  fastModeMessages: 24,
   // Claude describes auto mode as "no routine prompts; a reviewer model
   // screens actions". Turning this on makes auto mode do that too. It costs
   // one extra request per tool call, so it is off unless asked for.

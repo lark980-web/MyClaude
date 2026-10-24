@@ -463,7 +463,7 @@ async function handleCommand(raw, ctx) {
       const on = "1" === rest[0] ? true : "0" === rest[0] ? false : !config.fastMode;
       config.fastMode = on;
       saveConfig({ fastMode: on });
-      ui.info(on ? "已开启快速模式" : "已关闭快速模式");
+        ui.info(on ? "快速模式已开启 — 每轮只带最近 " + (config.fastModeMessages || 24) + " 条历史" : "快速模式已关闭 — 每轮发送完整历史");
       return {};
     }
     // /loop runs a prompt repeatedly. Claude drives its loop from a cron and
