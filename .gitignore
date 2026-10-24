@@ -40,3 +40,6 @@ _*.css
 "c[n]"
 .gui7831
 _testout.txt
+ 
+# mitmproxy 抓包工作产物 
+mitm-logs/ 

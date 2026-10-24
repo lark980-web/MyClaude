@@ -84,6 +84,10 @@ export async function startGui({ config: initialConfig, port = 7788, open = true
 
   /** One live conversation per browser tab; "default" is the legacy key. */
   const sessions = new Map();
+// Session keys with a run in flight. The agent objects are per key, so a
+// second /api/chat on the same key would put two run loops on one agent:
+// interleaved history, overwritten abort controllers, two SSE streams.
+const running = new Set();
   const savers = new Map();
   const confirmResolvers = new Map();
   const questionResolvers = new Map();
@@ -1682,6 +1686,14 @@ function buildConfirmDiff(name, args) {
       if (path === "/api/chat" && req.method === "POST") {
         const body = await readJson(req);
         const key = keyOf(body);
+        if (running.has(key)) {
+          // Refuse rather than queue: two run loops on one agent corrupt the
+          // history and the stop button could only reach the newest of them.
+          sendJson(res, 409, { ok: false, error: "该会话已有任务在运行 — 请先停止或等它结束" });
+          return;
+        }
+        running.add(key);
+        try {
         res.writeHead(200, {
           "Content-Type": "text/event-stream; charset=utf-8",
           "Cache-Control": "no-cache, no-transform",
@@ -1721,6 +1733,10 @@ function buildConfirmDiff(name, args) {
         sse(res, { type: "session", id: saver.id, file: saver.file ?? null });
         sse(res, { type: "done" });
         res.end();
+        } finally {
+          // Free the slot no matter how the run ended: error, interrupt, done.
+          running.delete(key);
+        }
         return;
       }
 

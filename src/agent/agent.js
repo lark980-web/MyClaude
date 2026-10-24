@@ -81,6 +81,10 @@ export class Agent {
     this.tools = tools;
     this.messages = [];
     this.abortController = null;
+    // Set by abort() and honoured at the next turn boundary: the per-turn
+    // AbortController below would otherwise silently discard an abort that
+    // landed while a tool was running, and the task would carry on.
+    this.stopRequested = false;
     // Resolve the model's real limits instead of assuming one global number:
     // the catalogue carries per-model context window and token ceiling, and a
     // 1M-token model must not be compacted on a 200k model's schedule.
@@ -286,7 +290,8 @@ export class Agent {
   }
 
   abort() {
-    this.abortController?.abort();
+    this.stopRequested = true;
+      this.abortController?.abort();
   }
 
   buildRequestMessages() {
@@ -435,6 +440,11 @@ export class Agent {
     this.stopHookUsed = false;
 
     for (let turn = 0; turn < this.config.maxTurns; turn++) {
+      if (this.stopRequested) {
+        this.ui.info("\n(interrupted)");
+        this.messages.push({ role: "assistant", content: "(interrupted)" });
+        return { interrupted: true };
+      }
       this.turnCount++;
       this.abortController = new AbortController();
 

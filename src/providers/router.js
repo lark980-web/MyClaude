@@ -59,6 +59,9 @@ export class ProviderRouter {
    */
   constructor({ config, fallbacks = [], onSwitch = null, provider = null } = {}) {
     this.config = config;
+    // Whole-walk budget: per-attempt timers bound one candidate, but six of
+    // them in a row still meant many minutes of silence before an error.
+    this.failoverBudgetMs = Number(config.failoverBudgetMs ?? 300_000);
     this.onSwitch = onSwitch;
     // Fallbacks without a usable endpoint are dropped rather than failing later.
     this.fallbacks = fallbacks.filter((f) => f && f.model && (f.baseUrl || config.baseUrl));
@@ -124,7 +127,16 @@ export class ProviderRouter {
   async run(fn) {
     const list = this.candidates();
     let lastError = null;
+    const startedAt = Date.now();
     for (let i = 0; i < list.length; i++) {
+      if (i > 0 && this.failoverBudgetMs > 0 && Date.now() - startedAt > this.failoverBudgetMs) {
+        // Give up loudly rather than walking candidate after candidate in
+        // silence; the caller shows this message instead of a hung spinner.
+        throw new ProviderError(
+          `failover budget exhausted after ${i} attempt(s) (${Math.round((Date.now() - startedAt) / 1000)}s): ${lastError ? lastError.message : "unknown"}`,
+          { status: 504 }
+        );
+      }
       const cfg = list[i];
       const provider = i === 0 ? this.provider : createProvider({ ...this.config, ...cfg });
       try {

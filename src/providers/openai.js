@@ -20,13 +20,23 @@ export class OpenAIProvider {
     // Abort a request that never answers, so a hung endpoint can fail over
     // instead of blocking the conversation forever. 0 disables the timer.
     this.timeoutMs = Number(config.requestTimeoutMs ?? 90_000);
+    // Silence AFTER the first byte is a different failure from never answering:
+    // the gateway took the request and its upstream died. Watched per read in
+    // streamChat(); 0 disables the watchdog.
+    this.streamIdleMs = Number(config.streamIdleTimeoutMs ?? 120_000);
   }
 
   /**
-   * Fetch with an inactivity timeout.
+   * Fetch with a time-to-first-byte timeout.
    *
-   * The timer is reset on the first byte only: once a stream starts, the
-   * provider is clearly alive and long generations must not be cut off.
+   * The timer covers the wait for the response headers only: after that the
+   * request is handed back as a stream, and a long generation must not be cut
+   * off just for being long. Silence DURING the stream is watched separately
+   * in streamChat(), because a gateway here has been seen to take the request,
+   * send headers, and then never send a body. Two consequences of that shape:
+   * the old design stalled the agent forever, and the stop button could not
+   * reach the stream either - which is why the caller-abort listener below
+   * deliberately stays attached for the whole life of the body.
    */
   async request(url, init, { stream = false } = {}) {
     const caller = init.signal;
@@ -56,9 +66,11 @@ export class OpenAIProvider {
         throw new ProviderError(`request timed out after ${Math.round(this.timeoutMs / 1000)}s`, { status: 408 });
       }
       throw e;
-    } finally {
-      caller?.removeEventListener?.("abort", onAbort);
     }
+    // No finally-removal of the caller-abort listener: the body keeps streaming
+    // after this method returns, and abort must keep forwarding for the whole
+    // life of that stream. The listener is {once:true} on the caller's signal,
+    // which lives for a single turn, so there is nothing to clean up.
   }
 
   headers() {
@@ -113,9 +125,27 @@ export class OpenAIProvider {
     const toolAccum = new Map();
     let finishReason = null;
 
+    // Inactivity watchdog: a gateway that stops sending without closing the
+    // connection must not stall the conversation forever. Long generations are
+    // safe here - every delivered chunk resets the timer, so only true silence
+    // trips it. On trip the pending read is cancelled and a retryable 408 is
+    // raised, which sends the router to the next candidate.
+    const idleMs = this.streamIdleMs > 0 ? Math.max(this.streamIdleMs, 250) : 0;
+    let idle = null;
+    let stalled = false;
+    const armIdle = () => {
+      if (!idleMs) return;
+      if (idle) clearTimeout(idle);
+      idle = setTimeout(() => { stalled = true; reader.cancel().catch(() => {}); }, idleMs);
+      idle.unref?.();
+    };
+    armIdle();
+
     while (true) {
       const { done, value } = await reader.read();
+      if (idle) { clearTimeout(idle); idle = null; }
       if (done) break;
+      armIdle();
       buffer += decoder.decode(value, { stream: true });
 
       let idx;
@@ -174,6 +204,11 @@ export class OpenAIProvider {
           }
         }
       }
+    }
+
+    if (idle) { clearTimeout(idle); idle = null; }
+    if (stalled) {
+      throw new ProviderError(`stream idle: no data for ${Math.round(idleMs / 1000)}s (timed out)`, { status: 408 });
     }
 
     const toolCalls = [...toolAccum.values()]
