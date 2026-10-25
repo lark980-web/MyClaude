@@ -34,7 +34,8 @@ const PROBES = [
   "/cost", "/doctor", "/init", "/export", "/effort", "/fast", "/status",
   "/memory", "/loop", "/plan", "/help", "/model", "/provider", "/mode",
   "/mcp", "/tools", "/permissions", "/stats", "/config", "/models",
-  "/save", "/session", "/commands", "/clear", "/exit",
+  "/save", "/session", "/commands", "/clear", "/todos", "/context",
+  "/skill", "/release-notes", "/add-dir", "/agents", "/exit",
 ];
 
 /** Patterns that mean the command died, not merely complained. */
