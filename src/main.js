@@ -634,6 +634,15 @@ async function handleCommand(raw, ctx) {
         ui.info(dirs.length ? "额外工作目录：\n  " + dirs.join("\n  ") : "(no extra dirs) — 用法：/add-dir <路径>");
         return {};
       }
+      const { resolve } = await import("node:path");
+      const abs = resolve(rest[0]);
+      if (!existsSync(abs) || !statSync(abs).isDirectory()) { ui.warn(`不是目录：${abs}`); return {}; }
+      config.additionalDirectories = config.additionalDirectories || [];
+      if (!config.additionalDirectories.includes(abs)) config.additionalDirectories.push(abs);
+      saveConfig({ additionalDirectories: config.additionalDirectories });
+      ui.success(`已添加工作目录 ${abs}（已写入系统提示）`);
+      return {};
+    }
     case "agents": {
       const { loadAgents } = await import("./skills.js");
       const agents = loadAgents(process.cwd());
@@ -643,15 +652,6 @@ async function handleCommand(raw, ctx) {
       }
       ui.info("已定义的子代理：\n" + agents.map((a) => `  ${a.name}${a.description ? " — " + a.description : ""}`).join("\n"));
       ui.info("用法：Task 工具的 subagent_type 直接填代理名");
-      return {};
-    }
-      const { resolve } = await import("node:path");
-      const abs = resolve(rest[0]);
-      if (!existsSync(abs) || !statSync(abs).isDirectory()) { ui.warn(`不是目录：${abs}`); return {}; }
-      config.additionalDirectories = config.additionalDirectories || [];
-      if (!config.additionalDirectories.includes(abs)) config.additionalDirectories.push(abs);
-      saveConfig({ additionalDirectories: config.additionalDirectories });
-      ui.success(`已添加工作目录 ${abs}（已写入系统提示）`);
       return {};
     }
     case "hooks": {
