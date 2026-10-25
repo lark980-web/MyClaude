@@ -56,7 +56,7 @@ test("HOOK_EVENTS lists the supported events", () => {
   // so no hook could subscribe to them.
   assert.deepEqual(HOOK_EVENTS, [
     "UserPromptSubmit", "PreToolUse", "PostToolUse", "Notification",
-    "Stop", "PreCompact", "SubagentStop",
+    "Stop", "PreCompact", "SubagentStop", "SessionStart", "SessionEnd",
   ]);
 });
 
