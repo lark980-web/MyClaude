@@ -194,6 +194,12 @@ export class Agent {
         "conflict with a habit or a general assumption, follow them.");
     }
     parts.push(SYSTEM_PROMPT);
+    // Extra working directories registered with /add-dir: telling the model
+    // where else it may look is what makes them usable.
+    if (Array.isArray(this.config.additionalDirectories) && this.config.additionalDirectories.length) {
+      parts.push("\n\n# Additional working directories\n" +
+        this.config.additionalDirectories.map((d) => "- " + d).join("\n"));
+    }
     if (rest) {
       parts.push(
         "\n\n# Project memory (MYCLAUDE.md)\n\n" +

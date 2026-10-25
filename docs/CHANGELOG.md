@@ -1,0 +1,44 @@
+# Changelog
+
+Generated from the git history (`git log --oneline`), newest first.
+
+- 1c82498 docs: 功能矩阵同步批次一成果（effort 接线 / SessionStart / SessionEnd / MCP 资源工具 → yes）
+- 777bac0 feat: MCP 资源桥接为模型工具（ListMcpResources / ReadMcpResource）
+- af55f4c fix: hooks.test 的 9 事件断言订正（上一提交漏改）
+- 5c370b4 feat: SessionStart / SessionEnd 会话生命周期钩子（补齐 9 事件面）
+- 46e0e95 feat: /effort 真正接线（reasoning_effort）+ 深度思考按钮统一到同一设置
+- 331eaef docs: MyClaude ↔ Claude Code 差异再核对（replica/diff-2026-10-25.md）
+- 9abe313 feat: contextWindow 成为真实上限 + fastMode 获得真实功能
+- 15f5662 fix: 任务卡住与终止按钮无效（流中静默无看门狗 + abort 转发被提前拆除）
+- cd8cc32 fix: 冒烟测试移出默认集 + 功能矩阵工具数订正（21→23 实测）
+- 396e2ec test: 补齐 3 项无覆盖的测试（工具并发、hooks CRUD、追问胶囊）
+- ce36277 docs: 交叉验证记录（replica/verify.md）
+- a2b4cfc fix: 修 /memory 崩溃 + 加命令冒烟检查（交叉验证抓到的真问题）
+- 800ceb3 feat: 补 /plan 命令与计划落盘（完成 plan 模式闭环）
+- cbf5180 feat: 复刻计划落地（replica/recon.md + features.csv）+ 提示语统一为中文
+- 234e89f fix(ui): 修掉控件尺寸漂移，并加上能自查的样式一致性审计
+- f0182fb feat: 补上 CLI 的 /hooks 命令
+- b0404cd fix(task): subagent_type 对齐 Claude 的命名
+- 2bc64ef feat(auto): 新增 auto_mode_scan 与 auto 模式的审查模型
+- cf8ed0e feat(tasks): 新增 dream 任务类型 —— 后台整理项目记忆
+- c669da7 docs: 订正对照表中已过期但仍标"缺失/差距"的 11 行
+- 0375d2f feat: 新增 /loop 循环执行提示词
+- 20d5ed5 docs: 对照表补上本轮新增的六个命令
+- 19a0300 feat: /memory 支持写入（add / path）
+- 5b53dea feat: 新增 /fork 与 /branch 会话分叉
+- 8a17395 feat: 新增 /title 命令给会话命名
+- 7c80d71 feat: 新增 /status 命令 + 更新功能对照表
+- 26c80ee feat: 新增 /effort 与 /fast 命令
+- 0137d32 fix(gui): 追问胶囊改成等长短问句，排版不再被长文案撑散
+- 0d59545 fix(gui): 权限模式下拉回到短标签，长说明不再撑坏输入栏
+- 9bc9e57 fix(gui): 权限模式下拉框分组，不再把七种模式堆在一起
+- 2e7d62f feat(tasks): 补齐 mcp_task / monitor / workflow 三种任务类型
+- d64309b fix(permissions): acceptEdits 不再把日常命令当危险命令拦下
+- 1f8a2c3 fix(gui): 自动恢复会话不再弹"已恢复 N 条消息"
+- 970fe47 fix(session): 修掉点击会话后列表多出一条的问题
+- c3f43f8 fix(help): 补上 /plugin 与 /mcp login/logout 三条命令说明
+- 5ec49f7 docs: 记录网络排查经验，推送约定写进项目记忆
+- 83460bd docs: 扩展生态一档标记完成
+- 36d636a chore: 重新打包 GUI 资源
+- 304734c feat: /plugin 插件体系
+- 5a0d8f3 docs: 把「一切以 claude-src 为准」固化为项目核心要义

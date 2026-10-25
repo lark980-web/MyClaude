@@ -66,6 +66,12 @@ Commands (interactive):
   /skills            list available skills
   /plugin [名]        列出已安装的插件
   /hooks [events]    列出已配置的钩子 / 可用事件
+  /todos             查看 TodoWrite 待办
+  /context           上下文用量明细
+  /skill <名>        按名执行技能
+  /release-notes     版本说明
+  /add-dir <路径>    追加工作目录
+  /agents            子代理定义
   /mcp login <名>      登录需要 OAuth 的 MCP 服务器
   /mcp logout <名>     清除已保存的 MCP 令牌
   /model [name]      show or set model
@@ -436,6 +442,7 @@ async function handleCommand(raw, ctx) {
         `MCP 服务器  ${mcpCount} 个`,
         `后台任务    ${Object.keys(st.tasks || st || {}).length} 个`,
         `快速模式    ${config.fastMode ? "开" : "关"}`
+        `额外目录      ${(config.additionalDirectories || []).length ? (config.additionalDirectories || []).join("、") : "无"}`,
       ];
       ui.info(rows.join("\n"));
       return {};
@@ -580,6 +587,62 @@ async function handleCommand(raw, ctx) {
       return {};
     }
 
+    case "todos": {
+      const { getTodos } = await import("./tools/extra.js");
+      const list = getTodos();
+      if (!list.length) { ui.info("(no todos) — TodoWrite 工具可创建"); return {}; }
+      ui.info(list.map((t, i) => `  ${i + 1}. [${t.status || "pending"}] ${t.content || ""}`).join("\n"));
+      return {};
+    }
+    case "context": {
+      const chars = agent.messages.reduce((sum, m) => sum + (typeof m.content === "string" ? m.content.length : JSON.stringify(m.content ?? "").length) + 24, 0);
+      // CJK 偏重：粗估 tokens 用 /2.5 而非 /4
+      const est = Math.round(chars / 2.5);
+      const win = agent.contextWindow || config.contextWindow || 200000;
+      const limit = Math.round(win * (config.compactThreshold || 0.8));
+      ui.info([
+        `消息          ${agent.messages.length} 条（${agent.turnCount} 回合）`,
+        `上下文估计    ~${est} tokens / 压缩阈值 ${limit}（窗口 ${win}）`,
+        `累计 tokens   输入 ${agent.totalInputTokens || 0} / 输出 ${agent.totalOutputTokens || 0}`,
+        `快速模式      ${config.fastMode ? "开（每轮只带最近 " + (config.fastModeMessages || 24) + " 条）" : "关"}`,
+      ].join("\n"));
+      return {};
+    }
+    case "skill": {
+      const name = rest[0];
+      if (!name) { ui.warn("用法：/skill <技能名>"); return {}; }
+      const { loadSkills } = await import("./skills.js");
+      const skills = await loadSkills(process.cwd());
+      const hit = skills.find((s) => s.name === name);
+      if (!hit) {
+        ui.warn(`没有名为 ${name} 的技能。可用：${skills.map((s) => s.name).join(", ") || "(无)"}`);
+        return {};
+      }
+      ui.info(`执行技能 ${hit.name}…`);
+      await agent.run(hit.body || "");
+      return {};
+    }
+    case "release-notes": {
+      const f = join(process.cwd(), "docs", "CHANGELOG.md");
+      if (!existsSync(f)) { ui.info("(no release notes) — docs/CHANGELOG.md 不存在"); return {}; }
+      ui.info(readFileSync(f, "utf8"));
+      return {};
+    }
+    case "add-dir": {
+      if (!rest[0]) {
+        const dirs = config.additionalDirectories || [];
+        ui.info(dirs.length ? "额外工作目录：\n  " + dirs.join("\n  ") : "(no extra dirs) — 用法：/add-dir <路径>");
+        return {};
+      }
+      const { resolve } = await import("node:path");
+      const abs = resolve(rest[0]);
+      if (!existsSync(abs) || !statSync(abs).isDirectory()) { ui.warn(`不是目录：${abs}`); return {}; }
+      config.additionalDirectories = config.additionalDirectories || [];
+      if (!config.additionalDirectories.includes(abs)) config.additionalDirectories.push(abs);
+      saveConfig({ additionalDirectories: config.additionalDirectories });
+      ui.success(`已添加工作目录 ${abs}（已写入系统提示）`);
+      return {};
+    }
     case "hooks": {
       // The engine and the GUI CRUD existed, but there was no way to see or
       // change hooks from the terminal.

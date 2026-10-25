@@ -1,3 +1,4 @@
+import { loadAgents } from "../skills.js";
 import { Agent } from "./agent.js";
 import { toolSchemas } from "../tools/index.js";
 import { registry, TASK_TYPES } from "../tasks/registry.js";
@@ -124,6 +125,18 @@ export function createTaskTool({ provider, config, ui, maxTurns = 40, depth = 0 
       // Both "explore" and "plan" investigate without editing: one is a search, the
       // other ends in a proposal the caller is expected to approve.
       const readOnly = agentType === "explore" || agentType === "plan";
+      // A .myclaude/agents/<type>.md definition turns a named type into a
+      // real sub-agent: its body is prepended as operating instructions.
+      const KNOWN = ["general-purpose", "general", "explore", "plan"];
+      let agentBrief = "";
+      if (!KNOWN.includes(agentType)) {
+        const defs = loadAgents(process.cwd());
+        const def = defs.find((d) => d.name === agentType);
+        if (!def) {
+          return { ok: false, content: "unknown subagent_type: " + agentType + " (defined agents: " + (defs.map((d) => d.name).join(", ") || "none") + ")" };
+        }
+        agentBrief = def.body ? def.body + "\n\n" : "";
+      }
 
       // In the background the sub-agent keeps working while the main agent
       // moves on. The agent gets a task id and can read the result later,
@@ -139,7 +152,7 @@ export function createTaskTool({ provider, config, ui, maxTurns = 40, depth = 0 
         // whole process down, so the outcome is recorded on the task.
         (async () => {
           try {
-            const res = await runSubAgent({ description, prompt, readOnly, provider, config, ui, maxTurns });
+            const res = await runSubAgent({ description, prompt: agentBrief + prompt, readOnly, provider, config, ui, maxTurns });
             registry.appendOutput(task, res.content || "");
             if (res.ok) { registry.complete(task, res.content); }
             else { registry.fail(task, res.content); }
@@ -155,7 +168,7 @@ export function createTaskTool({ provider, config, ui, maxTurns = 40, depth = 0 
         };
       }
 
-      return await runSubAgent({ description, prompt, readOnly, provider, config, ui, maxTurns });
+      return await runSubAgent({ description, prompt: agentBrief + prompt, readOnly, provider, config, ui, maxTurns });
     },
   };
 }

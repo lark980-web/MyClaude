@@ -109,3 +109,43 @@ export function findSkill(name, cwd = process.cwd()) {
 export function skillCatalogue(cwd = process.cwd()) {
   return loadSkills(cwd).map((s) => ({ name: s.name, description: s.description }));
 }
+
+/**
+ * Sub-agent definition files: the .myclaude/agents counterpart of skills.
+ *
+ * Each agent is a markdown file with optional frontmatter (name, description)
+ * and a body that becomes the operating instructions of that sub-agent type.
+ * Files instead of a registry, so users can keep definitions in version
+ * control alongside the project.
+ *
+ * @param {string} cwd
+ * @returns {Array<{name: string, description: string, body: string, file: string}>}
+ */
+export function loadAgents(cwd = process.cwd()) {
+  const dir = join(cwd, ".myclaude", "agents");
+  const out = [];
+  let entries = [];
+  try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return out; }
+  for (const entry of entries) {
+    if (!entry.isFile() || !entry.name.endsWith(".md")) { continue; }
+    const file = join(dir, entry.name);
+    let rawText = "";
+    try { rawText = readFileSync(file, "utf8"); } catch { continue; }
+    const fm = /^---[\r\n]([\s\S]*?)[\r\n]---[\r\n]?/.exec(rawText);
+    const meta = {};
+    if (fm) {
+      for (const line of fm[1].split(/[\r\n]+/)) {
+        const m = /^([\w-]+)\s*:\s*(.+)$/.exec(line.trim());
+        if (m) { meta[m[1].toLowerCase()] = m[2].trim(); }
+      }
+    }
+    const body = rawText.replace(/^---[\r\n][\s\S]*?[\r\n]---[\r\n]?/, "").trim();
+    out.push({
+      name: meta.name || entry.name.replace(/\.md$/, ""),
+      description: meta.description || "",
+      body,
+      file,
+    });
+  }
+  return out;
+}
