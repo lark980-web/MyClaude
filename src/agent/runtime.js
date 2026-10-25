@@ -1,5 +1,6 @@
 import { Agent } from "./agent.js";
 import { McpManager } from "../mcp/client.js";
+import { createResourceTools } from "../mcp/resource-tools.js";
 import { createTaskTool } from "./task-tool.js";
 import {
   registerTools,
@@ -102,6 +103,9 @@ export async function createAgent({ provider, config, ui, providerFactory, sessi
       }
     }
     registerTools(bridged);
+  // Resources too: the model needs its own handle to discover what a
+  // server offers, not just the tools.
+  registerTools(createResourceTools(mcp));
 
     agent.mcp = mcp;
     agent.mcpManager = mcp;
