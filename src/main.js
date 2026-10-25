@@ -634,6 +634,17 @@ async function handleCommand(raw, ctx) {
         ui.info(dirs.length ? "额外工作目录：\n  " + dirs.join("\n  ") : "(no extra dirs) — 用法：/add-dir <路径>");
         return {};
       }
+    case "agents": {
+      const { loadAgents } = await import("./skills.js");
+      const agents = loadAgents(process.cwd());
+      if (!agents.length) {
+        ui.info("(no agents) — 在 .myclaude/agents/<名>.md 放定义文件：\n  ---\n  name: 我的代理\n  description: 一句话说明\n  ---\n  （正文为该子代理的操作指令）");
+        return {};
+      }
+      ui.info("已定义的子代理：\n" + agents.map((a) => `  ${a.name}${a.description ? " — " + a.description : ""}`).join("\n"));
+      ui.info("用法：Task 工具的 subagent_type 直接填代理名");
+      return {};
+    }
       const { resolve } = await import("node:path");
       const abs = resolve(rest[0]);
       if (!existsSync(abs) || !statSync(abs).isDirectory()) { ui.warn(`不是目录：${abs}`); return {}; }
