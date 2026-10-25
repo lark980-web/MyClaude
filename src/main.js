@@ -139,6 +139,7 @@ async function handleCommand(raw, ctx) {
     case "exit":
     case "quit":
     case "q":
+      await agent.sessionEnd("exit");
       return { exit: true };
     case "help":
       ui.info(HELP);
@@ -190,6 +191,7 @@ async function handleCommand(raw, ctx) {
       ctx.autoSaver?.rotate();
       ctx.autoSaver?.save({ force: true });
       ui.success("conversation cleared");
+        await agent.sessionEnd("clear");
       return {};
     case "model":
       if (arg) {
@@ -1068,6 +1070,7 @@ async function main() {
       config,
       ui,
       providerFactory: () => createProvider(config),
+      sessionSource: (opts.resume || opts.continueSession) ? "resume" : "startup",
     });
     try {
       const result = await agent.run(opts.oneShot);
@@ -1093,6 +1096,7 @@ async function main() {
     config,
     ui,
     providerFactory: () => createProvider(config),
+      sessionSource: (opts.resume || opts.continueSession) ? "resume" : "startup",
   });
 
   const autoSaver = createAutoSaver({

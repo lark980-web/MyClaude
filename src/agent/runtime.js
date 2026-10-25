@@ -15,7 +15,7 @@ import { taskOutputTool } from "../tools/task-output.js";
 /**
  * Build an Agent wired with the extended tool set and any configured MCP servers.
  */
-export async function createAgent({ provider, config, ui, providerFactory, sessionKey }) {
+export async function createAgent({ provider, config, ui, providerFactory, sessionKey, sessionSource = "startup" }) {
   // Register the built-in extended tools once per process.
   registerTools([multiEditTool, todoWriteTool, webFetchTool, taskOutputTool, ...EXTENDED_TOOLS]);
 
@@ -27,6 +27,9 @@ export async function createAgent({ provider, config, ui, providerFactory, sessi
     sessionKey,
     permissions: config.permissions,
   });
+  // SessionStart: once per agent creation, with the reason it exists.
+  await agent.sessionHook(sessionSource);
+
 
   // Present AskUserQuestion through the active UI when it supports it.
   if (typeof ui?.askQuestions === "function") {

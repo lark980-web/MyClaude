@@ -296,6 +296,32 @@ export class Agent {
     return { rewound: dropped, lastUser: this.messages[lastUser], files };
   }
 
+  /**
+   * Fire the SessionStart hook.
+   *
+   * @param {string} source "startup" or "resume" - why this agent exists
+   */
+  async sessionHook(source) {
+    if (this.hooks && this.hooks.has("SessionStart")) {
+      await this.hooks.run("SessionStart", { source: source || "startup", session_id: this.sessionKey, cwd: process.cwd() });
+    }
+    return this;
+  }
+
+  /**
+   * Fire the SessionEnd hook on the exits we can await.
+   *
+   * A hard crash fires neither this nor anything else async - same as Claude.
+   *
+   * @param {string} reason "exit" | "clear" | "rotate" | "delete"
+   */
+  async sessionEnd(reason) {
+    if (this.hooks && this.hooks.has("SessionEnd")) {
+      await this.hooks.run("SessionEnd", { reason: reason || "exit", session_id: this.sessionKey, cwd: process.cwd() });
+    }
+    return this;
+  }
+
   abort() {
     this.stopRequested = true;
       this.abortController?.abort();

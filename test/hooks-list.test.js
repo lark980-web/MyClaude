@@ -13,7 +13,7 @@ test("every event Claude hooks into is listed", () => {
   // These are the events the engine dispatches; /hooks events prints this.
   assert.deepEqual([...HOOK_EVENTS].sort(), [
     "Notification", "PostToolUse", "PreCompact", "PreToolUse",
-    "Stop", "SubagentStop", "UserPromptSubmit",
+    "SessionEnd", "SessionStart", "Stop", "SubagentStop", "UserPromptSubmit",
   ]);
 });
 

@@ -38,7 +38,9 @@ const SHELLS = {
 export const TOOL_EVENTS = new Set(["PreToolUse", "PostToolUse"]);
 
 export const HOOK_EVENTS = [
-  "UserPromptSubmit", "PreToolUse", "PostToolUse", "Notification", "Stop", "PreCompact", "SubagentStop"
+  "UserPromptSubmit", "PreToolUse", "PostToolUse", "Notification", "Stop", "PreCompact", "SubagentStop",
+  // Session lifecycle: claude-src carries a nine-event hook surface.
+  "SessionStart", "SessionEnd"
 ];
 
 /**

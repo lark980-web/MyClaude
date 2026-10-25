@@ -119,10 +119,10 @@ const running = new Set();
     return saver;
   };
 
-  const agentFor = async (key, ui) => {
+const agentFor = async (key, ui, sessionSource = "startup") => {
     let agent = sessions.get(key);
     if (!agent) {
-      agent = await createAgent({ provider, config, ui, sessionKey: key, providerFactory: () => createProvider(config) });
+      agent = await createAgent({ provider, config, ui, sessionKey: key, sessionSource, providerFactory: () => createProvider(config) });
       sessions.set(key, agent);
     } else if (ui) {
       if (typeof agent.setUi === "function") agent.setUi(ui);
@@ -1716,6 +1716,7 @@ function buildConfirmDiff(name, args) {
         const ui = makeTurnUi(res, key);
         const agent = await agentFor(key, ui);
         const saver = saverFor(key, agent);
+
 
         try {
           // Retry: drop the previous answer (and optionally swap the prompt)
