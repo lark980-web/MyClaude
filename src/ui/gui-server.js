@@ -1,4 +1,6 @@
 import { createServer } from "node:http";
+import { runWithAutoContinue } from "../agent/autorun.js";
+import { setAutonomous } from "../tools/extended.js";
 import { readFileSync, readdirSync, statSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { readFile, readdir, stat } from "node:fs/promises";
 import { basename, dirname, extname, join, resolve, isAbsolute, relative } from "node:path";
@@ -79,6 +81,8 @@ function readJson(req) {
 
 export async function startGui({ config: initialConfig, port = 7788, open = true, cwd = process.cwd() } = {}) {
   const config = { ...initialConfig };
+  // The tools must know about autonomous runs from the first request.
+  setAutonomous(config.autoRun);
   const provider = createProvider(config);
   const assets = loadGuiAssets();
 
@@ -484,6 +488,7 @@ function buildConfirmDiff(name, args) {
       : Math.min(contextWindowOf(config.model), Number(config.contextWindow) || contextWindowOf(config.model)),
           modelSupportsVision: supportsVision(config.model),
   effort: config.effort ?? null,
+  autoRun: !!config.autoRun,
           routing: agent ? agent.routingStatus?.() : null,
           tools: toolList(),
           ...statsOf(agent)
@@ -507,6 +512,13 @@ function buildConfirmDiff(name, args) {
           config.providers = { ...(config.providers || {}), ...body.providers };
           saveConfig({ providers: config.providers });
         }
+      if (body.autoRun !== undefined) {
+        // Same flag the CLI /auto command writes; the tools read it through
+        // setAutonomous so AskUserQuestion stops stalling the walk.
+        config.autoRun = !!body.autoRun;
+        saveConfig({ autoRun: config.autoRun });
+        setAutonomous(config.autoRun);
+      }
       if (body.effort !== undefined) {
         // /effort and the thinking toggle share this one setting.
         const allowed = ["high", "medium", "low", "off"];
@@ -1726,9 +1738,13 @@ function buildConfirmDiff(name, args) {
             // Rewind keeps the last user message; re-running it would append a
             // duplicate, so it is dropped and only the loop is replayed.
             agent.rewind(typeof body.message === "string" ? body.message : undefined);
-            await agent.run("", { attachments: body.attachments, reuseLastUser: true });
+            await (config.autoRun
+              ? runWithAutoContinue(agent, { message: "", attachments: body.attachments, reuseLastUser: true }, { ui })
+              : agent.run("", { attachments: body.attachments, reuseLastUser: true }));
           } else {
-            await agent.run(String(body.message || ""), { attachments: body.attachments });
+            await (config.autoRun
+              ? runWithAutoContinue(agent, { message: String(body.message || ""), attachments: body.attachments }, { ui })
+              : agent.run(String(body.message || ""), { attachments: body.attachments }));
           }
           // Await it: without this the save and the "done" event raced the
           // compaction, so the stored history could keep the pre-compaction tail.

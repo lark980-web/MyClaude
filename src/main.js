@@ -5,6 +5,8 @@ import { Agent } from "./agent/agent.js";
 import { TerminalUI } from "./ui/terminal.js";
 import { allRegisteredTools } from "./tools/index.js";
 import { createAgent, closeAgent } from "./agent/runtime.js";
+import { runWithAutoContinue } from "./agent/autorun.js";
+import { setAutonomous } from "./tools/extended.js";
 import {
   newSessionId,
   saveSession,
@@ -71,6 +73,7 @@ Commands (interactive):
   /skill <名>        按名执行技能
   /release-notes     版本说明
   /add-dir <路径>    追加工作目录
+  /auto [on|off]     自主模式：回合上限后自动续跑（默认关）
   /agents            子代理定义
   /mcp login <名>      登录需要 OAuth 的 MCP 服务器
   /mcp logout <名>     清除已保存的 MCP 令牌
@@ -643,6 +646,19 @@ async function handleCommand(raw, ctx) {
       ui.success(`已添加工作目录 ${abs}（已写入系统提示）`);
       return {};
     }
+    case "auto": {
+      const on = rest[0] === "on" ? true : rest[0] === "off" ? false : !config.autoRun;
+      config.autoRun = on;
+      setAutonomous(on);
+      saveConfig({ autoRun: on });
+      if (on) {
+        ui.info("自主模式已开启 — 回合上限后自动续跑（上限 10 轮 / 60 分钟），AskUserQuestion 已屏蔽");
+        ui.info("权限将自动切换到 auto；随时 /exit 或停止可中断");
+      } else {
+        ui.info("自主模式已关闭 — 每轮发送完整历史");
+      }
+      return {};
+    }
     case "agents": {
       const { loadAgents } = await import("./skills.js");
       const agents = loadAgents(process.cwd());
@@ -1046,7 +1062,9 @@ async function runTui({ config, provider, agent, autoSaver }) {
       const files = pendingAttachments.splice(0);
       bridge.setAttachments(pendingAttachments);
       try {
-        await agent.run(text, { attachments: files });
+        await (config.autoRun
+        ? runWithAutoContinue(agent, { message: text, attachments: files }, { ui })
+        : agent.run(text, { attachments: files }));
         const compact = await agent.maybeCompact();
         if (compact) bridge.info(`context compacted (dropped ${compact.dropped} messages)`);
       } finally {
@@ -1182,6 +1200,7 @@ async function main() {
   // The tools need the session id so an approved plan can be written to disk
   // and shown again later by /plan.
   setPlanSessionId(autoSaver.id);
+  setAutonomous(config.autoRun);
 
   // --resume <id> / --continue: restore history before the first prompt.
   if (opts.resume || opts.continueSession) {

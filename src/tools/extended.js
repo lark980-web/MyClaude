@@ -212,6 +212,14 @@ let pendingQuestion = null;
  * approved plan is held so /plan can show it again, and saved to disk when a
  * session id is known.
  */
+// An autonomous run cannot answer questions: a pending dialog would stall
+// the walk for its whole timeout. When the flag is on the tool refuses
+// instead, telling the model to decide and carry on.
+let autonomousMode = false;
+
+/** Toggle AskUserQuestion off for autonomous runs. */
+export function setAutonomous(v) { autonomousMode = !!v; return autonomousMode; }
+
 let lastPlan = null;
 
 /** The plan most recently proposed, or null when there is none. */
@@ -282,6 +290,9 @@ export const askUserQuestionTool = {
     required: ["questions"],
   },
   async run({ questions }) {
+      if (autonomousMode) {
+        return { ok: false, content: "自主模式运行中：不要提问，请自行做出合理决策并继续任务。" };
+      }
     if (!Array.isArray(questions) || !questions.length) return err("questions must be a non-empty array");
     if (!pendingQuestion) {
       return err("no interactive presenter available (AskUserQuestion requires a TUI or GUI session)");
