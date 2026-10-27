@@ -78,7 +78,7 @@ export const DEFAULT_CONFIG = {
   temperature: 0.7,
   permissionMode: "ask",
   vision: true,
-  maxTurns: 100,
+  maxTurns: 200,
   // Resolved per model by the agent (see contextWindowOf); this is only the
   // value used before a model is chosen.
   contextWindow: contextWindowOf(DEFAULT_MODEL),

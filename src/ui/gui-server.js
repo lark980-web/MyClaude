@@ -1729,6 +1729,7 @@ const makeTurnUi = (res, key) => {
         const ui = consoleUi(makeTurnUi(res, key), key);
         const agent = await agentFor(key, ui);
         const saver = saverFor(key, agent);
+        let runResult = null;
 
 
         try {
@@ -1739,11 +1740,11 @@ const makeTurnUi = (res, key) => {
             // Rewind keeps the last user message; re-running it would append a
             // duplicate, so it is dropped and only the loop is replayed.
             agent.rewind(typeof body.message === "string" ? body.message : undefined);
-            await (config.autoRun
+            runResult = await (config.autoRun
               ? runWithAutoContinue(agent, { message: "", attachments: body.attachments, reuseLastUser: true }, { ui })
               : agent.run("", { attachments: body.attachments, reuseLastUser: true }));
           } else {
-            await (config.autoRun
+            runResult = await (config.autoRun
               ? runWithAutoContinue(agent, { message: String(body.message || ""), attachments: body.attachments }, { ui })
               : agent.run(String(body.message || ""), { attachments: body.attachments }));
           }
@@ -1754,6 +1755,12 @@ const makeTurnUi = (res, key) => {
           ui.error(`agent error: ${e.message}`);
         }
 
+        // Tell the browser the run hit its turn cap: a bare stop here read
+        // like the task had died. The frontend turns this into a "continue"
+        // button instead of leaving the user with an English warning.
+        if (runResult && runResult.maxTurnsReached) {
+          sse(res, { type: "max_turns", limit: config.maxTurns });
+        }
         try { saver.save({ force: true }); } catch {}
         sse(res, { type: "todos", todos: getTodos(key) });
         sse(res, { type: "stats", ...statsOf(agent) });

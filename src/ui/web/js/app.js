@@ -895,6 +895,33 @@
     postJSON("/api/answer", { id: id, answers: answers }).catch(function () {});
   }
 
+  /**
+   * The run hit its turn cap. A bare stop read like the task had died;
+   * give the user a one-click way to keep going, plus the /auto hint.
+   */
+  function addMaxTurnsCard(limit) {
+    var wrap = el("div", "notice notice-warn");
+    var msg = el("span", null, "已达回合上限（" + limit + " 回合），任务暂停在当前进度。");
+    var btn = el("button", "btn continue-btn", "继续");
+    btn.type = "button";
+    btn.title = "从当前进度继续（发送：继续完成未完成的部分）";
+    btn.addEventListener("click", function () {
+      if (S.busy) { return; }
+      btn.disabled = true;
+      wrap.remove();
+      runTurn({
+        message: "继续完成未完成的部分。若任务已全部完成，直接简短汇报现状即可。",
+        sessionKey: S.sessionKey
+      });
+    });
+    wrap.appendChild(msg);
+    wrap.appendChild(btn);
+    var hint = el("span", "empty-note", " 或 /auto on 开启自主续跑");
+    wrap.appendChild(hint);
+    logRoot().appendChild(wrap);
+    wrap.scrollIntoView({ block: "nearest" });
+  }
+
   function addNotice(text, kind) {
     hideWelcome();
     var root = logRoot();
@@ -2182,6 +2209,7 @@
     if (ev.type === "confirm") { showConfirm(ev); return; }
     if (ev.type === "question") { showQuestion(ev); return; }
     if (ev.type === "mode") { setMode(ev.permissionMode); return; }
+    if (ev.type === "max_turns") { addMaxTurnsCard(ev.limit); return; }
     if (ev.type === "todos") {
       S.todos = ev.todos || [];
       renderInspector();
