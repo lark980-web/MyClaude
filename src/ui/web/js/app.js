@@ -16,6 +16,7 @@
   /* ================================================================ 状态 === */
 
   var S = {
+      pendingQueue: [],
     sessionKey: null,
     config: null,
     sessions: [],
