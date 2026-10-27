@@ -168,6 +168,15 @@ const gitNumstat = (scope, onlyPaths) => {
     const un = run(["ls-files", "--others", "--exclude-standard"]);
     for (const f of String(un.stdout || "").split("\n").filter(Boolean)) {
       if (files.length >= 500) { truncated = true; break; }
+      // Stat first and never read big files: the repo root can hold huge
+      // untracked artifacts (a 2.8GB apk here froze the whole panel).
+      let st = null;
+      try { st = statSync(join(cwd, f)); } catch {}
+      if (!st || !st.isFile()) { continue; }
+      if (st.size > 512 * 1024) {
+        files.push({ path: f, added: 0, removed: 0, status: "A", large: true });
+        continue;
+      }
       let buf = null;
       try { buf = readFileSync(join(cwd, f)); } catch {}
       const isBin = buf ? buf.subarray(0, 8096).includes(0) : false;

@@ -34,12 +34,8 @@ _*.css
 *.tmp
 
 # 仓库根目录误留的脏数据（不属于本项目）
-"t.name).join(
-"{console.log("readonly"
-"1))"
-"c[n]"
 .gui7831
 _testout.txt
- 
-# mitmproxy ץ���������� 
-mitm-logs/ 
+
+# mitmproxy 日志（调试用）
+mitm-logs/

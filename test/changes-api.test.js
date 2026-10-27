@@ -57,6 +57,12 @@ test("branch scope reports modified, untracked and binary files", async () => {
     assert.equal(byPath["base.txt"].removed, 1);
     assert.equal(byPath["new.txt"].status, "A", "untracked file shows as added");
     assert.equal(byPath["logo.bin"].status, "binary", "binary file flagged");
+    // A huge untracked artifact must be flagged without being read.
+    writeFileSync(join(repo, "big-artifact.bin"), Buffer.alloc(600 * 1024, 1));
+    const j2 = await (await fetch(ctx.address + "/api/changes?scope=branch")).json();
+    const big = j2.files.find((f) => f.path === "big-artifact.bin");
+    assert.ok(big, "the big file is listed");
+    assert.equal(big.large, true, "flagged large without reading");
     assert.equal(j.totalAdded, 2 + 1, "base 2 added + new.txt 1 line; binary adds 0");
     assert.equal(j.totalRemoved, 1);
   } finally { await stop(ctx); rmSync(repo, { recursive: true, force: true }); }
