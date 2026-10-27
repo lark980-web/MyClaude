@@ -354,7 +354,7 @@ const makeTurnUi = (res, key) => {
       inputTokens: agent ? agent.totalInputTokens || 0 : 0,
       outputTokens: agent ? agent.totalOutputTokens || 0 : 0,
       contextLimit: limit,
-      contextUsed: limit ? Math.min(1, used / limit) : 0
+      contextUsed: limit ? used : 0
     };
   };
 

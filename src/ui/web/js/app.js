@@ -2530,7 +2530,8 @@
     kv(dl, "Token", tok, true);
     kv(dl, "目录", c.cwd ? c.cwd.split(/[\\/]/).slice(-1)[0] : "-", true);
       var ctxU = S.stats.contextUsed || 0; var ctxL = S.stats.contextLimit || 0;
-      kv(dl, "上下文", ctxL ? Math.round(ctxU / 1000) + "k / " + Math.round(ctxL / 1000) + "k" : String(ctxU));
+      if (ctxU > 0 && ctxU <= 1 && ctxL > 0) { ctxU = Math.round(ctxU * ctxL); }
+      kv(dl, "上下文", ctxL ? Math.round(ctxU / 1000) + "k / " + Math.round(ctxL / 1000) + "k" : String(ctxU || 0));
     s.body.appendChild(dl);
     root.appendChild(s.sec);
   }
@@ -3521,6 +3522,7 @@
       try { localStorage.setItem(LS_SESSION, j.id); } catch (e) { }
       if (j.stats) { S.stats = { messages: j.stats.messages || 0, turns: j.stats.turns || 0, tokens: j.stats.tokens || 0, inputTokens: j.stats.inputTokens || 0, outputTokens: j.stats.outputTokens || 0, contextLimit: j.stats.contextLimit || 0, contextUsed: j.stats.contextUsed || 0 }; }
       replayTranscript(j.transcript || []);
+      renderInspector();
       refreshSessions();
       refreshStats();
       if (!quiet) { toast("已恢复 " + j.messages + " 条消息", "ok"); }
@@ -7575,6 +7577,8 @@ function switchInspectorTab(tab) {
     var tabArt = $("tab-insp-artifact");
     if (tabInfo) { tabInfo.addEventListener("click", function () { switchInspectorTab("info"); }); }
     if (tabArt) { tabArt.addEventListener("click", function () { switchInspectorTab("artifact"); }); }
+    var tabChg = $("tab-insp-changes");
+    if (tabChg) { tabChg.addEventListener("click", function () { switchInspectorTab("changes"); }); }
 
     var selArt = $("artifact-select");
     if (selArt) {

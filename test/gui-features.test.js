@@ -461,7 +461,8 @@ test("stats report context usage so the UI can draw the ring", async () => {
     const cfg = await (await fetch(ctx.address + "/api/config")).json();
     const window = cfg.modelContextWindow ?? cfg.contextWindow;
     assert.equal(stats.contextLimit, Math.round(window * 0.8));
-    assert.ok(stats.contextUsed > 0 && stats.contextUsed < 1);
+    assert.ok(stats.contextUsed > 0, "contextUsed is a token count");
+    assert.ok(stats.contextUsed <= stats.contextLimit, "used never exceeds the limit");
   } finally {
     await stop(ctx);
   }
