@@ -65,3 +65,5 @@ release-notes 命令,commands,could,yes,yes,打印 docs/CHANGELOG.md（已生成
 终端专用命令,commands,skip,yes,no,vim terminal-setup statusline output-style ide，GUI 形态不同
 云账号命令补充,commands,skip,yes,no,usage desktop feedback bug install-github-app
 "自主模式（自动续跑）",agent,must,yes,yes,"config.autoRun：回合上限后自动续跑，上限 10 轮 / 60 分钟预算 / 随时可停；askUserQuestion 屏蔽；CLI /auto 与 GUI /api/config 均可切换"
+"自主模式（自动续跑）,agent,must,yes,yes,config.autoRun：回合上限后自动续跑，10 轮/60 分钟护栏，AskUserQuestion 屏蔽,CLI /auto 与 /api/config 均可切换"
+"变更面板（代码变更审查）,ui,must,yes,yes,右侧栏第三页签：turn/branch 双范围、per-file +N/−N、diff 弹窗；/api/changes 按 2.1.302 numstat 规格"

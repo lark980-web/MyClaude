@@ -130,3 +130,13 @@ MyClaude 已有 **29 个**，Claude 侧提取到 **57 个候选**，确认缺 **
 
 之前按「问题报告」逐条修 bug，但**修 bug ≠ 补功能**。
 正确顺序：**提取规格 → 逐项对照 → 按影响面排序 → 全链路验证**。
+## 2026-10-28 夜间自检补记
+
+- 新增右侧栏「变更」面板（对齐 2.1.302 changes panel 规格：turn/branch、
+  numstat、二进制/未跟踪/500 上限、diff 审查对话框）
+- 自主模式 autoRun：回合上限自动续跑（10 轮/60 分钟护栏）+ /auto 命令 +
+  max_turns 事件与一键继续
+- /api/config POST 补 maxTurns；statsOf.contextUsed 统一为 token 数
+- 修复：/status 丢逗号必崩、会话每轮分裂、resume 磁盘覆盖内存、
+  忙时消息静默丢弃、abort 不达工具子进程、.gitignore 损坏致 ripgrep 全挂
+- 自检矩阵 scripts/self-audit.mjs：对真实 exe 9 场景 9/9 通过
