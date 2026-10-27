@@ -1908,6 +1908,7 @@ const makeTurnUi = (res, key) => {
           id: target.id,
           messages: agent.messages.length,
           source,
+          stats: statsOf(agent),
           transcript: agent.messages
         });
         return;

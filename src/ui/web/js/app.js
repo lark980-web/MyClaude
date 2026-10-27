@@ -2509,7 +2509,6 @@
     if (!body) { return; }
     clear(body);
     renderSessionSection(body);
-    renderProjectSection(body);
     renderRoutingSection(body);
     renderTodoSection(body);
     renderMcpSection(body);
@@ -2530,6 +2529,8 @@
       : (S.stats.tokens ? "≈" + S.stats.tokens : "0");
     kv(dl, "Token", tok, true);
     kv(dl, "目录", c.cwd ? c.cwd.split(/[\\/]/).slice(-1)[0] : "-", true);
+      var ctxU = S.stats.contextUsed || 0; var ctxL = S.stats.contextLimit || 0;
+      kv(dl, "上下文", ctxL ? Math.round(ctxU / 1000) + "k / " + Math.round(ctxL / 1000) + "k" : String(ctxU));
     s.body.appendChild(dl);
     root.appendChild(s.sec);
   }
@@ -3518,6 +3519,7 @@
     postJSON("/api/session", { action: "resume", id: id }).then(function (j) {
       S.sessionKey = j.id;
       try { localStorage.setItem(LS_SESSION, j.id); } catch (e) { }
+      if (j.stats) { S.stats = { messages: j.stats.messages || 0, turns: j.stats.turns || 0, tokens: j.stats.tokens || 0, inputTokens: j.stats.inputTokens || 0, outputTokens: j.stats.outputTokens || 0, contextLimit: j.stats.contextLimit || 0, contextUsed: j.stats.contextUsed || 0 }; }
       replayTranscript(j.transcript || []);
       refreshSessions();
       refreshStats();
