@@ -1,0 +1,25 @@
+import WebSocket from "ws";
+const timeout = (ms) => new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), ms));
+let list = await Promise.race([fetch("http://127.0.0.1:9333/json/list").then(r => r.json()), timeout(8000)]);
+let page = list.find((t) => t.type === "page");
+if (!page) page = await (await fetch("http://127.0.0.1:9333/json/new?about:blank", { method: "PUT" })).json();
+const ws = new WebSocket(page.webSocketDebuggerUrl);
+let id = 0; const pending = new Map();
+ws.on("message", (raw) => { const m = JSON.parse(raw.toString()); if (m.id && pending.has(m.id)) { pending.get(m.id)(m); pending.delete(m.id); } });
+const send = (method, params = {}) => { const i = ++id; const p = new Promise((res, rej) => { pending.set(i, res); setTimeout(() => rej(new Error("eval-timeout")), 12000); }); ws.send(JSON.stringify({ id: i, method, params })); return p; };
+await Promise.race([new Promise((r) => ws.on("open", r)), timeout(8000)]);
+await send("Runtime.enable"); await send("Page.enable");
+await send("Emulation.setDeviceMetricsOverride", { width: 800, height: 712, deviceScaleFactor: 2, mobile: false });
+await send("Page.navigate", { url: "http://127.0.0.1:7788/?modelmenu=1" });
+await new Promise((r) => setTimeout(r, 3500));
+const ev = async (expr) => { const r = await send("Runtime.evaluate", { expression: expr, returnByValue: true }); return r.result?.result?.value ?? ("EXC: " + JSON.stringify(r.result?.exceptionDetails || "").slice(0, 120)); };
+console.log("选厂商:", await ev(`(() => { const btn = [...document.querySelectorAll(".model-vendor-tab")].find(b => b.textContent.includes("DeepSeek")); if (btn) { btn.click(); return "clicked"; } return "not-found"; })()`));
+await new Promise((r) => setTimeout(r, 1000));
+console.log("banner文字约束:", await ev(`(() => { const sub = document.querySelector(".pv-banner-sub"); if (!sub) return "no-sub"; return sub.scrollWidth <= sub.clientWidth + 1 ? "约束OK(" + sub.scrollWidth + "<=" + sub.clientWidth + ")" : "溢出" + sub.scrollWidth + ">" + sub.clientWidth; })()`));
+console.log("缩窄到500...");
+await send("Emulation.setDeviceMetricsOverride", { width: 500, height: 712, deviceScaleFactor: 2, mobile: false });
+await new Promise((r) => setTimeout(r, 1200));
+console.log("重定位:", await ev(`(() => { const menu = document.getElementById("model-menu"); const mr = menu.getBoundingClientRect(); return JSON.stringify({ left: Math.round(mr.left), right: Math.round(mr.right), innerW: window.innerWidth, inside: mr.left >= 0 && mr.right <= window.innerWidth }); })()`));
+const shot = await send("Page.captureScreenshot", { format: "png" });
+if (shot.result?.data) { await import("fs").then(f => f.writeFileSync("E:/WorkSpaces/Test09/MyClaude/shot-modelmenu.png", Buffer.from(shot.result.data, "base64"))); console.log("saved"); }
+ws.close(); process.exit(0);

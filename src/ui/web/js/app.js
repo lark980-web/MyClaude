@@ -8163,7 +8163,7 @@ function switchInspectorTab(tab) {
       if (currentPv) {
         var pvBanner = el("div", "model-vendor-banner");
         var pvLeft = el("div", "pv-banner-left");
-        pvLeft.innerHTML = `<span class="pv-banner-ico">${currentPv.icon}</span> <div><strong>${currentPv.label} 专属模型库</strong><span class="pv-banner-sub">点击下方模型一键启用；也可直接配置此厂商专属 API Key 与服务地址</span></div>`;
+        pvLeft.innerHTML = `<span class="pv-banner-ico">${currentPv.icon}</span> <div class="pv-banner-txt"><strong>${currentPv.label} 专属模型库</strong><span class="pv-banner-sub">点击下方模型一键启用；也可直接配置此厂商专属 API Key 与服务地址</span></div>`;
         pvBanner.appendChild(pvLeft);
 
         var pvCfgBtn = el("button", "pv-banner-btn", "⚙️ 配置此厂商");
