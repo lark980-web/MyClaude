@@ -39,3 +39,6 @@ _testout.txt
 
 # mitmproxy 日志（调试用）
 mitm-logs/
+
+# 用户本机的大文件（不纳入仓库）
+sgzzlb.apk

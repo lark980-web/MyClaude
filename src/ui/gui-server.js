@@ -577,6 +577,13 @@ const makeTurnUi = (res, key) => {
           config.providers = { ...(config.providers || {}), ...body.providers };
           saveConfig({ providers: config.providers });
         }
+      if (body.maxTurns !== undefined) {
+        // The turn cap was previously unreachable from the GUI/HTTP side.
+        // Clamp to a sane band; agents share this config object by reference.
+        const n = Math.max(1, Math.min(2000, Number(body.maxTurns) || 200));
+        config.maxTurns = n;
+        saveConfig({ maxTurns: n });
+      }
       if (body.autoRun !== undefined) {
         // Same flag the CLI /auto command writes; the tools read it through
         // setAutonomous so AskUserQuestion stops stalling the walk.

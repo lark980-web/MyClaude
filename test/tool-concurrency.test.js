@@ -57,11 +57,12 @@ function providerAskingFor(reads, onTurn) {
 }
 
 test("several reads in one turn run concurrently", async () => {
-  // Each read resolves after 250ms. Sequential execution would take ~750ms;
-  // concurrent execution finishes in a little over 250ms. The timing is the
-  // point: nothing else in this test can tell the two apart, because both
-  // produce the same results, only at different speeds.
-  const SLOW = 250;
+  // Deterministic barrier instead of wall-clock sleeps: each read blocks
+  // until all three have STARTED, so "all three in flight" holds by
+  // construction. Wall-clock assertions flaked under full-suite load (the
+  // gap between tool starts could exceed any sleep we picked); the barrier
+  // cannot flake. A watchdog releases a sequential implementation so the
+  // assertion fails with a real message instead of deadlocking.
   const dir = mkdtempSync(join(tmpdir(), "mc-conc-"));
   const files = ["a", "b", "c"].map((n, i) => {
     const p = join(dir, n + ".txt");
@@ -71,34 +72,35 @@ test("several reads in one turn run concurrently", async () => {
 
   let started = 0;
   let maxConcurrent = 0;
+  let release;
+  const gate = new Promise((r) => { release = r; });
   const agent = new Agent({
     provider: providerAskingFor(files, () => {}),
     config: makeConfig(),
     ui: makeUi(),
   });
-  // Make the tool slow so concurrency is observable, without touching Read.
   const { findTool } = await import("../src/tools/index.js");
   const readTool = findTool("Read");
   const originalRun = readTool.run;
   readTool.run = async function (args, ctx) {
     started++;
     maxConcurrent = Math.max(maxConcurrent, started);
-    await sleep(SLOW);
+    if (started === files.length) { release(); }
+    await gate;
     started--;
     return originalRun.call(this, args, ctx);
   };
 
-  const t0 = Date.now();
+  const watchdog = setTimeout(() => release(), 5000);
   try {
     await agent.run("read three files");
   } finally {
+    clearTimeout(watchdog);
     readTool.run = originalRun;
+    release();
   }
-  const elapsed = Date.now() - t0;
 
   assert.equal(maxConcurrent, 3, "all three reads were in flight at once");
-  assert.ok(elapsed < SLOW * 2.2,
-    "three 250ms reads took " + elapsed + "ms, which is sequential");
 });
 
 test("results are recorded in the order the calls were made", async () => {
