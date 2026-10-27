@@ -1,0 +1,22 @@
+import WebSocket from "ws";
+import { writeFileSync } from "fs";
+const CDP = "http://127.0.0.1:9333";
+let list = await (await fetch(CDP + "/json/list")).json();
+let page = list.find((t) => t.type === "page");
+if (!page) page = await (await fetch(CDP + "/json/new?about:blank", { method: "PUT" })).json();
+const ws = new WebSocket(page.webSocketDebuggerUrl);
+let id = 0; const pending = new Map();
+ws.on("message", (raw) => { const m = JSON.parse(raw.toString()); if (m.id && pending.has(m.id)) { pending.get(m.id)(m); pending.delete(m.id); } });
+const send = (method, params = {}) => new Promise((res) => { const i = ++id; pending.set(i, res); ws.send(JSON.stringify({ id: i, method, params })); });
+await new Promise((r) => ws.on("open", r));
+await send("Runtime.enable"); await send("Page.enable");
+await send("Emulation.setDeviceMetricsOverride", { width: 1400, height: 900, deviceScaleFactor: 2, mobile: false });
+await send("Page.navigate", { url: "http://127.0.0.1:7788/" });
+await new Promise((r) => setTimeout(r, 3500));
+const click = `(() => { document.getElementById("app").classList.add("insp-open"); document.getElementById("tab-insp-changes").click(); document.querySelectorAll(".chg-scope-btn")[1].click(); return "ok"; })()`;
+const ev = await send("Runtime.evaluate", { expression: click, returnByValue: true });
+console.log("click:", JSON.stringify(ev.result).slice(0, 120));
+await new Promise((r) => setTimeout(r, 2500));
+const shot = await send("Page.captureScreenshot", { format: "png" });
+if (shot.result && shot.result.data) { writeFileSync("E:/WorkSpaces/Test09/MyClaude/shot-changes.png", Buffer.from(shot.result.data, "base64")); console.log("saved"); } else { console.error("fail", JSON.stringify(shot).slice(0, 200)); }
+ws.close(); process.exit(0);

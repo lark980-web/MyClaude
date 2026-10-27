@@ -504,6 +504,9 @@ export class Agent {
         this.messages.push({ role: "assistant", content: "(interrupted)" });
         return { interrupted: true };
       }
+      // Files this run touched via Edit/Write/MultiEdit — the "Turn" scope of
+      // the changes panel (Claude Code tracks its own tool edits the same way).
+      this.turnFiles = new Set();
       this.turnCount++;
       this.abortController = new AbortController();
 
@@ -646,6 +649,7 @@ export class Agent {
         const { call, tool } = entry;
         let out;
         try {
+          if (["Edit", "Write", "MultiEdit"].includes(call.name) && call.arguments && call.arguments.file_path) { (this.turnFiles || (this.turnFiles = new Set())).add(String(call.arguments.file_path)); }
           out = tool.mcp
             ? await this.mcp.call(tool.mcpToolName || call.name, call.arguments)
             : await tool.run({ ...call.arguments, signal: this.abortController?.signal }, { sessionKey: this.sessionKey });

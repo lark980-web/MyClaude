@@ -1,4 +1,5 @@
 import { createServer } from "node:http";
+import { spawnSync } from "node:child_process";
 import { consoleUi } from "./console-ui.js";
 import { runWithAutoContinue } from "../agent/autorun.js";
 import { setAutonomous } from "../tools/extended.js";
@@ -123,6 +124,60 @@ const running = new Set();
     }
     return saver;
   };
+
+/**
+ * Changed files for the right-panel "变更" tab, mirroring the Claude Code
+ * changes panel (turn scope = files this run edited; branch scope = git diff
+ * HEAD). numstat gives added/removed; name-status gives M/A/D.
+ */
+const gitNumstat = (scope, onlyPaths) => {
+  const paths = Array.isArray(onlyPaths) ? onlyPaths : null;
+  if (scope === "turn" && paths && !paths.length) { return { ok: true, files: [], totalAdded: 0, totalRemoved: 0, reason: "no-turn-files" }; }
+  const numstatArgs = ["diff", "--numstat", "HEAD"];
+  const statusArgs = ["diff", "--name-status", "HEAD"];
+  if (scope === "turn" && paths) { numstatArgs.push("--", ...paths); statusArgs.push("--", ...paths); }
+  const run = (args) => spawnSync("git", args, { cwd, encoding: "utf8", timeout: 5000, windowsHide: true, maxBuffer: 8 * 1024 * 1024 });
+  const r = run(numstatArgs);
+  if (r.error || (r.status !== 0 && r.status !== 1)) {
+    const msg = String(r.stderr || "");
+    if (/not a git repository/i.test(msg)) { return { ok: false, reason: "non-git" }; }
+    return { ok: false, reason: "git-failed", error: msg.slice(0, 200) };
+  }
+  const statusMap = {};
+  for (const line of String(run(statusArgs).stdout || "").split("\n")) {
+    const m = /^([MADRCT])\t(.+)$/.exec(line.trim());
+    if (m) { statusMap[m[2]] = m[1]; }
+  }
+  const files = [];
+  let totalAdded = 0;
+  let totalRemoved = 0;
+  let truncated = false;
+  for (const row of String(r.stdout || "").split("\n")) {
+    const m = /^(\d+|-)\t(\d+|-)\t(.+)$/.exec(row.trim());
+    if (!m) { continue; }
+    if (files.length >= 500) { truncated = true; break; }
+    const binary = m[1] === "-";
+    const added = binary ? 0 : parseInt(m[1], 10);
+    const removed = binary ? 0 : parseInt(m[2], 10);
+    totalAdded += added;
+    totalRemoved += removed;
+    files.push({ path: m[3], added, removed, status: binary ? "binary" : (statusMap[m[3]] || "M") });
+  }
+  // Untracked files (Write created something new): numstat skips them.
+  if (scope === "branch") {
+    const un = run(["ls-files", "--others", "--exclude-standard"]);
+    for (const f of String(un.stdout || "").split("\n").filter(Boolean)) {
+      if (files.length >= 500) { truncated = true; break; }
+      let buf = null;
+      try { buf = readFileSync(join(cwd, f)); } catch {}
+      const isBin = buf ? buf.subarray(0, 8096).includes(0) : false;
+      const lines = isBin || !buf ? 0 : buf.toString("utf8").split("\n").length;
+      if (!isBin) { totalAdded += lines; }
+      files.push({ path: f, added: lines, removed: 0, status: isBin ? "binary" : "A" });
+    }
+  }
+  return { ok: true, files, totalAdded, totalRemoved, truncated };
+};
 
 const agentFor = async (key, ui, sessionSource = "startup") => {
     let agent = sessions.get(key);
@@ -1861,7 +1916,24 @@ const makeTurnUi = (res, key) => {
         return;
       }
 
-      if (path === "/api/session" && req.method === "POST") {
+            /* ---- changes (right-panel "变更", aligned with Claude Code) ---- */
+      if (path === "/api/changes" && req.method === "GET") {
+        const key = url.searchParams.get("sessionKey") || "default";
+        const scope = url.searchParams.get("scope") === "branch" ? "branch" : "turn";
+        const agent = sessions.get(key);
+        const result = gitNumstat(scope, scope === "turn" ? [...((agent && agent.turnFiles) || [])] : null);
+        sendJson(res, 200, result);
+        return;
+      }
+
+      if (path === "/api/changes/diff" && req.method === "GET") {
+        const file = String(url.searchParams.get("path") || "");
+        if (!file) { sendJson(res, 400, { ok: false, error: "path required" }); return; }
+        const r = spawnSync("git", ["diff", "HEAD", "--", file], { cwd, encoding: "utf8", timeout: 5000, windowsHide: true, maxBuffer: 4 * 1024 * 1024 });
+        sendJson(res, 200, { ok: true, diff: String(r.stdout || "").slice(0, 200000) });
+        return;
+      }
+if (path === "/api/session" && req.method === "POST") {
         const body = await readJson(req);
         const target =
           body.action === "resume" && body.id

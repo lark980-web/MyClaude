@@ -5750,68 +5750,6 @@
     if (ta) { ta.focus(); }
   }
 
-  function renderProjectSection(root) {
-    var p = S.project || {};
-    var s = section("项目知识库 (Projects)");
-    var headBar = el("div", "fb-head-bar");
-    headBar.appendChild(el("span", "empty-note", "上传本地文件与常驻上下文"));
-    var editBtn = el("button", "model-action-btn", "上传 / 管理");
-    editBtn.type = "button";
-    editBtn.addEventListener("click", openProjectModal);
-    headBar.appendChild(editBtn);
-    s.body.appendChild(headBar);
-
-    var capBox = el("div", "proj-cap-box");
-    var capTop = el("div", "proj-cap-top");
-    capTop.appendChild(el("span", null, "知识库容量占用"));
-    capTop.appendChild(el("span", "proj-cap-pct", (p.capacityPct || 0) + "% · " + (p.totalTokens || 0) + " tok"));
-    capBox.appendChild(capTop);
-    var bar = el("div", "progress");
-    var fill = el("i");
-    fill.style.width = Math.min(100, Math.max(2, p.capacityPct || 0)) + "%";
-    bar.appendChild(fill);
-    capBox.appendChild(bar);
-    s.body.appendChild(capBox);
-
-    var knowledge = p.knowledge || [];
-    var uploadCount = knowledge.filter(function (k) { return k.source === "upload" || k.source === "snippet"; }).length;
-    var wsCount = knowledge.filter(function (k) { return k.source === "workspace"; }).length;
-
-    var dl = el("dl", "kv");
-    kv(dl, "项目名称", p.name || "当前项目");
-    kv(dl, "本地上传", uploadCount + " 个文件/片段");
-    kv(dl, "工作区关联", wsCount + " 个文件");
-    kv(dl, "项目指令", p.instructions && p.instructions.trim() ? "已配置 (" + p.instructions.trim().length + " 字)" : "未设置");
-    s.body.appendChild(dl);
-
-    if (knowledge.length) {
-      var flist = el("div", "proj-files-list");
-      knowledge.forEach(function (k) {
-        var row = el("div", "proj-file-item" + (k.enabled === false ? " is-disabled" : ""));
-        var left = el("div", "proj-file-left");
-        var srcTag = el("span", "proj-source-tag " + (k.source || "workspace"), k.source === "upload" ? "上传" : (k.source === "snippet" ? "片段" : "工作区"));
-        left.appendChild(srcTag);
-        left.appendChild(el("span", "proj-file-name", k.rel || k.name));
-        row.appendChild(left);
-        var right = el("div", "proj-file-actions");
-        right.appendChild(el("span", "proj-file-meta", (k.lines || 0) + " 行"));
-        var refBtn = el("button", "fb-op-btn", "@引用");
-        refBtn.type = "button";
-        refBtn.title = "将此文件直接加入当前对话输入框附件";
-        refBtn.addEventListener("click", function () {
-          referenceProjectFileInChat(k);
-        });
-        right.appendChild(refBtn);
-        row.appendChild(right);
-        flist.appendChild(row);
-      });
-      s.body.appendChild(flist);
-    } else {
-      s.body.appendChild(el("div", "empty-note", "暂未上传项目文件。点击上方「上传 / 管理」可上传本地代码或文档供 AI 参考。"));
-    }
-
-    root.appendChild(s.sec);
-  }
 
   function isTextProjectFile(file) {
     if (!file || !file.name) { return false; }
@@ -6912,21 +6850,115 @@
     });
   }
 
-  function switchInspectorTab(tab) {
-    S.inspTab = tab === "artifact" ? "artifact" : "info";
+    /**
+   * 变更 tab — aligned with the Claude Code changes panel: turn/branch scope,
+   * per-file +added/-removed, click a file for its diff.
+   */
+  function loadChanges(scope) {
+    S.changesScope = scope === "branch" ? "branch" : "turn";
+    var box = $("changes-body");
+    if (!box) { return; }
+    box.innerHTML = "";
+    var head = el("div", "chg-head");
+    var seg = el("div", "chg-scope-seg");
+    var bTurn = el("button", "chg-scope-btn" + (S.changesScope === "turn" ? " active" : ""), "本轮");
+    var bBranch = el("button", "chg-scope-btn" + (S.changesScope === "branch" ? " active" : ""), "分支");
+    bTurn.type = "button"; bBranch.type = "button";
+    bTurn.addEventListener("click", function () { loadChanges("turn"); });
+    bBranch.addEventListener("click", function () { loadChanges("branch"); });
+    seg.appendChild(bTurn); seg.appendChild(bBranch);
+    head.appendChild(seg);
+    var refresh = el("button", "icon-btn", "↻");
+    refresh.title = "刷新";
+    refresh.addEventListener("click", function () { loadChanges(S.changesScope); });
+    head.appendChild(refresh);
+    box.appendChild(head);
+    var list = el("div", "chg-list");
+    list.appendChild(el("div", "empty-note", "加载中…"));
+    box.appendChild(list);
+    getJSON("/api/changes?sessionKey=" + encodeURIComponent(S.sessionKey || "default") + "&scope=" + S.changesScope).then(function (j) {
+      list.innerHTML = "";
+      if (!j.ok) {
+        list.appendChild(el("div", "empty-note", j.reason === "non-git" ? "当前目录不是 git 仓库" : "无法读取变更：" + (j.error || j.reason || "")));
+        return;
+      }
+      if (j.truncated) { list.appendChild(el("div", "empty-note warn", "文件过多，仅显示前 500 个")); }
+      if (!j.files.length) {
+        list.appendChild(el("div", "empty-note", S.changesScope === "turn" ? "本轮没有文件变更" : "暂无变更"));
+        return;
+      }
+      var sum = el("div", "chg-sum");
+      sum.appendChild(el("span", "chg-add", "+" + j.totalAdded));
+      sum.appendChild(el("span", "chg-del", "−" + j.totalRemoved));
+      list.appendChild(sum);
+      j.files.forEach(function (f) {
+        var row = el("div", "chg-file");
+        row.appendChild(el("span", "chg-path", f.path.split(/[\\/]/).pop()));
+        row.appendChild(el("span", "chg-status st-" + (f.status || "M").toLowerCase(), f.status || "M"));
+        var nums = el("span", "chg-nums");
+        if (f.added) { nums.appendChild(el("span", "chg-add", "+" + f.added)); }
+        if (f.removed) { nums.appendChild(el("span", "chg-del", "−" + f.removed)); }
+        row.appendChild(nums);
+        row.title = f.path;
+        row.addEventListener("click", function () { openChangeDiff(f); });
+        list.appendChild(row);
+      });
+    }).catch(function (e) {
+      list.innerHTML = "";
+      list.appendChild(el("div", "empty-note", "加载失败：" + e.message));
+    });
+  }
+
+  /** Click a changed file: fetch its unified diff and show it in a dialog. */
+  function openChangeDiff(f) {
+    var overlay = el("div", "diff-overlay");
+    var dialog = el("div", "diff-dialog-box");
+    var head = el("div", "diff-dialog-head");
+    head.appendChild(el("span", "diff-dialog-title", f.path));
+    var close = el("button", "icon-btn", "✕");
+    close.addEventListener("click", function () { overlay.remove(); });
+    head.appendChild(close);
+    dialog.appendChild(head);
+    var pre = el("pre", "diff-dialog-body");
+    pre.textContent = "加载中…";
+    dialog.appendChild(pre);
+    overlay.appendChild(dialog);
+    overlay.addEventListener("click", function (ev) { if (ev.target === overlay) { overlay.remove(); } });
+    document.body.appendChild(overlay);
+    getJSON("/api/changes/diff?path=" + encodeURIComponent(f.path)).then(function (j) {
+      var d = String(j.diff || "");
+      if (!d) { pre.textContent = "(无差异内容 — 可能是新文件或二进制)"; return; }
+      pre.innerHTML = "";
+      d.split("\n").forEach(function (line) {
+        var ln = el("div", "diff-line");
+        if (line.indexOf("@@") === 0) { ln.className += " dl-hunk"; }
+        else if (line.indexOf("+") === 0) { ln.className += " dl-add"; }
+        else if (line.indexOf("-") === 0) { ln.className += " dl-del"; }
+        ln.textContent = line || " ";
+        pre.appendChild(ln);
+      });
+    }).catch(function (e) { pre.textContent = "加载失败：" + e.message; });
+  }
+function switchInspectorTab(tab) {
+    S.inspTab = tab === "artifact" ? "artifact" : tab === "changes" ? "changes" : "info";
     var app = $("app");
     var tInfo = $("tab-insp-info");
     var tArt = $("tab-insp-artifact");
     var bInfo = $("insp-body");
     var bArt = $("artifact-pane");
+    var bChg = $("changes-body");
+    var tChg = $("tab-insp-changes");
     if (tInfo) { tInfo.classList.toggle("active", S.inspTab === "info"); }
     if (tArt) { tArt.classList.toggle("active", S.inspTab === "artifact"); }
     if (bInfo) { bInfo.hidden = S.inspTab !== "info"; }
     if (bArt) { bArt.hidden = S.inspTab !== "artifact"; }
+    if (bChg) { bChg.hidden = S.inspTab !== "changes"; }
+    if (tChg) { tChg.classList.toggle("active", S.inspTab === "changes"); }
     if (app) {
       app.classList.toggle("artifact-open", app.classList.contains("insp-open") && S.inspTab === "artifact");
     }
     if (S.inspTab === "artifact") { renderArtifactStage(); }
+    else if (S.inspTab === "changes") { loadChanges(S.changesScope || "turn"); }
     else { renderInspector(); }
   }
 
@@ -7974,11 +8006,22 @@
   /** 模型菜单的搜索关键词。 */
   var modelQuery = "";
 
+  // 供应商分类导航项：菜单骨架与正文重画共用
+  var provItems = [
+    { id: "all", label: "全部厂商", icon: "🌐" },
+    { id: "anthropic", label: "Claude 官方", icon: "✳", match: /claude|anthropic/i },
+    { id: "deepseek", label: "DeepSeek", icon: "🐋", match: /deepseek/i },
+    { id: "openai", label: "OpenAI", icon: "🟢", match: /gpt|o[13]|openai/i },
+    { id: "gemini", label: "Gemini", icon: "✨", match: /gemini|google/i },
+    { id: "chinese", label: "智谱/通义/国产", icon: "🟣", match: /glm|zhipu|qwen|tongyi|kimi|moonshot|sensenova|minimax|step|hy3|hy4/i },
+    { id: "gateway", label: "聚合网关", icon: "⚡", match: /group\/|opencode-zen|trae|qoder|beatapi|amd\//i },
+    { id: "ollama", label: "本地 Ollama", icon: "🦙", match: /ollama|llama|localhost|11434/i }
+  ];
+
   function drawModelMenu() {
     var menu = $("model-menu");
     if (!menu) { return; }
     clear(menu);
-    var cur = (S.config && S.config.model) || "";
 
     var head = el("div", "model-menu-head");
     var titleWrap = el("div", "model-menu-title");
@@ -8049,25 +8092,13 @@
     search.value = modelQuery;
     search.addEventListener("input", function () {
       modelQuery = search.value;
-      drawModelMenu();
-      var again = menu.querySelector(".model-search");
-      if (again) { again.focus(); again.setSelectionRange(again.value.length, again.value.length); }
+      redrawModelMenuBody();
     });
     search.addEventListener("keydown", function (e) { e.stopPropagation(); });
     menu.appendChild(search);
 
     // 供应商分类导航栏（全部 / Claude 官方 / DeepSeek / OpenAI / Gemini / 智谱通义国产 / 聚合网关 / 本地 Ollama）
     var provFilterTabs = el("div", "model-vendor-tabs");
-    var provItems = [
-      { id: "all", label: "全部厂商", icon: "🌐" },
-      { id: "anthropic", label: "Claude 官方", icon: "✳", match: /claude|anthropic/i },
-      { id: "deepseek", label: "DeepSeek", icon: "🐋", match: /deepseek/i },
-      { id: "openai", label: "OpenAI", icon: "🟢", match: /gpt|o[13]|openai/i },
-      { id: "gemini", label: "Gemini", icon: "✨", match: /gemini|google/i },
-      { id: "chinese", label: "智谱/通义/国产", icon: "🟣", match: /glm|zhipu|qwen|tongyi|kimi|moonshot|sensenova|minimax|step|hy3|hy4/i },
-      { id: "gateway", label: "聚合网关", icon: "⚡", match: /group\/|opencode-zen|trae|qoder|beatapi|amd\//i },
-      { id: "ollama", label: "本地 Ollama", icon: "🦙", match: /ollama|llama|localhost|11434/i }
-    ];
     provItems.forEach(function (pv) {
       var pb = el("button", "model-vendor-tab" + (modelProviderFilter === pv.id ? " active" : ""));
       pb.type = "button";
@@ -8077,12 +8108,50 @@
       pb.appendChild(lbl);
       pb.addEventListener("click", function (e) {
         e.stopPropagation();
+        if (modelProviderFilter === pv.id) { return; }
         modelProviderFilter = pv.id;
-        drawModelMenu();
+        Array.prototype.forEach.call(provFilterTabs.children, function (t) {
+          t.classList.toggle("active", t === pb);
+        });
+        redrawModelMenuBody();
       });
       provFilterTabs.appendChild(pb);
     });
     menu.appendChild(provFilterTabs);
+
+    // 横幅、能力标签与模型列表都画进 body 区：搜索与筛选只重画这一块，
+    // 菜单骨架（标题/搜索框/厂商栏/底部）保持不动，重画不再整树重建。
+    var menuBody = el("div", "model-menu-body");
+    menu.appendChild(menuBody);
+    drawModelMenuBody(menuBody);
+
+    // 底部常驻配置模型与供应商快捷入口
+    var menuFoot = el("div", "model-menu-foot");
+    var cfgBtn = el("button", "model-menu-cfg-btn");
+    cfgBtn.type = "button";
+    cfgBtn.innerHTML = `<span>⚙️ 配置供应商与 API Key（添加/修改 Claude、DeepSeek、OpenAI、本地模型）</span> <span class="cfg-arrow">→</span>`;
+    cfgBtn.addEventListener("click", function (e) {
+      e.stopPropagation();
+      closeModelMenuSmoothly();
+      openModelConfigModal("providers");
+    });
+    menuFoot.appendChild(cfgBtn);
+    menu.appendChild(menuFoot);
+  }
+
+  /** 重画模型菜单正文：骨架不动，只换横幅/能力标签/列表。 */
+  function redrawModelMenuBody() {
+    var menu = $("model-menu");
+    if (!menu || menu.hidden) { return; }
+    var body = menu.querySelector(".model-menu-body");
+    if (!body) { drawModelMenu(); return; }
+    clear(body);
+    drawModelMenuBody(body);
+  }
+
+  function drawModelMenuBody(container) {
+    var menu = $("model-menu");
+    var cur = (S.config && S.config.model) || "";
 
     // 选中厂商时的专属提示与快速配置横幅
     if (modelProviderFilter !== "all") {
@@ -8104,7 +8173,7 @@
           renderConfigModalContent();
         });
         pvBanner.appendChild(pvCfgBtn);
-        menu.appendChild(pvBanner);
+        container.appendChild(pvBanner);
       }
     }
 
@@ -8132,12 +8201,16 @@
       b.appendChild(el("span", "model-cat-count", String(catCounts[tab.id] || 0)));
       b.addEventListener("click", function (e) {
         e.stopPropagation();
+        if (modelCategoryFilter === tab.id) { return; }
         modelCategoryFilter = tab.id;
-        drawModelMenu();
+        Array.prototype.forEach.call(tabs.children, function (t) {
+          t.classList.toggle("active", t === b);
+        });
+        redrawModelMenuBody();
       });
       tabs.appendChild(b);
     });
-    menu.appendChild(tabs);
+    container.appendChild(tabs);
 
     var entries = allEntries.slice();
     if (modelProviderFilter !== "all") {
@@ -8245,14 +8318,14 @@
     }
 
     if (!entries.length) {
-      menu.appendChild(el("div", "empty-note", "没有匹配的模型"));
+      container.appendChild(el("div", "empty-note", "没有匹配的模型"));
     } else if (modelSortFast) {
       var sorted = entries.slice().sort(function (a, b) {
         return modelLatencyOf(a).ms - modelLatencyOf(b).ms;
       });
       var fastBox = el("div", "model-menu-list");
       fastBox.appendChild(buildGroupSection("speed-all", "按响应速度排序 · Fastest First", sorted));
-      menu.appendChild(fastBox);
+      container.appendChild(fastBox);
     } else if (modelGroupMode === "capability") {
       // 按模型主要能力分组：编程与推理 (Coding) / 通用对话 (General Purpose) / 长上下文与视觉 (Large Context)
       var capMap = {};
@@ -8267,7 +8340,7 @@
         if (!list || !list.length) { return; }
         capBox.appendChild(buildGroupSection("cap-" + cat.id, cat.label, list));
       });
-      menu.appendChild(capBox);
+      container.appendChild(capBox);
     } else {
       // 按供应商分栏，供应商来自 baseUrl（后端判定），模型名只作后备；每组内更快的模型优先排列。
       var groups = {};
@@ -8288,21 +8361,8 @@
       keys.forEach(function (v) {
         box.appendChild(buildGroupSection("vendor-" + v, v, groups[v]));
       });
-      menu.appendChild(box);
+      container.appendChild(box);
     }
-
-    // 底部常驻配置模型与供应商快捷入口
-    var menuFoot = el("div", "model-menu-foot");
-    var cfgBtn = el("button", "model-menu-cfg-btn");
-    cfgBtn.type = "button";
-    cfgBtn.innerHTML = `<span>⚙️ 配置供应商与 API Key（添加/修改 Claude、DeepSeek、OpenAI、本地模型）</span> <span class="cfg-arrow">→</span>`;
-    cfgBtn.addEventListener("click", function (e) {
-      e.stopPropagation();
-      closeModelMenuSmoothly();
-      openModelConfigModal("providers");
-    });
-    menuFoot.appendChild(cfgBtn);
-    menu.appendChild(menuFoot);
   }
 
 
@@ -8938,6 +8998,7 @@
     bindEvents();
     if (params.get("insp") === "1") { $("app").classList.add("insp-open"); }
     if (params.get("settings") === "1") { setTimeout(openSettings, 400); }
+    if (params.get("insptab") === "changes") { S.changesScope = params.get("chgscope") === "branch" ? "branch" : "turn"; setTimeout(function () { var ap = $("app"); if (ap) { ap.classList.add("insp-open"); } switchInspectorTab("changes"); }, 500); }
     if (params.get("commands") === "1") { setTimeout(openCommandsModal, 500); }
     if (params.get("slash")) { var sq = params.get("slash"); setTimeout(function () { updateSlashMenu("/" + (sq === "1" ? "" : sq)); }, 500); }
     if (params.get("modelmenu") === "1") { setTimeout(toggleModelMenu, 500); }

@@ -1180,6 +1180,10 @@ pre.code.wrap { white-space: pre-wrap; overflow-wrap: anywhere; }
 .model-menu[hidden] {
   display: none !important;
 }
+.model-menu-body {
+  /* 仅作正文容器：搜索/筛选重画只替换这一块，骨架不动 */
+  display: contents;
+}
 .model-menu-list {
   overflow-y: auto;
   max-height: 380px;
@@ -1195,6 +1199,7 @@ pre.code.wrap { white-space: pre-wrap; overflow-wrap: anywhere; }
   font-size: 12px;
   color: var(--fg-4);
   font-weight: 500;
+  flex-shrink: 0;
 }
 .model-menu-title {
   display: inline-flex;
@@ -2285,10 +2290,11 @@ body.no-motion *, body.no-motion *::before, body.no-motion *::after { animation:
   margin: 0 8px 6px;
   padding-bottom: 4px;
   border-bottom: 1px solid var(--line);
-  overflow-x: auto;
-  scrollbar-width: none;
+  /* 同 .model-vendor-tabs：换行代替横滚；flex-shrink:0 防止菜单超高时
+     这行被压扁（overflow 非 visible 的 flex 项最小高度为 0） */
+  flex-wrap: wrap;
+  flex-shrink: 0;
 }
-.model-cat-tabs::-webkit-scrollbar { display: none; }
 .model-cat-tab {
   flex: none;
   display: inline-flex;
@@ -2363,6 +2369,7 @@ body.no-motion *, body.no-motion *::before, body.no-motion *::after { animation:
   font: 400 12.5px/1.4 var(--sans);
   outline: none;
   transition: border-color 160ms var(--ease), background 160ms var(--ease);
+  flex-shrink: 0;
 }
 .model-search::placeholder { color: var(--fg-4); }
 .model-search:focus { border-color: var(--accent); background: var(--bg); }
@@ -2816,6 +2823,8 @@ body.no-motion *, body.no-motion *::before, body.no-motion *::after { animation:
   background: var(--panel);
   text-align: left;
   transition: border-color var(--t) var(--ease), background var(--t) var(--ease);
+  /* 同 .wmc-sub：nowrap 的 min-content 是整行文本，grid/flex 项必须允许收缩到 0 */
+  min-width: 0;
 }
 .welcome-prompt-item:hover {
   border-color: var(--line-strong);
@@ -3090,20 +3099,6 @@ body.no-motion *, body.no-motion *::before, body.no-motion *::after { animation:
   to {
     opacity: 1;
     transform: scale(1);
-  }
-}
-
-.model-menu-list {
-  animation: modelListFade 160ms var(--ease-out) both;
-}
-@keyframes modelListFade {
-  from {
-    opacity: 0.45;
-    transform: translateY(3px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
   }
 }
 
@@ -5265,9 +5260,11 @@ body.no-motion *, body.no-motion *::before, body.no-motion *::after { animation:
   gap: 4px;
   padding: 6px 12px;
   border-bottom: 1px solid var(--line);
-  overflow-x: auto;
+  /* 标签换行而非横向滚动：菜单只有 ~490px 宽，8 个标签需 838px，
+     横滚 + 隐藏滚动条会让后半标签（智谱/聚合网关/本地 Ollama）不可达 */
+  flex-wrap: wrap;
+  flex-shrink: 0;
   white-space: nowrap;
-  scrollbar-width: none;
   background: var(--panel-2);
 }
 
@@ -5313,6 +5310,7 @@ body.no-motion *, body.no-motion *::before, body.no-motion *::after { animation:
   padding: 8px 10px;
   border-top: 1px solid var(--line);
   background: var(--panel-2);
+  flex-shrink: 0;
 }
 
 .model-menu-cfg-btn {
@@ -5353,6 +5351,10 @@ body.no-motion *, body.no-motion *::before, body.no-motion *::after { animation:
   text-align: center;
   padding: 2.5rem 1rem 1.5rem;
   max-width: 720px;
+  /* flex 子项默认 min-width:auto，欢迎屏里的长文本（接口地址等）会把它按
+     max-content 撑到几百像素，进而撑开 .stream-inner 导致横向滚动条 */
+  width: 100%;
+  min-width: 0;
   margin: 0 auto;
 }
 
@@ -5450,6 +5452,7 @@ body.no-motion *, body.no-motion *::before, body.no-motion *::after { animation:
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.04);
   margin-bottom: 1.75rem;
   text-align: left;
+  min-width: 0;
 }
 
 .wmc-left {
@@ -5529,6 +5532,8 @@ body.no-motion *, body.no-motion *::before, body.no-motion *::after { animation:
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  /* nowrap 会让 min-content 宽度等于整行文本，必须允许收缩到 0 才不撑破父级 */
+  min-width: 0;
 }
 
 .topbar-cfg-badge {
@@ -5560,6 +5565,13 @@ body.no-motion *, body.no-motion *::before, body.no-motion *::after { animation:
   align-items: center;
   gap: 8px;
   flex-shrink: 0;
+}
+
+/* 窄屏：卡片纵向堆叠，按钮换行并允许收缩，避免 .wmc-actions 撑出卡片 */
+@media (max-width: 480px) {
+  .welcome-model-card { flex-direction: column; align-items: stretch; }
+  .wmc-actions { flex-wrap: wrap; }
+  .wmc-btn { flex: 1 1 auto; min-width: 0; }
 }
 
 .wmc-btn {
@@ -5636,18 +5648,23 @@ body.no-motion *, body.no-motion *::before, body.no-motion *::after { animation:
   display: flex;
   flex-direction: column;
   gap: 4px;
+  min-width: 0;
 }
 
 .sug-title {
   font-size: 13.5px;
   font-weight: 600;
   color: var(--fg);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .sug-desc {
   font-size: 12px;
   color: var(--fg-3);
   line-height: 1.45;
+  min-width: 0;
 }
 
 /* =============================================================================
@@ -6257,3 +6274,66 @@ body.no-motion *, body.no-motion *::before, body.no-motion *::after { animation:
   transition: background var(--t) var(--ease), color var(--t) var(--ease);
 }
 .ask-args-toggle:hover { background: var(--hover); color: var(--fg); }
+
+/* ---------------- 变更面板（对齐 Claude Code changes panel） ---------------- */
+.chg-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 12px; border-bottom: 1px solid var(--line);
+  position: sticky; top: 0; background: var(--panel); z-index: 1;
+}
+.chg-scope-seg { display: inline-flex; border: 1px solid var(--line-strong); border-radius: var(--r-sm); overflow: hidden; }
+.chg-scope-btn {
+  padding: 4px 14px; font-size: 12px; border: 0; cursor: pointer;
+  background: transparent; color: var(--fg-3); font-family: inherit;
+}
+.chg-scope-btn + .chg-scope-btn { border-left: 1px solid var(--line); }
+.chg-scope-btn.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.chg-list { padding: 6px 8px 16px; }
+.chg-sum {
+  display: flex; gap: 10px; padding: 8px 10px; font-size: 12px; font-weight: 600;
+  font-variant-numeric: tabular-nums; border-bottom: 1px solid var(--line); margin-bottom: 4px;
+}
+.chg-add { color: var(--good); }
+.chg-del { color: var(--crit); }
+.chg-file {
+  display: flex; align-items: center; gap: 8px; padding: 7px 10px;
+  border-radius: var(--r-sm); cursor: pointer; font-size: 12.5px;
+}
+.chg-file:hover { background: var(--hover); }
+.chg-file.active { background: var(--active); }
+.chg-path { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-2); font-family: var(--mono, monospace); }
+.chg-status {
+  font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: var(--r-full);
+  background: var(--panel-3); color: var(--fg-3); letter-spacing: 0.04em;
+}
+.chg-status.st-a { background: #4d8a4a1a; color: var(--good); }
+.chg-status.st-d { background: #c2412d1a; color: var(--crit); }
+.chg-status.st-binary { background: var(--panel-3); color: var(--fg-4); }
+.chg-nums { display: flex; gap: 8px; font-variant-numeric: tabular-nums; font-size: 11.5px; font-weight: 600; }
+.diff-overlay {
+  position: fixed; inset: 0; background: #1f1e1d59; backdrop-filter: blur(2px); animation: fade 160ms var(--ease) both; z-index: 100;
+  display: flex; align-items: center; justify-content: center; padding: 32px;
+}
+[data-theme="dark"] .diff-overlay { background: #0000008c; }
+.diff-dialog-box {
+  background: var(--panel); border: 1px solid var(--line-strong);
+  border-radius: var(--r-lg); width: min(860px, 92vw); max-height: 84vh;
+  display: flex; flex-direction: column; overflow: hidden;
+  box-shadow: 0 24px 64px #1f1e1d33;
+}
+.diff-dialog-head {
+  display: flex; align-items: center; gap: 10px; padding: 10px 14px;
+  border-bottom: 1px solid var(--line); background: var(--code-head);
+}
+.diff-dialog-title {
+  flex: 1; font-size: 12.5px; font-weight: 600; color: var(--fg-2);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left;
+}
+.diff-dialog-body {
+  margin: 0; overflow: auto; padding: 8px 0; background: var(--code-bg);
+  font-family: var(--mono, monospace); font-size: 12px; line-height: 1.55;
+}
+.diff-line { padding: 0 14px; white-space: pre-wrap; word-break: break-all; color: var(--fg-2); }
+.diff-line.dl-hunk { color: var(--info); background: #3b6fb014; padding: 2px 14px; margin: 4px 0; }
+.diff-line.dl-add { color: var(--good); background: #4d8a4a12; }
+.diff-line.dl-del { color: var(--crit); background: #c2412d12; }
