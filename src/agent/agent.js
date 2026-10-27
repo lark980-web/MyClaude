@@ -648,7 +648,7 @@ export class Agent {
         try {
           out = tool.mcp
             ? await this.mcp.call(tool.mcpToolName || call.name, call.arguments)
-            : await tool.run(call.arguments, { sessionKey: this.sessionKey });
+            : await tool.run({ ...call.arguments, signal: this.abortController?.signal }, { sessionKey: this.sessionKey });
           if (!out || typeof out !== "object") out = { ok: true, content: String(out ?? "") };
         } catch (e) {
           out = { ok: false, content: `tool threw: ${e.message}` };

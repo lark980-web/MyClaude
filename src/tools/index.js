@@ -683,7 +683,7 @@ export const bashTool = {
     },
     required: ["command"],
   },
-  async run({ command, cwd = process.cwd(), timeout_ms = 120000, run_in_background = false }) {
+  async run({ command, cwd = process.cwd(), timeout_ms = 120000, run_in_background = false, signal } = {}) {
     if (run_in_background) {
       const started = await startBackground({ command, cwd, timeout_ms: Math.max(timeout_ms, 60000) });
       if (!started.ok) return err(`failed to start background task: ${started.status}`);
@@ -707,6 +707,22 @@ export const bashTool = {
       const shell = isWin ? "cmd.exe" : "/bin/sh";
       const args = isWin ? ["/d", "/s", "/c", command] : ["-c", command];
       const child = spawn(shell, args, { cwd, windowsHide: true, windowsVerbatimArguments: isWin });
+      // A user stop (or the per-turn abort) must reach running tools: without
+      // this listener the child kept running to completion, so the stop button
+      // looked dead while a long command was in flight.
+      const killChild = () => {
+        try {
+          if (process.platform === "win32" && child.pid) {
+            spawn("taskkill", ["/pid", String(child.pid), "/T", "/F"], { windowsHide: true, stdio: "ignore" });
+          } else {
+            child.kill("SIGKILL");
+          }
+        } catch {}
+      };
+      if (signal) {
+        if (signal.aborted) killChild();
+        else signal.addEventListener("abort", killChild, { once: true });
+      }
       let stdout = "";
       let stderr = "";
       let timedOut = false;
