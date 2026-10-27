@@ -34,7 +34,7 @@ const PROBES = [
   "/cost", "/doctor", "/init", "/export", "/effort", "/fast", "/status",
   "/memory", "/loop", "/plan", "/help", "/model", "/provider", "/mode",
   "/mcp", "/tools", "/permissions", "/stats", "/config", "/models",
-  "/save", "/session", "/commands", "/clear", "/todos", "/context",
+  "/save", "/session", "/commands", "/clear", "/auto", "/todos", "/context",
   "/skill", "/release-notes", "/add-dir", "/agents", "/exit",
 ];
 
