@@ -1759,6 +1759,23 @@ const makeTurnUi = (res, key) => {
         sse(res, { type: "stats", ...statsOf(agent) });
         sse(res, { type: "mode", permissionMode: agent.mode ?? config.permissionMode });
         if (agent.routingStatus) sse(res, { type: "routing", ...agent.routingStatus() });
+        // Re-key the agent under the id the browser is about to adopt.
+        // The frontend takes the id from this event and sends it as
+        // sessionKey next time; without the migration that next turn hit a
+        // fresh empty agent and the earlier history looked lost.
+        // Re-key both the agent AND its saver under the id the browser is
+        // about to adopt. The frontend takes the id from the event below and
+        // sends it as sessionKey next turn; without this the next turn built
+        // a fresh agent (empty history) and a fresh saver (new id), so the
+        // conversation forked and the earlier work looked lost.
+        if (saver.id && saver.id !== key && !sessions.has(saver.id)) {
+          sessions.set(saver.id, agent);
+          savers.set(saver.id, saver);
+          if (!running.has(key)) {
+            sessions.delete(key);
+            savers.delete(key);
+          }
+        }
         sse(res, { type: "session", id: saver.id, file: saver.file ?? null });
         sse(res, { type: "done" });
         console.log("[" + key + "] 完成 — " + agent.messages.length + " 消息 / " + agent.turnCount + " 回合 / 输入 " + (agent.totalInputTokens || 0) + " / 输出 " + (agent.totalOutputTokens || 0) + " tokens");
@@ -1855,15 +1872,26 @@ const makeTurnUi = (res, key) => {
         const wanted = keyOf(body);
         const key = wanted === target.id ? wanted : target.id;
         const agent = await agentFor(key, consoleUi(makeUi({ write: () => {}, writableEnded: true }), key));
-        agent.messages = target.messages || [];
-        agent.turnCount = target.turnCount || 0;
+        // The live agent is the source of truth when it is ahead of the file.
+        // Auto-save is throttled, so during a run the file trails by a whole
+        // turn; overwriting the live agent with it is what made a refresh
+        // look like the task had vanished. Keep the longer history.
+        const liveCount = Array.isArray(agent.messages) ? agent.messages.length : 0;
+        const diskCount = Array.isArray(target.messages) ? target.messages.length : 0;
+        const source = liveCount > diskCount ? "memory" : "disk";
+        if (source === "disk") {
+          agent.messages = target.messages || [];
+          agent.turnCount = target.turnCount || 0;
+        }
         const saver = saverFor(key, agent);
                 // archive: false — the conversation is already on disk under this id;
         // writing it once more under the saver's old id is what duplicated it.
         saver.rotate(target.id, { archive: false });
         // The old key no longer owns this conversation: drop its agent and saver so
         // nothing else keeps writing on its behalf.
-        if (wanted !== key) {
+        // Never pull the rug out from under a running turn: deleting its
+        // agent mid-flight leaves the loop writing into an orphaned object.
+        if (wanted !== key && !running.has(key)) {
           savers.get(wanted)?.discard?.() ?? savers.get(wanted)?.dispose?.();
           savers.delete(wanted);
           sessions.delete(wanted);
@@ -1872,6 +1900,7 @@ const makeTurnUi = (res, key) => {
           ok: true,
           id: target.id,
           messages: agent.messages.length,
+          source,
           transcript: agent.messages
         });
         return;

@@ -447,7 +447,9 @@
   }
 
   function openInlineUserEditor(wrap, bubble, renderUserActions) {
-    if (S.busy) { toast("请等待当前回复结束", "warn"); return; }
+    // A quiet restore runs right after boot: refusing it because a turn is
+    // still finishing is what left the welcome screen up after a refresh.
+    if (S.busy && !quiet) { toast("请等待当前回复结束", "warn"); return; }
     if (wrap.querySelector(".msg-edit-box")) { return; }
     bubble.hidden = true;
     var box = el("div", "msg-edit-box");
@@ -3492,7 +3494,11 @@
       refreshSessions();
       refreshStats();
       if (!quiet) { toast("已恢复 " + j.messages + " 条消息", "ok"); }
-    }).catch(function (e) { toast("恢复失败：" + e.message, "err"); });
+    }).catch(function (e) {
+      // A silent failure here is the "my conversation disappeared" report:
+      // the user has to know the restore did not happen.
+      addNotice("恢复会话失败：" + e.message, "err");
+    });
   }
 
   function deleteSession(id) {
