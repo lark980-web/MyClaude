@@ -1,4 +1,5 @@
 import { createServer } from "node:http";
+import { consoleUi } from "./console-ui.js";
 import { runWithAutoContinue } from "../agent/autorun.js";
 import { setAutonomous } from "../tools/extended.js";
 import { readFileSync, readdirSync, statSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
@@ -245,7 +246,7 @@ function buildConfirmDiff(name, args) {
   });
 
   /** Per-turn UI whose todo events mirror the TodoWrite list. */
-  const makeTurnUi = (res, key) => {
+const makeTurnUi = (res, key) => {
     const base = makeUi(res);
     return {
       ...base,
@@ -1725,7 +1726,7 @@ function buildConfirmDiff(name, args) {
         });
         res.flushHeaders?.();
 
-        const ui = makeTurnUi(res, key);
+        const ui = consoleUi(makeTurnUi(res, key), key);
         const agent = await agentFor(key, ui);
         const saver = saverFor(key, agent);
 
@@ -1760,6 +1761,7 @@ function buildConfirmDiff(name, args) {
         if (agent.routingStatus) sse(res, { type: "routing", ...agent.routingStatus() });
         sse(res, { type: "session", id: saver.id, file: saver.file ?? null });
         sse(res, { type: "done" });
+        console.log("[" + key + "] 完成 — " + agent.messages.length + " 消息 / " + agent.turnCount + " 回合 / 输入 " + (agent.totalInputTokens || 0) + " / 输出 " + (agent.totalOutputTokens || 0) + " tokens");
         res.end();
         } finally {
           // Free the slot no matter how the run ended: error, interrupt, done.
@@ -1852,7 +1854,7 @@ function buildConfirmDiff(name, args) {
         // two entries in the sidebar.
         const wanted = keyOf(body);
         const key = wanted === target.id ? wanted : target.id;
-        const agent = await agentFor(key, makeUi({ write: () => {}, writableEnded: true }));
+        const agent = await agentFor(key, consoleUi(makeUi({ write: () => {}, writableEnded: true }), key));
         agent.messages = target.messages || [];
         agent.turnCount = target.turnCount || 0;
         const saver = saverFor(key, agent);
