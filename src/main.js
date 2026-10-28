@@ -1175,7 +1175,13 @@ async function main() {
 
   if (opts.gui) {
     const { startGui } = await import("./ui/gui-server.js");
-    const { address } = await startGui({ config, port: opts.port, open: !opts.noOpen });
+    let address;
+    try {
+      ({ address } = await startGui({ config, port: opts.port, open: !opts.noOpen }));
+    } catch (e) {
+      console.error(String((e && e.message) || e));
+      process.exit(1);
+    }
     console.log(`MyClaude GUI running at ${address}`);
     console.log("Press Ctrl+C to stop.");
     await new Promise(() => {});

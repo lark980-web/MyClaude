@@ -23,7 +23,8 @@ import {
   loadSession,
   saveSession,
   deleteSession,
-  pruneSessions
+  pruneSessions,
+  SESSIONS_DIR,
 } from "../session.js";
 import { loadGuiAssets } from "./assets.js";
 import { loadCommands, findCommand, expandCommand } from "../commands.js";
@@ -82,6 +83,24 @@ function readJson(req) {
 }
 
 export async function startGui({ config: initialConfig, port = 7788, open = true, cwd = process.cwd() } = {}) {
+  // Single instance per data dir: two GUIs writing one session store fork
+  // and clobber each other's history — observed live as "my task vanished
+  // again" when a dev server and the exe shared ~/.myclaude.
+  const lockPath = join(dirname(SESSIONS_DIR), "gui.lock");
+  let runningElsewhere = null;
+  if (existsSync(lockPath)) {
+    try {
+      const prev = JSON.parse(readFileSync(lockPath, "utf8"));
+      if (prev.pid && prev.pid !== process.pid) {
+        try { process.kill(prev.pid, 0); runningElsewhere = prev; } catch { /* dead pid = stale lock */ }
+      }
+    } catch { /* corrupt lock = stale */ }
+  }
+  if (runningElsewhere) {
+    throw new Error(`MyClaude GUI 已在运行（pid ${runningElsewhere.pid}，端口 ${runningElsewhere.port}）。两个实例会同时写同一份会话数据——请先关闭旧实例，或直接使用它的页面。`);
+  }
+  writeFileSync(lockPath, JSON.stringify({ pid: process.pid, port, at: Date.now() }));
+  process.once("exit", () => { try { unlinkSync(lockPath); } catch {} });
   const config = { ...initialConfig };
   // The tools must know about autonomous runs from the first request.
   setAutonomous(config.autoRun);
