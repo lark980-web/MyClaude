@@ -114,3 +114,5 @@ MyClaude 41+ 命令 vs Claude Code：除生态专属 8 项与待环境 2 项
 
 - ✅ --allowed-tools/--disallowed-tools CLI 旗标实测：disallow Read 后
   工具返回 permission denied by user（模型确认被拒），无旗标对照组成功读取
+
+- ✅ --append-system-prompt 实测：注入指令（末尾加 BANANA42）→ 回答遵守
