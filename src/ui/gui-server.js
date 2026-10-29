@@ -407,7 +407,7 @@ const statsOf = (agent) => {
       inputTokens: agent ? agent.totalInputTokens || 0 : 0,
       outputTokens: agent ? agent.totalOutputTokens || 0 : 0,
       systemTokens: agent ? Math.round(segLen(agent.systemPrompt || "") / 2.5) : 0,
-      historyTokens: agent ? Math.round((approxTokens(agent) - segLen(agent.systemPrompt || "") / 2.5)) : 0,
+      historyTokens: agent ? Math.max(0, approxTokens(agent)) : 0, // approxTokens 只算消息，已是历史估算
       contextLimit: limit,
       contextUsed: limit ? used : 0
     };
