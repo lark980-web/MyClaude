@@ -74,3 +74,10 @@ MyClaude 41+ 命令 vs Claude Code：除生态专属 8 项与待环境 2 项
 （/statusline /vim）外，**命令面全覆盖**。含 MyClaude 扩展：/provider /base
 /key /fast /dream /loop /branch /title /save /attach /vision（本地多供应商
 场景的合理超集）。
+
+## 测试环境限制记录（2026-10-30 03:55）
+
+- 单文件全过：subagent-parallel(0.25s) disconnect-abort(2s) midrun-flush(7.5s)
+  output-style session-hooks double-escape changes-api bash-timeout-promote
+- 组合跑会超时：node --test 并行多文件时同时 spawn 多个 exe，机械盘 IO
+  争用（用户 GUI+AI 会话常驻加剧）。非产品问题，负载低时再补全量。
