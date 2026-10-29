@@ -64,3 +64,6 @@ Esc+Esc 的 GUI 等价物（右栏消息编辑）。
 - ✅ @ 文件引用补全：at-menu + btn-at + closeAtMenu 全链路在位
 
 - ✅ Hooks 生命周期实测：SessionStart 以 Claude 同款 schema（matcher 包 hooks 数组）写入 config 后，真实 exe 启动即触发（标记文件落地）
+
+- ✅ e2e 全链路实测：真实消息 → 工具调用（Read）→ 流式回答（9.2s），
+  事件流完整（reasoning/tool/stats/session/done）；顺带修复 historyTokens 负数
