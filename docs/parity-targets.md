@@ -87,3 +87,7 @@ MyClaude 41+ 命令 vs Claude Code：除生态专属 8 项与待环境 2 项
 
 - ✅ plan 模式只读实测：plan 下要求写文件 → 文件未被创建（双层防护：
   系统提示注入 + PLAN_MODE_BLOCKED 拒绝名单；只读工具放行；ExitPlanMode 审批流）
+
+- ✅ 权限与视觉语义：permission-modes（acceptEdits 批准编辑仍问其他）+
+  permission-auto（auto 承诺/破坏性 opt-in/fullAccess/bypass）+ attachments
+  （图片 base64/mime/超大拒绝）39 项全过
