@@ -114,9 +114,12 @@ function parseArgs(argv) {
     version: argv.includes("--version") || argv.includes("-v"),
     configPath: argv.includes("--config-path"),
     continueSession: argv.includes("--continue") || argv.includes("-c"),
+    outputFormat: null,
     resume: null,
   };
-  const resumeIdx = argv.findIndex((a) => a === "--resume" || a === "-r");
+    const ofIdx = argv.findIndex((a) => a === "--output-format");
+  if (ofIdx >= 0) opts.outputFormat = argv[ofIdx + 1] ?? null;
+const resumeIdx = argv.findIndex((a) => a === "--resume" || a === "-r");
   if (resumeIdx >= 0) opts.resume = argv[resumeIdx + 1] ?? null;
   const pi = argv.findIndex((a) => a === "-p" || a === "--print");
   if (pi >= 0) opts.oneShot = argv[pi + 1] ?? null;
@@ -1248,17 +1251,45 @@ async function main() {
   const provider = createProvider(config);
 
   if (opts.oneShot) {
-    const ui = new TerminalUI({ useColor: process.stdout.isTTY });
+    const jsonOut = opts.outputFormat === "json";
+    const ui = jsonOut
+      ? { streamText() {}, endStream() {}, info() {}, warn() {}, error() {}, success() {}, toolStart() {}, toolEnd() {}, confirmTool: async () => true }
+      : new TerminalUI({ useColor: process.stdout.isTTY });
+    // -p 与 --resume/--continue 组合时必须加载历史，否则"继续会话"跑在空上下文里。
+    let resumeId = opts.resume || null;
+    if (!resumeId && opts.continueSession) {
+      const latest = latestSession({ cwd: process.cwd() });
+      if (latest) resumeId = latest.id;
+    }
+    let resumedMessages = [];
+    if (resumeId) {
+      const loaded = loadSession(resumeId);
+      if (loaded) { resumedMessages = loaded.messages || []; }
+      else { console.error("找不到会话: " + resumeId); process.exit(1); }
+    }
     const agent = await createAgent({
       provider,
       config,
       ui,
       providerFactory: () => createProvider(config),
-      sessionSource: (opts.resume || opts.continueSession) ? "resume" : "startup",
+      sessionKey: resumeId || undefined,
+      sessionSource: resumeId ? "resume" : "startup",
+    });
+    if (resumedMessages.length) { agent.messages = resumedMessages; }
+    const oneShotSaver = createAutoSaver({
+      id: resumeId || undefined,
+      getMessages: () => agent.messages,
+      getMeta: () => ({ cwd: process.cwd(), model: config.model, provider: config.provider, ui: "cli" }),
     });
     try {
       const result = await agent.run(opts.oneShot);
       if (result.error) process.exitCode = 1;
+      try { oneShotSaver.save({ force: true }); } catch {}
+      if (jsonOut) {
+        const lastAsst = [...agent.messages].reverse().find((m) => m.role === "assistant");
+        const text = lastAsst ? (typeof lastAsst.content === "string" ? lastAsst.content : JSON.stringify(lastAsst.content)) : "";
+        console.log(JSON.stringify({ result: text, sessionId: oneShotSaver.id, turns: agent.turnCount, inputTokens: agent.totalInputTokens || 0, outputTokens: agent.totalOutputTokens || 0 }));
+      }
     } finally {
       closeAgent(agent);
     }
