@@ -4759,8 +4759,7 @@
   }
 
   var COMMANDS = [
-    { k: "/review", d: "代码审查（未提交改动或指定分支/PR）", fn: function () { runCommand("/review"); } },
-  { k: "/help", d: "显示命令列表", fn: function () { runCommand("/help"); } },
+    { k: "/help", d: "显示命令列表", fn: function () { runCommand("/help"); } },
     { k: "/new", d: "新对话", fn: function () { newChat(); } },
     { k: "/model", d: "查看或切换模型", fn: function () { openSettings(); } },
     { k: "/mode", d: "切换权限模式", fn: function () { runCommand("/mode"); } },
@@ -4779,6 +4778,7 @@
     var parts = text.slice(1).split(/\s+/);
     var cmd = (parts.shift() || "").toLowerCase();
     var arg = parts.join(" ").trim();
+    if (cmd === "output-style" && arg) { cmd = "output-style-set"; }
     switch (cmd) {
       case "help":
         addNotice("命令：/help /new /model /mode /prompts /tools /config /sessions /files /tasks /settings /voice /theme", "info");
@@ -4832,21 +4832,21 @@
       case "commands":
         openCommandsModal();
         break;
-      case "output-style":
-        getJSON("/api/output-styles").then(function (j) {
-          var lines = (j.styles || []).map(function (s) {
-            return s.name + "（" + s.label + "）" + (s.description ? " — " + s.description : "") + (j.current === s.name ? " ← 当前" : "");
-          });
-          addNotice("输出风格：\n" + lines.join("\n") + "\n切换：/output-style <名称>", "info");
-        }).catch(function (e) { toast("加载风格失败: " + e.message, "err"); });
-        break;
-      case "output-style-set": {
-        if (!arg) { runCommand("/output-style"); break; }
-        postJSON("/api/config", { outputStyle: arg }).then(function () {
-          toast("输出风格 → " + arg, "ok");
-        }).catch(function (e) { toast("切换失败: " + e.message, "err"); });
-        break;
-      }
+      case "output-style":
+        getJSON("/api/output-styles").then(function (j) {
+          var lines = (j.styles || []).map(function (s) {
+            return s.name + "（" + s.label + "）" + (s.description ? " — " + s.description : "") + (j.current === s.name ? " ← 当前" : "");
+          });
+          addNotice("输出风格：\n" + lines.join("\n") + "\n切换：/output-style <名称>", "info");
+        }).catch(function (e) { toast("加载风格失败: " + e.message, "err"); });
+        break;
+      case "output-style-set": {
+        if (!arg) { runCommand("/output-style"); break; }
+        postJSON("/api/config", { outputStyle: arg }).then(function () {
+          toast("输出风格 → " + arg, "ok");
+        }).catch(function (e) { toast("切换失败: " + e.message, "err"); });
+        break;
+      }
       case "review": {
         // Claude Code 的 /review：组审查提示词，当普通消息发给 agent。
         var target = arg.trim();
@@ -5107,6 +5107,27 @@
     if (bCloseCfg) { bCloseCfg.addEventListener("click", closeModelConfigModal); }
     var bCfgVeil = $("model-config-veil");
     if (bCfgVeil) { bCfgVeil.addEventListener("click", closeModelConfigModal); }
+    var bWmcSwitch = $("btn-wmc-switch");
+    if (bWmcSwitch) { bWmcSwitch.addEventListener("click", function (e) { e.stopPropagation(); toggleModelMenu(bWmcSwitch); }); }
+    var bWmcCfg = $("btn-wmc-config");
+    if (bWmcCfg) { bWmcCfg.addEventListener("click", function (e) { e.stopPropagation(); openModelConfigModal("providers"); }); }
+    var bSugCfg = $("btn-sug-config");
+    if (bSugCfg) { bSugCfg.addEventListener("click", function (e) { e.stopPropagation(); openModelConfigModal("providers"); }); }
+
+    // 绑定欢迎区快捷建议卡片点击填入输入框
+    var welcomeCards = document.querySelectorAll(".welcome-sug-card[data-prompt]");
+    Array.prototype.forEach.call(welcomeCards, function (card) {
+      card.addEventListener("click", function () {
+        var p = card.getAttribute("data-prompt");
+        var inEl = $("in");
+        if (inEl && p) {
+          inEl.value = p;
+          inEl.focus();
+          autoResizeInput();
+        }
+      });
+    });
+
     window.addEventListener("resize", function () {
       var m = $("model-menu");
       if (m && !m.hidden && currentModelMenuAnchor) {
@@ -5118,6 +5139,7 @@
       var m = $("model-menu");
       if (m && !m.hidden && !m.contains(e.target) &&
           !($("btn-top-model") && $("btn-top-model").contains(e.target)) &&
+          !($("btn-wmc-switch") && $("btn-wmc-switch").contains(e.target)) &&
           !($("btn-model") && $("btn-model").contains(e.target))) {
         closeModelMenuSmoothly();
       }
@@ -7648,8 +7670,8 @@ function switchInspectorTab(tab) {
     var tabInfo = $("tab-insp-info");
     var tabArt = $("tab-insp-artifact");
     if (tabInfo) { tabInfo.addEventListener("click", function () { switchInspectorTab("info"); }); }
-    if (tabArt) { tabArt.addEventListener("click", function () { switchInspectorTab("artifact"); }); }
-    var tabChg = $("tab-insp-changes");
+    if (tabArt) { tabArt.addEventListener("click", function () { switchInspectorTab("artifact"); }); }
+    var tabChg = $("tab-insp-changes");
     if (tabChg) { tabChg.addEventListener("click", function () { switchInspectorTab("changes"); }); }
 
     var selArt = $("artifact-select");
@@ -7914,7 +7936,7 @@ function switchInspectorTab(tab) {
   function positionModelMenu(anchor) {
     var menu = $("model-menu");
     if (!menu) return;
-    anchor = anchor || $("btn-top-model") || $("btn-model");
+    anchor = anchor || $("btn-top-model") || $("btn-wmc-switch") || $("btn-model");
     if (!anchor) return;
     var rect = anchor.getBoundingClientRect();
     var menuWidth = Math.min(490, window.innerWidth - 20);
@@ -7950,7 +7972,7 @@ function switchInspectorTab(tab) {
       closeModelMenuSmoothly();
       return;
     }
-    currentModelMenuAnchor = anchorEl || $("btn-top-model") || $("btn-model");
+    currentModelMenuAnchor = anchorEl || $("btn-top-model") || $("btn-wmc-switch") || $("btn-model");
     menu.classList.remove("closing");
     menu.hidden = false;
     positionModelMenu(currentModelMenuAnchor);
@@ -8012,6 +8034,37 @@ function switchInspectorTab(tab) {
       }
     }
 
+    // 同步欢迎区模型状态看板
+    var wName = $("wmc-name");
+    var wVendor = $("wmc-vendor");
+    var wIcon = $("wmc-icon");
+    var wDot = $("wmc-dot");
+    var wStatusPill = $("wmc-status-pill");
+    var wSub = $("wmc-sub");
+    if (wName) { wName.textContent = (match && match.name) || name || "Claude 3.7 Sonnet"; }
+    if (wVendor) { wVendor.textContent = v || "Anthropic 官方"; }
+    var iconMap = { "Anthropic": "✳️", "DeepSeek": "🐋", "OpenAI": "🟢", "Google": "✨", "Google Gemini": "✨", "智谱": "🟣", "阿里通义": "🔷", "Ollama": "🦙" };
+    if (wIcon) { wIcon.textContent = iconMap[v] || "🤖"; }
+    if (wDot) {
+      wDot.className = "latency-dot " + (modelProbing ? "probing" : perf.tier);
+      wDot.title = "延迟：" + perf.ms + "ms";
+    }
+    if (wStatusPill) {
+      if (v && (v.indexOf("Google") >= 0 || v.indexOf("Gemini") >= 0)) {
+        wStatusPill.textContent = "🟢 运行正常 · 免配即用 (" + perf.ms + "ms)";
+        wStatusPill.className = "wmc-status-pill ok";
+      } else if (S.config && S.config.apiKeyConfigured) {
+        wStatusPill.textContent = "🟢 运行正常 (" + perf.ms + "ms)";
+        wStatusPill.className = "wmc-status-pill ok";
+      } else {
+        wStatusPill.textContent = "🟡 需配置 API Key (" + v + ")";
+        wStatusPill.className = "wmc-status-pill warn";
+      }
+    }
+    if (wSub) {
+      var curUrl = (S.config && S.config.baseUrl) || "";
+      wSub.textContent = "接口服务地址：" + (curUrl || "https://api.anthropic.com/v1") + " · 支持多模态、深度思考与工程工具自主调用";
+    }
   }
 
   function fetchModels(forceProbe) {
@@ -8303,7 +8356,6 @@ function switchInspectorTab(tab) {
 
       var msBadge = el("span", "model-opt-ms " + perf.tier, modelProbing ? "…" : perf.ms + "ms");
       b.appendChild(msBadge);
-
       // 速度条（参照 affectui.com Model Picker）：悬停行时填充，宽度=延迟映射。
       var bar = el("span", "model-speedbar " + perf.tier);
       var barFill = el("span", "model-speedbar-fill");
@@ -8311,6 +8363,7 @@ function switchInspectorTab(tab) {
       barFill.style.setProperty("--speed-pct", pct + "%");
       bar.appendChild(barFill);
       b.appendChild(bar);
+
 
       if (name !== cur) { b.appendChild(el("span", "model-opt-vendor", v)); }
       if (name === cur) { b.appendChild(el("span", "model-opt-check", "\u2713")); }
@@ -8568,41 +8621,8 @@ function switchInspectorTab(tab) {
     scriptProc: null,
     timerId: null,
     startedAt: 0,
-    manualStop: false,
-    recCtx: null,
-    recSource: null,
-    recProc: null,
-    recPcm: [],
-    recOnDone: null,
-    freeFallbackTried: false
+    manualStop: false
   };
-
-  /** 将 Float32 PCM 打包为 16-bit 单声道 WAV 的 ArrayBuffer。 */
-  function encodeWav16k(samples, sampleRate) {
-    var buf = new ArrayBuffer(44 + samples.length * 2);
-    var v = new DataView(buf);
-    function wstr(o, s) { for (var i = 0; i < s.length; i++) { v.setUint8(o + i, s.charCodeAt(i)); } }
-    wstr(0, "RIFF");
-    v.setUint32(4, 36 + samples.length * 2, true);
-    wstr(8, "WAVE");
-    wstr(12, "fmt ");
-    v.setUint32(16, 16, true);
-    v.setUint16(20, 1, true);
-    v.setUint16(22, 1, true);
-    v.setUint32(24, sampleRate, true);
-    v.setUint32(28, sampleRate * 2, true);
-    v.setUint16(32, 2, true);
-    v.setUint16(34, 16, true);
-    wstr(36, "data");
-    v.setUint32(40, samples.length * 2, true);
-    var o = 44;
-    for (var i = 0; i < samples.length; i++) {
-      var s = Math.max(-1, Math.min(1, samples[i]));
-      v.setInt16(o, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
-      o += 2;
-    }
-    return buf;
-  }
 
   /**
    * 为中文语音识别结果补充自然标点并转换口语标点指令（全部免费本地规则）。
@@ -8745,7 +8765,6 @@ function switchInspectorTab(tab) {
   function startVoiceInput() {
     if (voiceState.active) { return; }
     voiceState.manualStop = false;
-    voiceState.freeFallbackTried = false;
     voiceState.startedAt = Date.now();
     clearInterval(voiceState.timerId);
     voiceState.timerId = setInterval(updateVoiceTimer, 500);
@@ -8822,26 +8841,6 @@ function switchInspectorTab(tab) {
         if (err === "aborted") {
           return;
         }
-        if (err === "network" || err === "language-not-supported") {
-          // Chrome 的识别后端在 Google 服务器上，网络被阻断时必报 network；
-          // 此时静默重启只会无限失败。只降级一次：改走「录音后转写」。
-          if (!voiceState.freeFallbackTried) {
-            voiceState.freeFallbackTried = true;
-            voiceState.manualStop = true;
-            voiceState.active = false;
-            try { rec.stop(); } catch (e) {}
-            toast("浏览器免费识别连不上识别服务，已切换到「录音后转写」", "warn");
-            // 只在本会话内降级：一次网络抖动不该永久改写用户的默认引擎。
-            voiceState.engine = "gemini";
-            var sel = $("voice-engine");
-            if (sel) { sel.value = "gemini"; }
-            startGeminiTranscribeRecording();
-            return;
-          }
-          toast("语音识别服务连接失败，请使用「AI 精准转写」引擎", "err");
-          stopVoiceInput();
-          return;
-        }
         toast("语音识别提示：" + err, "warn");
       };
 
@@ -8895,81 +8894,48 @@ function switchInspectorTab(tab) {
     navigator.mediaDevices.getUserMedia({ audio: true }).then(function (stream) {
       voiceState.mediaStream = stream;
       voiceState.mediaChunks = [];
-      // 统一录成 WAV：后端网关转写只稳定支持 wav，webm 容器很多模型不认。
-      // MediaRecorder 的 webm 流先经 AudioContext 解码重采样为 16k 单声道 PCM。
-      try {
-        var AC = window.AudioContext || window.webkitAudioContext;
-        voiceState.recCtx = new AC();
-        voiceState.recSource = voiceState.recCtx.createMediaStreamSource(stream);
-        // ScriptProcessor 已废弃但在所有浏览器可用；本仓库实时模式已同样使用。
-        var proc = voiceState.recCtx.createScriptProcessor(4096, 1, 1);
-        voiceState.recProc = proc;
-        voiceState.recPcm = [];
-        proc.onaudioprocess = function (ev) {
-          if (!voiceState.active) { return; }
-          voiceState.recPcm.push(new Float32Array(ev.inputBuffer.getChannelData(0)));
-        };
-        voiceState.recSource.connect(proc);
-        proc.connect(voiceState.recCtx.destination);
-        voiceState.mediaRecorder = null; // no MediaRecorder; WAV assembled on stop
-      } catch (e) {
-        voiceState.recCtx = null;
-        toast("录音初始化失败：" + e.message, "err");
-        stopVoiceInput();
-        return;
-      }
+      var mime = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+        ? "audio/webm;codecs=opus"
+        : "audio/webm";
+      var recorder = new MediaRecorder(stream, { mimeType: mime });
+      voiceState.mediaRecorder = recorder;
       voiceState.active = true;
       setVoiceUI(true, "正在录音（AI 转写）…", "说完后点击「完成」自动转写为中文并补充标点");
-
 
-      voiceState.recOnDone = function () {
-        var pcmChunks = voiceState.recPcm || [];
-        var ctx = voiceState.recCtx;
-        voiceState.recPcm = [];
-        if (!pcmChunks.length || !ctx) {
-          toast("没有录到声音", "warn");
-          return;
-        }
-        var total = 0;
-        for (var ci = 0; ci < pcmChunks.length; ci++) { total += pcmChunks[ci].length; }
-        var merged = new Float32Array(total);
-        var off = 0;
-        for (var cj = 0; cj < pcmChunks.length; cj++) { merged.set(pcmChunks[cj], off); off += pcmChunks[cj].length; }
-        var sr = ctx.sampleRate;
-        // Downmix to 16 kHz mono to keep the upload small.
-        var targetSr = 16000;
-        var outLen = Math.floor(merged.length * targetSr / sr);
-        var out = new Float32Array(outLen);
-        for (var k = 0; k < outLen; k++) {
-          var srcIdx = Math.floor(k * sr / targetSr);
-          out[k] = merged[srcIdx] || 0;
-        }
-        var wavBuf = encodeWav16k(out, targetSr);
-        var base64 = "";
-        var bytes = new Uint8Array(wavBuf);
-        var CH = 0x8000;
-        for (var bi = 0; bi < bytes.length; bi += CH) {
-          base64 += String.fromCharCode.apply(null, bytes.subarray(bi, bi + CH));
-        }
-        base64 = btoa(base64);
-        toast("正在转写中文语音…", "info");
-        postJSON("/api/transcribe", {
-          audio: base64,
-          mimeType: "audio/wav",
-          lang: voiceState.lang
-        }).then(function (j) {
-          if (j && j.ok && j.text) {
-            appendTranscriptToInput(j.text, false);
-            toast("语音转写完成", "ok");
-          } else {
-            toast("转写失败：" + ((j && j.error) || "未知错误"), "err");
-            revertAutoEngineIfAuto();
-          }
-        }).catch(function (err) {
-          toast("转写失败：" + err.message, "err");
-          revertAutoEngineIfAuto();
+      recorder.ondataavailable = function (e) {
+        if (e.data && e.data.size > 0) { voiceState.mediaChunks.push(e.data); }
+      };
+
+      recorder.onstop = function () {
+        var chunks = voiceState.mediaChunks.slice();
+        voiceState.mediaChunks = [];
+        if (!chunks.length) { return; }
+        var blob = new Blob(chunks, { type: recorder.mimeType || "audio/webm" });
+        readFileDataURL(blob).then(function (dataUrl) {
+          var base64 = (dataUrl.split(",")[1] || "");
+          if (!base64) { return; }
+          toast("正在转写中文语音…", "info");
+          postJSON("/api/transcribe", {
+            audio: base64,
+            mimeType: (recorder.mimeType || "audio/webm").split(";")[0],
+            lang: voiceState.lang
+          }).then(function (j) {
+            if (j && j.ok && j.text) {
+              appendTranscriptToInput(j.text, false);
+              toast("语音转写完成", "ok");
+            } else {
+              throw new Error((j && j.error) || "转写失败");
+            }
+          }).catch(function (err) {
+            toast(err.message + "（已为你切回免费极速识别）", "warn");
+            voiceState.engine = "free";
+            var sel = $("voice-engine");
+            if (sel) { sel.value = "free"; }
+          });
         });
       };
+
+      recorder.start();
     }).catch(function (e) {
       voiceState.active = false;
       clearInterval(voiceState.timerId);
@@ -9096,24 +9062,6 @@ function switchInspectorTab(tab) {
       try { voiceState.mediaRecorder.stop(); } catch (e) {}
     }
     voiceState.mediaRecorder = null;
-    // WAV 模式录音：点「完成」时先拼 WAV 上传，再拆音频链路。
-    if (typeof voiceState.recOnDone === "function") {
-      var done = voiceState.recOnDone;
-      voiceState.recOnDone = null;
-      try { done(); } catch (e) {}
-    }
-    if (voiceState.recProc) {
-      try { voiceState.recProc.disconnect(); } catch (e) {}
-      voiceState.recProc = null;
-    }
-    if (voiceState.recSource) {
-      try { voiceState.recSource.disconnect(); } catch (e) {}
-      voiceState.recSource = null;
-    }
-    if (voiceState.recCtx) {
-      try { voiceState.recCtx.close(); } catch (e) {}
-      voiceState.recCtx = null;
-    }
 
     if (voiceState.scriptProc) {
       try { voiceState.scriptProc.disconnect(); } catch (e) {}

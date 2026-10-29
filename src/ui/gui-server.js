@@ -390,7 +390,8 @@ const makeTurnUi = (res, key) => {
     return Object.keys(out).length ? out : null;
   };
 
-  const statsOf = (agent) => {
+  const segLen = (s) => (typeof s === "string" ? s.length : JSON.stringify(s ?? "").length);
+const statsOf = (agent) => {
     // Prefer the endpoint's own accounting; fall back to the character
     // estimate when a provider does not report usage.
     const reported = agent ? (agent.totalInputTokens || 0) + (agent.totalOutputTokens || 0) : 0;
@@ -405,6 +406,8 @@ const makeTurnUi = (res, key) => {
       tokens: used,
       inputTokens: agent ? agent.totalInputTokens || 0 : 0,
       outputTokens: agent ? agent.totalOutputTokens || 0 : 0,
+      systemTokens: agent ? Math.round(segLen(agent.systemPrompt || "") / 2.5) : 0,
+      historyTokens: agent ? Math.round((approxTokens(agent) - segLen(agent.systemPrompt || "") / 2.5)) : 0,
       contextLimit: limit,
       contextUsed: limit ? used : 0
     };

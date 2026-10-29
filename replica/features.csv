@@ -68,3 +68,4 @@ release-notes 命令,commands,could,yes,yes,打印 docs/CHANGELOG.md（已生成
 "自主模式（自动续跑）,agent,must,yes,yes,config.autoRun：回合上限后自动续跑，10 轮/60 分钟护栏，AskUserQuestion 屏蔽,CLI /auto 与 /api/config 均可切换"
 "变更面板（代码变更审查）,ui,must,yes,yes,右侧栏第三页签：turn/branch 双范围、per-file +N/−N、diff 弹窗；/api/changes 按 2.1.302 numstat 规格"
 "/review 代码审查,commands,must,yes,yes,无参审未提交改动(git diff HEAD)，可指定分支/PR；四级分级报告(严重/主要/次要/建议)+文件:行号+结论，agent 自主拉 diff 读上下文；TUI 复用 customPrompt 通道，GUI 组提示词走 runTurn"
+"/output-style 输出风格,ui,must,yes,yes,default/explanatory/learning 内置 + output-styles/*.md 自定义；agent.setOutputStyle 重建系统提示；TUI+GUI 双端；GET /api/output-styles"
