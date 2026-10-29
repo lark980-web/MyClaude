@@ -105,3 +105,6 @@ MyClaude 41+ 命令 vs Claude Code：除生态专属 8 项与待环境 2 项
 
 - ✅ -p/--print 非交互模式：能力早已实现（oneShot 链路），实测 6.4s 输出正确
   exit 0；--help 补文档。脚本化/CI 骨架确认在位
+
+- ✅ 脚本化三件套实测：-p 单回合 / --output-format json（{result,sessionId,tokens}）/
+  -p --resume <id> --continue 带历史续跑（oneShot 原本不加载历史也不落盘，已修）
