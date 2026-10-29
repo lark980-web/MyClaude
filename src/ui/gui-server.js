@@ -91,8 +91,14 @@ export async function startGui({ config: initialConfig, port = 7788, open = true
   if (existsSync(lockPath)) {
     try {
       const prev = JSON.parse(readFileSync(lockPath, "utf8"));
-      if (prev.pid && prev.pid !== process.pid) {
-        try { process.kill(prev.pid, 0); runningElsewhere = prev; } catch { /* dead pid = stale lock */ }
+      if (prev.port && prev.pid !== process.pid) {
+        // pid 存活检查在 Windows 上不可靠：强杀留下的陈旧锁，pid 可能被系统
+        // 复用给别的进程，误判「已在运行」而拒绝启动。改探锁里记录的端口：
+        // 真有实例在跑就该答得上来；答不上来就是陈旧锁。
+        try {
+          const probe = await fetch(`http://127.0.0.1:${prev.port}/api/config`, { signal: AbortSignal.timeout(1500) });
+          if (probe.ok) { runningElsewhere = prev; }
+        } catch { /* 不应答 = 陈旧锁 */ }
       }
     } catch { /* corrupt lock = stale */ }
   }
