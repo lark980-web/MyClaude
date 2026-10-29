@@ -1052,6 +1052,15 @@ async function runPlain({ config, provider, agent, autoSaver, ui }) {
 
   const ctx = { agent, config, provider, ui, pendingAttachments: [], autoSaver };
   let running = true;
+  // Claude Code 的 Esc+Esc：把上一条用户消息召回输入行，编辑后重新提交。
+  // 提交时若与召回的内容一致，先 rewind 到该消息前再跑，历史不重复。
+  let editPrevious = false;
+  let lastUserText = "";
+  ui.onEditPrevious = () => {
+    if (!lastUserText) { ui.warn("还没有可编辑的历史消息"); return; }
+    editPrevious = true;
+    ui.rl?.write(lastUserText);
+  };
   while (running) {
     let input;
     try {
@@ -1061,6 +1070,17 @@ async function runPlain({ config, provider, agent, autoSaver, ui }) {
     }
     const trimmed = input.trim();
     if (!trimmed) continue;
+
+    let wasRewound = false;
+    if (editPrevious) {
+      editPrevious = false;
+      if (trimmed === lastUserText) {
+        agent.rewind(trimmed);
+        wasRewound = true;
+        ui.info("已回退到上一条消息，重新执行");
+      }
+    }
+    lastUserText = trimmed;
 
     if (trimmed.startsWith("/")) {
       const r = await handleCommand(trimmed, ctx);
@@ -1081,7 +1101,13 @@ async function runPlain({ config, provider, agent, autoSaver, ui }) {
     }
 
     const files = ctx.pendingAttachments.splice(0);
-    await agent.run(trimmed, { attachments: files });
+    if (wasRewound) {
+      // Esc+Esc 重跑：rewind 已把用户消息放回，不能再 append 一份。
+      wasRewound = false;
+      await agent.run("", { attachments: files, reuseLastUser: true });
+    } else {
+      await agent.run(trimmed, { attachments: files });
+    }
     const compact = await agent.maybeCompact();
     if (compact) ui.info(`context compacted (dropped ${compact.dropped} messages)`);
     autoSaver?.save();

@@ -28,6 +28,22 @@ export class TerminalUI {
   }
 
   start() {
+    readline.emitKeypressEvents(stdin);
+    this.lastEscapeAt = 0;
+    stdin.on("keypress", (str, key) => {
+      if (!key) return;
+      if (key.name === "escape") {
+        const now = Date.now();
+        if (isDoubleEscape(now, this.lastEscapeAt)) {
+          this.lastEscapeAt = 0;
+          if (typeof this.onEditPrevious === "function") { this.onEditPrevious(); }
+          return;
+        }
+        this.lastEscapeAt = now;
+        return;
+      }
+      this.lastEscapeAt = 0;
+    });
     this.rl = readline.createInterface({
       input: stdin,
       output: stdout,
@@ -134,6 +150,14 @@ export class TerminalUI {
     const answer = await this.prompt(`${message} [y/N] `);
     return ["y", "yes"].includes(answer.trim().toLowerCase());
   }
+}
+
+/**
+ * Double-Escape detector (Claude Code parity: Esc+Esc recalls the previous
+ * user message for editing). Pure so it can be unit-tested.
+ */
+export function isDoubleEscape(now, lastEscapeAt, windowMs = 500) {
+  return lastEscapeAt > 0 && now - lastEscapeAt <= windowMs;
 }
 
 function summarizeArgs(args) {
