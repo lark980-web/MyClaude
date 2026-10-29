@@ -2543,7 +2543,14 @@
       for (var ci = 0; ci < CELLS; ci++) {
         var cell = el("span", "ctx-cell");
         var fill = ci / CELLS;
-        if (fill < used) { cell.classList.add(used >= 0.9 ? "hot" : used >= 0.7 ? "warm" : "fill"); }
+        if (fill < used) {
+          // 分段着色（对齐 /context 分解视图）：系统提示段与历史消息段颜色不同。
+          const sysShare = (S.stats.systemTokens || 0) / (S.stats.contextLimit || 1);
+          if (fill < sysShare) { cell.classList.add("sys"); }
+          else if (used >= 0.9) { cell.classList.add("hot"); }
+          else if (used >= 0.7) { cell.classList.add("warm"); }
+          else { cell.classList.add("fill"); }
+        }
         field.appendChild(cell);
       }
       s.body.appendChild(field);
