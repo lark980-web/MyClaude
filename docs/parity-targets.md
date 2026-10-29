@@ -91,3 +91,6 @@ MyClaude 41+ 命令 vs Claude Code：除生态专属 8 项与待环境 2 项
 - ✅ 权限与视觉语义：permission-modes（acceptEdits 批准编辑仍问其他）+
   permission-auto（auto 承诺/破坏性 opt-in/fullAccess/bypass）+ attachments
   （图片 base64/mime/超大拒绝）39 项全过
+
+- ✅ 扩展机制三件套：MCP（auth 9/command 4/http 6/oauth 16/prompts 5/resource-tools 5）
+  + plugins 8 + skills 8 —— 61 项全过。MCP 含 OAuth 登录流、资源与提示读取
