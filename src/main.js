@@ -53,6 +53,7 @@ Options:
   --continue               resume the most recent session in this directory
   --resume <id>            resume a specific saved session
   --config-path            print config file path
+  -p, --print <prompt>   run one turn non-interactively, print the answer, exit
   -v, --version            print version
   -h, --help               this help
 
