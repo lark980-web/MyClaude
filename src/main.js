@@ -139,6 +139,23 @@ function sessionMeta(agent, config) {
 }
 
 
+/** /review 的审查提示词：arg 为空审未提交改动，否则审与目标分支/PR 的差异。 */
+function reviewPrompt(arg) {
+  const target = String(arg || "").trim();
+  const scope = target
+    ? `审查目标：工作区与 "${target}" 的差异（git diff ${target}...HEAD；若 arg 是 PR 编号且 gh 可用则 gh pr diff ${target}）`
+    : "审查目标：当前未提交的改动（git diff HEAD；若为空再看最近一次提交 git show --stat HEAD）";
+  return [
+    "你是严格的代码审查者。请完成一次代码审查并输出报告。",
+    scope,
+    "步骤：",
+    "1) 用 Bash 查看改动范围与完整 diff；改动为空时明确说明「没有待审查的改动」并结束。",
+    "2) 逐文件阅读改动及其周边上下文（Read/Grep），不要只看 diff 猜测。",
+    "3) 输出报告：按 [严重] [主要] [次要] [建议] 四级列出问题，每条包含 文件:行号、问题说明、具体修复建议；重点检查正确性、边界条件、安全（注入/秘钥/路径）、并发与性能、错误处理、命名一致性。",
+    "4) 报告以一句话结论收尾：可合并 / 需修改（附理由）。全部用中文输出。"
+  ].join("\n");
+}
+
 async function handleCommand(raw, ctx) {
   const { agent, config, provider, ui } = ctx;
   const [cmd, ...rest] = raw.slice(1).split(/\s+/);
@@ -754,7 +771,13 @@ async function handleCommand(raw, ctx) {
       ui.info(`messages=${s.messages} turns=${s.turns}`);
       return {};
     }
-    case "init": {
+        case "review": {
+      // Claude Code 的 /review：把审查提示词当普通回合跑，agent 用自己的
+      // Bash/Read 工具拉 diff、读上下文、产出分级报告。复用 customPrompt
+      // 通道，走同一套 run/save/compact 路径。
+      return { customPrompt: reviewPrompt(arg), customName: "review", custom: {} };
+    }
+case "init": {
       // Summarise the project into MYCLAUDE.md, which loadMemory() then feeds
       // back into the system prompt on every start. Written from facts on disk
       // rather than by asking the model, so it works offline and cannot invent

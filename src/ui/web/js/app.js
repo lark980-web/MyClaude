@@ -4759,7 +4759,8 @@
   }
 
   var COMMANDS = [
-    { k: "/help", d: "显示命令列表", fn: function () { runCommand("/help"); } },
+    { k: "/review", d: "代码审查（未提交改动或指定分支/PR）", fn: function () { runCommand("/review"); } },
+  { k: "/help", d: "显示命令列表", fn: function () { runCommand("/help"); } },
     { k: "/new", d: "新对话", fn: function () { newChat(); } },
     { k: "/model", d: "查看或切换模型", fn: function () { openSettings(); } },
     { k: "/mode", d: "切换权限模式", fn: function () { runCommand("/mode"); } },
@@ -4831,6 +4832,23 @@
       case "commands":
         openCommandsModal();
         break;
+      case "review": {
+        // Claude Code 的 /review：组审查提示词，当普通消息发给 agent。
+        var target = arg.trim();
+        var scope = target
+          ? "审查目标：工作区与 \"" + target + "\" 的差异（git diff " + target + "...HEAD；若是 PR 编号且 gh 可用则 gh pr diff " + target + "）"
+          : "审查目标：当前未提交的改动（git diff HEAD；若为空再看最近一次提交 git show --stat HEAD）";
+        var prompt = ["你是严格的代码审查者。请完成一次代码审查并输出报告。", scope,
+          "步骤：",
+          "1) 用 Bash 查看改动范围与完整 diff；改动为空时明确说明「没有待审查的改动」并结束。",
+          "2) 逐文件阅读改动及其周边上下文（Read/Grep），不要只看 diff 猜测。",
+          "3) 输出报告：按 [严重] [主要] [次要] [建议] 四级列出问题，每条包含 文件:行号、问题说明、具体修复建议；重点检查正确性、边界条件、安全（注入/秘钥/路径）、并发与性能、错误处理、命名一致性。",
+          "4) 报告以一句话结论收尾：可合并 / 需修改（附理由）。全部用中文输出。"].join("\n");
+        if (S.busy) { toast("任务运行中，请先停止或等它结束", "warn"); break; }
+        addUserMessage(prompt, []);
+        runTurn({ message: prompt, sessionKey: S.sessionKey, attachments: [] });
+        break;
+      }
       default: {
         var custom = findCustom(cmd);
         if (custom) { runCustomCommand(custom, arg); break; }
