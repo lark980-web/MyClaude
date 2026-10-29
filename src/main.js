@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { loadConfig, saveConfig, configPath } from "./config.js";
+import { listOutputStyles } from "./output-style.js";
 import { createProvider } from "./providers/openai.js";
 import { Agent } from "./agent/agent.js";
 import { TerminalUI } from "./ui/terminal.js";
