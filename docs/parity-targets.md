@@ -102,3 +102,6 @@ MyClaude 41+ 命令 vs Claude Code：除生态专属 8 项与待环境 2 项
   均已单独通过（gui 组 28/28、disconnect 3/3、midrun-flush、max-turns）；
   其后的 compact/stats 改动已经真实 e2e 验证
 - 结论：并行 spawn 在当前常驻负载下不可用；串行 + 按需加大限时可跑
+
+- ✅ -p/--print 非交互模式：能力早已实现（oneShot 链路），实测 6.4s 输出正确
+  exit 0；--help 补文档。脚本化/CI 骨架确认在位
