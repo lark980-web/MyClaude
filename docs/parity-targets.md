@@ -67,3 +67,10 @@ Esc+Esc 的 GUI 等价物（右栏消息编辑）。
 
 - ✅ e2e 全链路实测：真实消息 → 工具调用（Read）→ 流式回答（9.2s），
   事件流完整（reasoning/tool/stats/session/done）；顺带修复 historyTokens 负数
+
+## /help 对照结论（2026-10-30 03:50）
+
+MyClaude 41+ 命令 vs Claude Code：除生态专属 8 项与待环境 2 项
+（/statusline /vim）外，**命令面全覆盖**。含 MyClaude 扩展：/provider /base
+/key /fast /dream /loop /branch /title /save /attach /vision（本地多供应商
+场景的合理超集）。
