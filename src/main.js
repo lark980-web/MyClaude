@@ -117,6 +117,7 @@ function parseArgs(argv) {
     configPath: argv.includes("--config-path"),
     continueSession: argv.includes("--continue") || argv.includes("-c"),
     outputFormat: null,
+    appendSystemPrompt: null,
     allowedTools: [],
     disallowedTools: [],
     resume: null,
@@ -132,6 +133,8 @@ function parseArgs(argv) {
   };
   opts.allowedTools = gatherVariadic("--allowed-tools").concat(gatherVariadic("--allowedTools"));
   opts.disallowedTools = gatherVariadic("--disallowed-tools").concat(gatherVariadic("--disallowedTools"));
+  const api = argv.findIndex((a) => a === "--append-system-prompt");
+  if (api >= 0) opts.appendSystemPrompt = argv[api + 1] ?? null;
   const ofIdx = argv.findIndex((a) => a === "--output-format");
   if (ofIdx >= 0) opts.outputFormat = argv[ofIdx + 1] ?? null;
 const resumeIdx = argv.findIndex((a) => a === "--resume" || a === "-r");
@@ -1302,6 +1305,9 @@ async function main() {
       sessionSource: resumeId ? "resume" : "startup",
     });
     if (resumedMessages.length) { agent.messages = resumedMessages; }
+    if (opts.appendSystemPrompt) {
+      agent.systemPrompt += "\n\n# Extra instructions (from --append-system-prompt)\n\n" + opts.appendSystemPrompt;
+    }
     const oneShotSaver = createAutoSaver({
       id: resumeId || undefined,
       getMessages: () => agent.messages,
