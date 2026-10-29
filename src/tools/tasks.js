@@ -150,6 +150,69 @@ export async function startBackground({ command, cwd = process.cwd(), timeout_ms
     );
   });
 }
+/**
+ * Adopt an already-running child as a background task.
+ *
+ * The foreground Bash tool used to kill a command that outlived its timeout,
+ * which threw away minutes of real work (a test suite that is 90% done is not
+ * "failed") and left the model re-running the same command until it gave up.
+ * Instead the child keeps running, its pipes are teed into a task output file,
+ * and the caller gets a task id to poll with BashOutput.
+ */
+export async function adoptProcess({ command, cwd = process.cwd(), child, initialOutput = "", timeout_ms = 600000 }) {
+  const dir = await getOutputDir();
+  const id = `task_${randomUUID().slice(0, 8)}`;
+  const outputPath = join(dir, `${id}.log`);
+  const out = createWriteStream(outputPath, { flags: "w" });
+  streams.add(out);
+  if (initialOutput) out.write(initialOutput);
+
+  const task = registry.create({
+    type: TASK_TYPES.LOCAL_BASH,
+    id,
+    label: command,
+    meta: { command, cwd, outputPath, exitCode: null, signal: null, pid: child.pid ?? null, notifyOnExit: false },
+  });
+  procs.set(id, child);
+  registry.start(task);
+
+  child.stdout?.on("data", (b) => out.write(b));
+  child.stderr?.on("data", (b) => out.write(b));
+
+  const timer = setTimeout(() => { killTask(id); }, timeout_ms);
+  task.cancel = () => {
+    try {
+      if (process.platform === "win32") {
+        spawn("taskkill", ["/pid", String(child.pid), "/T", "/F"], { windowsHide: true });
+      } else {
+        child.kill("SIGTERM");
+      }
+    } catch { /* already gone; the close handler settles it */ }
+  };
+  child.on("error", (e) => {
+    task.meta.exitCode = -1;
+    out.write(`[spawn error] ${e.message}\n`);
+    registry.fail(task, e.message);
+    cleanup();
+  });
+  child.on("close", (code, signal) => {
+    task.meta.exitCode = code;
+    task.meta.signal = signal;
+    out.write(`\n[task ${id} finished with exit code ${code ?? "?"}${signal ? ` (signal ${signal})` : ""}]\n`);
+    if (signal) registry.cancel(task);
+    else if (code === 0) registry.complete(task, { exitCode: code });
+    else registry.fail(task, `exit code ${code}`);
+    cleanup();
+  });
+  function cleanup() {
+    clearTimeout(timer);
+    procs.delete(id);
+    out.end();
+    streams.delete(out);
+  }
+  return { id, outputPath };
+}
+
 export function killTask(id) {
   const task = registry.get(id);
   if (!task || task.type !== TASK_TYPES.LOCAL_BASH) {

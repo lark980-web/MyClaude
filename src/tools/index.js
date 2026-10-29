@@ -3,7 +3,8 @@ import { exec, spawn, spawnSync } from "node:child_process";
 import { basename, dirname, extname, resolve, join, relative, isAbsolute } from "node:path";
 import { constants, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { startBackground, killTask, readTaskOutput, waitTask, taskSummaries } from "./tasks.js";
+import { startBackground, killTask, readTaskOutput, waitTask, taskSummaries, adoptProcess,
+} from "./tasks.js";
 import { todoWriteTool, webFetchTool } from "./extra.js";
 import { GIT_TOOLS } from "./git.js";
 import { tmpdir } from "node:os";
@@ -726,15 +727,33 @@ export const bashTool = {
       let stdout = "";
       let stderr = "";
       let timedOut = false;
+      let promotedTask = null;
+      let settled = false;
       const timer = setTimeout(() => {
         timedOut = true;
-        try {
-          if (process.platform === "win32" && child.pid) {
-            spawn("taskkill", ["/pid", String(child.pid), "/T", "/F"], { windowsHide: true, stdio: "ignore" });
-          } else {
-            child.kill("SIGKILL");
-          }
-        } catch {}
+        // Do NOT kill: a command that outlived its timeout is usually a test
+        // suite or build that is still making progress. Killing it threw the
+        // work away and the model just re-ran it until it gave up. Hand the
+        // live child to the background registry instead, so the caller gets a
+        // task id to poll and the work survives the turn.
+        adoptProcess({
+          command,
+          cwd,
+          child,
+          initialOutput: stdout + (stderr ? "\n[stderr]\n" + stderr : ""),
+          timeout_ms: Math.max(timeout_ms, 600000)
+        }).then(({ id: taskId, outputPath }) => {
+          promotedTask = { id: taskId, outputPath };
+          finish(-1, true);
+        }).catch(() => {
+          try {
+            if (process.platform === "win32" && child.pid) {
+              spawn("taskkill", ["/pid", String(child.pid), "/T", "/F"], { windowsHide: true, stdio: "ignore" });
+            } else {
+              child.kill("SIGKILL");
+            }
+          } catch {}
+        });
       }, Math.max(1000, timeout_ms));
       child.stdout.on("data", (c) => {
         if (stdout.length < 10 * 1024 * 1024) { stdout += c; }
@@ -742,16 +761,28 @@ export const bashTool = {
       child.stderr.on("data", (c) => {
         if (stderr.length < 10 * 1024 * 1024) { stderr += c; }
       });
-      const finish = (code) => {
+      const finish = (code, promoted = false) => {
+        if (settled) return;
+        settled = true;
         clearTimeout(timer);
         const parts = [];
+        if (promoted && promotedTask) {
+          // The command is still running in the background: say so up front,
+          // because the model must poll instead of re-running it.
+          parts.push(
+            `[timeout after ${Math.max(1000, timeout_ms)}ms — the command is still running as background task ${promotedTask.id}]` + "\n" +
+            `poll it with BashOutput(task_id:"${promotedTask.id}"); stop it with KillShell(task_id:"${promotedTask.id}")` + "\n" +
+            `output file: ${promotedTask.outputPath}` + "\n" +
+            `do NOT re-run this command — it is already running.`
+          );
+        }
         if (stdout) parts.push(stdout);
         if (stderr) parts.push(`[stderr]\n${stderr}`);
-        if (code !== 0) parts.push(`[exit ${code ?? "?"}]${timedOut ? " (timeout)" : ""}`);
+        if (code !== 0 && !promoted) parts.push(`[exit ${code ?? "?"}]${timedOut ? " (timeout)" : ""}`);
         const raw = parts.join("\n") || "(no output)";
         // Big output goes to disk: a clipped tail hides the actual failure.
         const persisted = persistLargeOutput(raw);
-        const result = { ok: code === 0, content: persisted.content };
+        const result = { ok: code === 0 || promoted, content: persisted.content };
         if (persisted.persistedPath) {
           result.persistedOutputPath = persisted.persistedPath;
           result.persistedOutputSize = persisted.persistedSize;
@@ -762,7 +793,7 @@ export const bashTool = {
         clearTimeout(timer);
         resolvePromise({ ok: false, content: `failed to start shell: ${e.message}` });
       });
-      child.on("close", (code) => finish(code));
+      child.on("close", (code) => finish(code, false));
     });
   },
 };

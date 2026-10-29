@@ -38,7 +38,7 @@ An original terminal coding agent with tool use, plus a Claude-style web GUI
 
 ## Tests
 
-18 test file(s). Run them before claiming a change works.
+70+ test file(s). Run the RELEVANT ones (see 测试策略 below) — the full suite
 
 ## 核心要义：一切以 claude-src 为准
 
@@ -95,4 +95,51 @@ git -c http.proxy=http://127.0.0.1:7897 -c https.proxy=http://127.0.0.1:7897 pus
 
 - Read the relevant files before editing; do not guess at contents.
 - Match the existing style of the file you are changing.
-- Run the test command after a behavioural change.
+- Run the relevant test file(s) after a behavioural change — not the whole suite.
+
+## 测试策略（重要：决定任务会不会超时）
+
+本仓库全量测试 454 项，在机械盘上要 **8–10 分钟**。前台跑它必然撞 Bash 超时。
+
+**改哪块就只跑哪块**：
+
+```bash
+node --test test/<文件>.test.js          # 单文件，秒级
+node --test test/gui-*.test.js           # 某个领域的一批
+npm run test:smoke                       # 冒烟 51 命令，约 90s
+```
+
+领域对应关系：
+
+- GUI/服务端：`test/gui-*.test.js`、`test/disconnect-abort.test.js`
+- Agent 循环/工具：`test/agent*.test.js`、`test/tool*.test.js`
+- 会话/续跑：`test/session*.test.js`、`test/resume*.test.js`
+- 端到端中断矩阵：`node scripts/self-audit.mjs`（约 90s，跑真实 exe）
+
+**确实要跑全量时**，用后台任务，不要前台硬等：
+
+```
+Bash(run_in_background=true, command: "npm test")   → 拿 task_id
+BashOutput(task_id)                                  → 轮询进度
+```
+
+前台命令超时（默认 120s）现在不会杀进程了：命令会被**自动转成后台任务**，
+返回里带 task_id，用 BashOutput 轮询即可，不要重跑同一条命令。
+
+## 构建 exe
+
+```bash
+taskkill /F /IM myclaude.exe    # 必须先杀，否则文件被占用
+node scripts/build-exe.mjs      # 约 40–60s
+```
+
+## 提交注意
+
+- 不要 `git add -A`：仓库根有 2.8GB 的 `sgzzlb.apk`（已在 .gitignore）
+- 只加自己改过的文件
+- 推送要带代理（见上）
+
+## 代码风格约定
+
+- 源文件多为 CRLF；`src/ui/web/css/styles.css` 是 LF —— 改动时保持原文件行尾
+- 用 `edit` 做局部替换，别整文件重写（会把行尾改掉，产生几万行假 diff）
