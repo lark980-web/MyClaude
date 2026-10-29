@@ -1252,7 +1252,11 @@ async function main() {
 
   if (opts.oneShot) {
     const jsonOut = opts.outputFormat === "json";
-    const ui = jsonOut
+    const jsonl = opts.outputFormat === "stream-json";
+    const emit = jsonl ? (ev) => { try { console.log(JSON.stringify(ev)); } catch {} } : null;
+    const ui = jsonl
+      ? { streamText(t) { emit({ type: "text", text: t }); }, endStream() {}, info(t) { emit({ type: "info", text: String(t) }); }, warn(t) { emit({ type: "warn", text: String(t) }); }, error(t) { emit({ type: "error", text: String(t) }); }, success(t) { emit({ type: "success", text: String(t) }); }, toolStart(n, a) { emit({ type: "tool_use", name: n, args: a }); }, toolEnd(n, ok, el, out) { emit({ type: "tool_result", name: n, ok: !!ok, elapsed: el }); }, confirmTool: async () => true }
+      : jsonOut
       ? { streamText() {}, endStream() {}, info() {}, warn() {}, error() {}, success() {}, toolStart() {}, toolEnd() {}, confirmTool: async () => true }
       : new TerminalUI({ useColor: process.stdout.isTTY });
     // -p 与 --resume/--continue 组合时必须加载历史，否则"继续会话"跑在空上下文里。
@@ -1285,6 +1289,10 @@ async function main() {
       const result = await agent.run(opts.oneShot);
       if (result.error) process.exitCode = 1;
       try { oneShotSaver.save({ force: true }); } catch {}
+      if (jsonl) {
+        const lastAsst2 = [...agent.messages].reverse().find((m) => m.role === "assistant");
+        emit({ type: "result", result: lastAsst2 ? (typeof lastAsst2.content === "string" ? lastAsst2.content : JSON.stringify(lastAsst2.content)) : "", sessionId: oneShotSaver.id, turns: agent.turnCount, inputTokens: agent.totalInputTokens || 0, outputTokens: agent.totalOutputTokens || 0 });
+      }
       if (jsonOut) {
         const lastAsst = [...agent.messages].reverse().find((m) => m.role === "assistant");
         const text = lastAsst ? (typeof lastAsst.content === "string" ? lastAsst.content : JSON.stringify(lastAsst.content)) : "";
