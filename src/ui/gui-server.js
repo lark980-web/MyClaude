@@ -14,6 +14,7 @@ import { allRegisteredTools, registerTools, multiEditTool, todoWriteTool, webFet
 import { EXTENDED_TOOLS } from "../tools/extended.js";
 import { getTodos } from "../tools/extra.js";
 import { taskSummaries, readTaskOutput, killTask } from "../tools/tasks.js";
+import { listOutputStyles } from "../output-style.js";
 import { loadConfig, saveConfig } from "../config.js";
 import { resolveAttachments, describeAttachment } from "../attachments.js";
 import {
