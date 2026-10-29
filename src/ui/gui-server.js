@@ -117,9 +117,15 @@ const running = new Set();
   const confirmResolvers = new Map();
   const questionResolvers = new Map();
 
-  const sse = (res, event) => {
-    if (res.writableEnded) return;
-    res.write(`data: ${JSON.stringify(event)}\n\n`);
+  /** Resolve any stuck interactive prompts for one session (answer null / deny). */
+  const flushInteractive = (key) => {
+    for (const [id, e] of confirmResolvers) { if (e.key === key) { confirmResolvers.delete(id); e.resolve(false); } }
+    for (const [id, e] of questionResolvers) { if (e.key === key) { questionResolvers.delete(id); e.resolve(null); } }
+  };
+
+const sse = (res, event) => {
+    if (res.writableEnded || res.destroyed) return;
+    try { res.write(`data: ${JSON.stringify(event)}\n\n`); } catch { /* client is gone; the run itself must not die from a write */ }
   };
 
   const keyOf = (body) => (body && typeof body.sessionKey === "string" && body.sessionKey) || "default";
@@ -282,7 +288,7 @@ function buildConfirmDiff(name, args) {
 }
 
   /** UI adapter: every method maps onto one SSE event. */
-  const makeUi = (res) => ({
+  const makeUi = (res, key = "default") => ({
     streamText: (t) => sse(res, { type: "delta", text: t }),
     reasoningText: (t) => sse(res, { type: "reasoning", text: t }),
     endStream: () => sse(res, { type: "assistant_end" }),
@@ -305,7 +311,7 @@ function buildConfirmDiff(name, args) {
     confirmTool: (name, args) =>
       new Promise((resolve) => {
         const id = Math.random().toString(36).slice(2);
-        confirmResolvers.set(id, resolve);
+        confirmResolvers.set(id, { key, resolve });
         sse(res, { type: "confirm", id, name, args, diff: buildConfirmDiff(name, args) });
         setTimeout(() => {
           if (confirmResolvers.has(id)) {
@@ -317,7 +323,7 @@ function buildConfirmDiff(name, args) {
     askQuestions: (questions) =>
       new Promise((resolve) => {
         const id = Math.random().toString(36).slice(2);
-        questionResolvers.set(id, resolve);
+        questionResolvers.set(id, { key, resolve });
         sse(res, { type: "question", id, questions });
         setTimeout(() => {
           if (questionResolvers.has(id)) {
@@ -330,7 +336,7 @@ function buildConfirmDiff(name, args) {
 
   /** Per-turn UI whose todo events mirror the TodoWrite list. */
 const makeTurnUi = (res, key) => {
-    const base = makeUi(res);
+    const base = makeUi(res, key);
     return {
       ...base,
       toolEnd: (name, ok, elapsed, output, extra) => {
@@ -1739,10 +1745,10 @@ const makeTurnUi = (res, key) => {
       /* ---- confirm / answer ---- */
       if (path === "/api/confirm" && req.method === "POST") {
         const body = await readJson(req);
-        const resolve = confirmResolvers.get(body.id);
-        if (resolve) {
+        const entry = confirmResolvers.get(body.id);
+        if (entry) {
           confirmResolvers.delete(body.id);
-          resolve(!!body.allow);
+          entry.resolve(!!body.allow);
         }
         sendJson(res, 200, { ok: true });
         return;
@@ -1750,12 +1756,18 @@ const makeTurnUi = (res, key) => {
 
       if (path === "/api/answer" && req.method === "POST") {
         const body = await readJson(req);
-        const resolve = questionResolvers.get(body.id);
-        if (resolve) {
+        const entry = questionResolvers.get(body.id);
+        if (entry) {
           questionResolvers.delete(body.id);
-          resolve(body.answers ?? null);
+          entry.resolve(body.answers ?? null);
         }
         sendJson(res, 200, { ok: true });
+        return;
+      }
+
+      if (path === "/api/busy" && req.method === "GET") {
+        const key = keyOf(url.searchParams.get("sessionKey") ? { sessionKey: url.searchParams.get("sessionKey") } : {});
+        sendJson(res, 200, { busy: running.has(key) });
         return;
       }
 
@@ -1765,10 +1777,7 @@ const makeTurnUi = (res, key) => {
         const key = keyOf(body);
         const agent = sessions.get(key);
         if (agent && typeof agent.abort === "function") agent.abort();
-        for (const [, resolve] of confirmResolvers) resolve(false);
-        confirmResolvers.clear();
-        for (const [, resolve] of questionResolvers) resolve(null);
-        questionResolvers.clear();
+        flushInteractive(key);
         sendJson(res, 200, { ok: true, aborted: !!agent });
         return;
       }
@@ -1806,7 +1815,19 @@ const makeTurnUi = (res, key) => {
           sendJson(res, 409, { ok: false, error: "该会话已有任务在运行 — 请先停止或等它结束" });
           return;
         }
-        running.add(key);
+                let turnFinished = false;
+        // A closed browser tab (refresh or navigate) is a disconnect, not a
+        // pause: nobody reads the SSE any more, so stop the run at once and
+        // release the session. Leaving it hanging was what made a refresh
+        // brick the conversation — new tasks hit 409 and the stop button was
+        // gone because the fresh page believed the session was idle.
+        res.on("close", () => {
+          if (turnFinished) { return; }
+          flushInteractive(key);
+          const a = sessions.get(key);
+          if (a && typeof a.abort === "function") { a.abort(); }
+        });
+running.add(key);
         try {
         res.writeHead(200, {
           "Content-Type": "text/event-stream; charset=utf-8",
@@ -1875,6 +1896,7 @@ const makeTurnUi = (res, key) => {
         }
         sse(res, { type: "session", id: saver.id, file: saver.file ?? null });
         sse(res, { type: "done" });
+        turnFinished = true;
         console.log("[" + key + "] 完成 — " + agent.messages.length + " 消息 / " + agent.turnCount + " 回合 / 输入 " + (agent.totalInputTokens || 0) + " / 输出 " + (agent.totalOutputTokens || 0) + " tokens");
         res.end();
         } finally {
@@ -1985,7 +2007,7 @@ if (path === "/api/session" && req.method === "POST") {
         // two entries in the sidebar.
         const wanted = keyOf(body);
         const key = wanted === target.id ? wanted : target.id;
-        const agent = await agentFor(key, consoleUi(makeUi({ write: () => {}, writableEnded: true }), key));
+        const agent = await agentFor(key, consoleUi(makeUi({ write: () => {}, writableEnded: true }, key), key));
         // The live agent is the source of truth when it is ahead of the file.
         // Auto-save is throttled, so during a run the file trails by a whole
         // turn; overwriting the live agent with it is what made a refresh

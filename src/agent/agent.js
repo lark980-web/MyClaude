@@ -470,6 +470,10 @@ export class Agent {
    *   message instead of appending a new one (used by Retry)
    */
   async run(userInput, { attachments, reuseLastUser } = {}) {
+    // A previous stop must not brick this agent: the flag is checked at every
+    // turn boundary, so without the reset every later run instantly returned
+    // (interrupted) — "I stopped a task and now nothing runs".
+    this.stopRequested = false;
     if (!reuseLastUser) {
       // UserPromptSubmit may veto the turn or inject extra context alongside it.
       if (this.hooks.has("UserPromptSubmit")) {
