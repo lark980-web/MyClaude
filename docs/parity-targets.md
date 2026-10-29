@@ -108,3 +108,6 @@ MyClaude 41+ 命令 vs Claude Code：除生态专属 8 项与待环境 2 项
 
 - ✅ 脚本化三件套实测：-p 单回合 / --output-format json（{result,sessionId,tokens}）/
   -p --resume <id> --continue 带历史续跑（oneShot 原本不加载历史也不落盘，已修）
+
+- ✅ --output-format stream-json 实测：每事件一行合法 JSON（text/tool_use/
+  tool_result/result），result 带 sessionId 与 token 统计——脚本化三格式齐
