@@ -13,7 +13,7 @@ import { createAgent } from "../agent/runtime.js";
 import { allRegisteredTools, registerTools, multiEditTool, todoWriteTool, webFetchTool } from "../tools/index.js";
 import { EXTENDED_TOOLS } from "../tools/extended.js";
 import { getTodos } from "../tools/extra.js";
-import { taskSummaries } from "../tools/tasks.js";
+import { taskSummaries, readTaskOutput, killTask } from "../tools/tasks.js";
 import { loadConfig, saveConfig } from "../config.js";
 import { resolveAttachments, describeAttachment } from "../attachments.js";
 import {
@@ -1003,6 +1003,17 @@ const makeTurnUi = (res, key) => {
 
       if (path === "/api/tasks") {
         sendJson(res, 200, { tasks: taskSummaries() });
+        return;
+      }
+      if (path === "/api/tasks/output" && req.method === "GET") {
+        const id = url.searchParams.get("id") || "";
+        sendJson(res, 200, await readTaskOutput(id, { offset: Number(url.searchParams.get("offset") || 0) }));
+        return;
+      }
+      if (path === "/api/tasks/kill" && req.method === "POST") {
+        const body = await readJson(req);
+        const r = killTask(body.id);
+        sendJson(res, 200, { ok: !!(r && r.ok !== false) });
         return;
       }
 

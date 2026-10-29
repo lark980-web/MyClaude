@@ -2287,7 +2287,9 @@ body.no-motion *, body.no-motion *::before, body.no-motion *::after { animation:
   display: flex;
   align-items: center;
   gap: 4px;
-  margin: 0 8px 6px;
+  /* 顶部留白：紧贴厂商横幅下边框时字形顶部视觉上像被遮住 */
+  margin: 6px 8px 6px;
+  padding-top: 2px;
   padding-bottom: 4px;
   border-bottom: 1px solid var(--line);
   /* 同 .model-vendor-tabs：换行代替横滚；flex-shrink:0 防止菜单超高时
@@ -2303,6 +2305,7 @@ body.no-motion *, body.no-motion *::before, body.no-motion *::after { animation:
   padding: 3px 8px;
   border-radius: 999px;
   font-size: 11.5px;
+  line-height: 17px;
   color: var(--fg-3);
   background: transparent;
   border: 1px solid transparent;
@@ -3425,24 +3428,6 @@ body.no-motion *, body.no-motion *::before, body.no-motion *::after { animation:
   opacity: 0.9;
 }
 
-/* Claude Projects（项目知识库与本地上传文件上下文模态框） */
-.project-pill-btn.has-files {
-  color: var(--accent);
-  border-color: color-mix(in srgb, var(--accent) 42%, var(--line));
-  background: var(--accent-soft);
-}
-.proj-pill-count {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 16px;
-  height: 16px;
-  padding: 0 5px;
-  border-radius: 999px;
-  background: var(--accent);
-  color: var(--accent-fg);
-  font: 600 10.5px/1 var(--mono);
-}
 
 .projects-modal-card {
   width: min(820px, 95vw);
@@ -5395,6 +5380,9 @@ body.no-motion *, body.no-motion *::before, body.no-motion *::after { animation:
   padding: 8px 14px;
   background: var(--accent-soft);
   border-bottom: 1px solid var(--line);
+  /* 菜单超高时唯一没有 flex-shrink:0 的头部元素就是它——被压 1px 后
+     副标题的 overflow:hidden 会剃掉字形顶部，必须锁死 */
+  flex-shrink: 0;
 }
 .pv-banner-left {
   display: flex;
@@ -5416,6 +5404,8 @@ body.no-motion *, body.no-motion *::before, body.no-motion *::after { animation:
 .pv-banner-txt { min-width: 0; flex: 1; }
 .pv-banner-sub {
   font-size: 11px;
+  /* 显式整数行高：normal 是 17.05px 小数，行盒被压时字形顶部会被剃掉 */
+  line-height: 18px;
   color: var(--fg-3);
   display: block;
   overflow: hidden;
@@ -5439,234 +5429,9 @@ body.no-motion *, body.no-motion *::before, body.no-motion *::after { animation:
   color: #fff;
 }
 
-/* 欢迎区模型状态卡片 */
-.welcome-model-card {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 14px 18px;
-  border-radius: 14px;
-  background: var(--panel);
-  border: 1px solid var(--line);
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.04);
-  margin-bottom: 1.75rem;
-  text-align: left;
-  min-width: 0;
-}
+/* .welcome-suggestions removed: 快捷建议卡片已移除 */
 
-.wmc-left {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex: 1;
-  min-width: 0;
-}
-
-.wmc-icon {
-  font-size: 24px;
-  line-height: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 44px;
-  height: 44px;
-  border-radius: 10px;
-  background: var(--accent-soft);
-  flex-shrink: 0;
-}
-
-.wmc-info {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 0;
-  flex: 1;
-}
-
-.wmc-title-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.wmc-label {
-  color: var(--fg-3);
-  font-size: 13px;
-}
-
-.wmc-name {
-  color: var(--fg);
-  font-weight: 700;
-  font-size: 14.5px;
-}
-
-.wmc-vendor {
-  padding: 2px 8px;
-  border-radius: 4px;
-  background: var(--accent-soft);
-  color: var(--accent);
-  font-size: 11.5px;
-  font-weight: 600;
-}
-
-.wmc-status-pill {
-  font-size: 11.5px;
-  font-weight: 600;
-  padding: 2px 8px;
-  border-radius: 12px;
-  background: rgba(46, 160, 67, 0.12);
-  color: #2ea043;
-}
-
-.wmc-status-pill.warn {
-  background: rgba(227, 179, 65, 0.15);
-  color: #b08800;
-}
-
-.wmc-sub {
-  font-size: 11.5px;
-  color: var(--fg-3);
-  line-height: 1.4;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  /* nowrap 会让 min-content 宽度等于整行文本，必须允许收缩到 0 才不撑破父级 */
-  min-width: 0;
-}
-
-.topbar-cfg-badge {
-  font-size: 10.5px;
-  font-weight: 600;
-  padding: 2px 6px;
-  border-radius: 4px;
-  background: var(--accent-soft);
-  color: var(--accent);
-}
-
-.topbar-cfg-badge.ok {
-  background: rgba(46, 160, 67, 0.14);
-  color: #2ea043;
-}
-
-.topbar-cfg-badge.free {
-  background: rgba(26, 115, 232, 0.14);
-  color: #1a73e8;
-}
-
-.topbar-cfg-badge.warn {
-  background: rgba(227, 179, 65, 0.18);
-  color: #b08800;
-}
-
-.wmc-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-shrink: 0;
-}
-
-/* 窄屏：卡片纵向堆叠，按钮换行并允许收缩，避免 .wmc-actions 撑出卡片 */
-@media (max-width: 480px) {
-  .welcome-model-card { flex-direction: column; align-items: stretch; }
-  .wmc-actions { flex-wrap: wrap; }
-  .wmc-btn { flex: 1 1 auto; min-width: 0; }
-}
-
-.wmc-btn {
-  height: 32px;
-  padding: 0 14px;
-  border-radius: 8px;
-  border: 1px solid var(--line);
-  background: var(--panel-2);
-  color: var(--fg-2);
-  font: 500 12.5px/1 var(--sans);
-  cursor: pointer;
-  transition: all var(--t) var(--ease);
-}
-
-.wmc-btn:hover {
-  background: var(--panel);
-  border-color: var(--accent);
-  color: var(--accent);
-}
-
-.wmc-btn.primary {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #fff;
-  font-weight: 600;
-}
-
-.wmc-btn.primary:hover {
-  background: var(--accent-hover);
-}
-
-/* 欢迎区建议卡片网格 */
-.welcome-suggestions {
-  width: 100%;
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 12px;
-}
-
-@media (max-width: 640px) {
-  .welcome-suggestions {
-    grid-template-columns: 1fr;
-  }
-}
-
-.welcome-sug-card {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  padding: 14px 16px;
-  border-radius: 12px;
-  background: var(--panel);
-  border: 1px solid var(--line);
-  text-align: left;
-  cursor: pointer;
-  transition: all var(--t) var(--ease);
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.02);
-}
-
-.welcome-sug-card:hover {
-  border-color: var(--accent);
-  transform: translateY(-1px);
-  box-shadow: 0 6px 16px -2px rgba(0, 0, 0, 0.06);
-}
-
-.sug-ico {
-  font-size: 20px;
-  line-height: 1;
-  flex-shrink: 0;
-  margin-top: 2px;
-}
-
-.sug-body {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 0;
-}
-
-.sug-title {
-  font-size: 13.5px;
-  font-weight: 600;
-  color: var(--fg);
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.sug-desc {
-  font-size: 12px;
-  color: var(--fg-3);
-  line-height: 1.45;
-  min-width: 0;
-}
+/* .welcome-sug-card removed: 快捷建议卡片已移除 */
 
 /* =============================================================================
    模型与供应商配置中心模态框 (Model & Provider Configuration Modal)
@@ -6338,3 +6103,83 @@ body.no-motion *, body.no-motion *::before, body.no-motion *::after { animation:
 .diff-line.dl-hunk { color: var(--info); background: #3b6fb014; padding: 2px 14px; margin: 4px 0; }
 .diff-line.dl-add { color: var(--good); background: #4d8a4a12; }
 .diff-line.dl-del { color: var(--crit); background: #c2412d12; }
+/* ---- Agent Inbox 式任务面板（参照 affectui.com 的 calm 美学）---- */
+.inbox-tabs { display: flex; gap: 6px; margin-bottom: 10px; flex-wrap: wrap; }
+.inbox-tab {
+  font: 600 12px/1 var(--sans); color: var(--fg-3);
+  background: transparent; border: 1px solid var(--line);
+  border-radius: 999px; padding: 5px 11px; cursor: pointer;
+  transition: all var(--t) var(--ease);
+}
+.inbox-tab:hover { color: var(--fg-2); border-color: var(--line-strong); }
+.inbox-tab.active { color: var(--fg); background: var(--accent-soft); border-color: var(--accent); }
+.inbox-row {
+  border: 1px solid var(--line); border-radius: 10px;
+  margin-bottom: 8px; overflow: hidden; background: var(--panel);
+  animation: pop 160ms var(--ease-out) both;
+}
+.inbox-row.live { border-color: color-mix(in srgb, var(--accent) 34%, var(--line)); }
+.inbox-head { display: flex; align-items: center; gap: 9px; padding: 9px 12px; cursor: pointer; min-width: 0; }
+.inbox-head:hover { background: var(--panel-3); }
+.inbox-cmd {
+  flex: 1; min-width: 0; font: 500 12.5px/1.4 var(--mono);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--fg-2);
+}
+.inbox-clock {
+  flex-shrink: 0; font: 600 11px/1 var(--mono); font-variant-numeric: tabular-nums;
+  color: var(--fg-3); background: var(--panel-3); border-radius: 6px; padding: 4px 7px;
+}
+.pill.pulse { position: relative; padding-left: 16px; }
+.pill.pulse::before {
+  content: ""; position: absolute; left: 6px; top: 50%; width: 6px; height: 6px;
+  margin-top: -3px; border-radius: 50%; background: var(--accent);
+  animation: inbox-pulse 1.4s var(--ease) infinite;
+}
+@keyframes inbox-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.45; transform: scale(0.8); }
+}
+.inbox-detail { border-top: 1px solid var(--line); padding: 10px 12px; background: var(--panel-3); animation: fade 150ms var(--ease) both; }
+.inbox-id { font: 500 11px/1 var(--mono); color: var(--fg-4); margin-bottom: 7px; }
+.inbox-out {
+  margin: 0 0 9px; padding: 9px 11px; max-height: 240px; overflow: auto;
+  font: 11.5px/1.55 var(--mono); color: var(--fg-2);
+  background: var(--code-bg); border: 1px solid var(--line); border-radius: 8px;
+  white-space: pre-wrap; word-break: break-all;
+}
+.inbox-acts { display: flex; gap: 8px; }
+.inbox-btn {
+  font: 600 11.5px/1 var(--sans); color: var(--fg-2);
+  background: var(--panel); border: 1px solid var(--line-strong);
+  border-radius: 7px; padding: 6px 11px; cursor: pointer;
+  transition: all var(--t) var(--ease);
+}
+.inbox-btn:hover { border-color: var(--accent); color: var(--accent); }
+.inbox-btn.danger:hover { border-color: var(--crit); color: var(--crit); }
+/* ---- Context Window 视野（参照 affectui.com：一排格子看水位）---- */
+.ctx-field { display: flex; gap: 3px; margin-top: 9px; padding: 0 2px; flex-wrap: wrap; }
+.ctx-cell {
+  width: 9px; height: 9px; border-radius: 2.5px;
+  background: var(--line); transition: background var(--t) var(--ease);
+}
+.ctx-cell.fill { background: color-mix(in srgb, var(--accent) 68%, var(--panel)); }
+.ctx-cell.warm { background: color-mix(in srgb, var(--warn) 78%, var(--panel)); }
+.ctx-cell.hot { background: var(--crit); }
+/* ---- Model Picker 速度条（参照 affectui.com：悬停行时填充）---- */
+.model-opt { position: relative; }
+.model-speedbar {
+  position: absolute; left: 10px; right: 10px; bottom: 3px;
+  height: 2px; border-radius: 2px; background: transparent;
+  opacity: 0; transition: opacity var(--t) var(--ease);
+}
+.model-opt:hover .model-speedbar { opacity: 1; }
+.model-speedbar-fill {
+  display: block; height: 100%; width: var(--speed-pct, 40%);
+  border-radius: 2px;
+  background: var(--accent);
+  transform: scaleX(0); transform-origin: left;
+  transition: transform 420ms var(--ease-out);
+}
+.model-opt:hover .model-speedbar-fill { transform: scaleX(1); }
+.model-speedbar.medium .model-speedbar-fill { background: var(--warn); }
+.model-speedbar.slow .model-speedbar-fill { background: var(--crit); }
