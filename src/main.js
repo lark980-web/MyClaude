@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { loadConfig, saveConfig, configPath } from "./config.js";
+import { listOutputStyles } from "./output-style.js";
 import { createProvider } from "./providers/openai.js";
 import { Agent } from "./agent/agent.js";
 import { TerminalUI } from "./ui/terminal.js";
@@ -643,6 +644,32 @@ async function handleCommand(raw, ctx) {
       ].join("\n"));
       return {};
     }
+    case "bashes": {
+      // Claude Code 的 /bashes：列出后台 shell。MyClaude 的 /tasks 是超集
+      // （含全部后台任务 + 输出读取 + 终止），直接别名。
+      return handleCommand("/tasks", ctx);
+    }
+    case "output-style": {
+      // Claude Code 的 /output-style：无参列出全部风格并标当前；带参切换并
+      // 重建系统提示。自定义风格是 output-styles/<name>.md。
+      const styles = listOutputStyles();
+      if (!arg) {
+        ui.info("可用输出风格：");
+        for (const s of styles) {
+          const mark = (config.outputStyle || "default") === s.name ? " ← 当前" : "";
+          ui.info("  " + s.name + "（" + s.label + "）" + (s.description ? " — " + s.description : "") + mark);
+        }
+        ui.info("切换：/output-style <名称>");
+        return {};
+      }
+      const pick = styles.find((s) => s.name === arg);
+      if (!pick) { ui.warn("未知风格：" + arg + "（可用：" + styles.map((s) => s.name).join(", ") + "）"); return {}; }
+      config.outputStyle = pick.name;
+      saveConfig({ outputStyle: pick.name });
+      agent.setOutputStyle(pick.name);
+      ui.success("输出风格 → " + pick.name + "（" + pick.label + "）");
+      return {};
+    }
     case "skill": {
       const name = rest[0];
       if (!name) { ui.warn("用法：/skill <技能名>"); return {}; }
@@ -1045,6 +1072,15 @@ async function runPlain({ config, provider, agent, autoSaver, ui }) {
 
   const ctx = { agent, config, provider, ui, pendingAttachments: [], autoSaver };
   let running = true;
+  // Claude Code 的 Esc+Esc：把上一条用户消息召回输入行，编辑后重新提交。
+  // 提交时若与召回的内容一致，先 rewind 到该消息前再跑，历史不重复。
+  let editPrevious = false;
+  let lastUserText = "";
+  ui.onEditPrevious = () => {
+    if (!lastUserText) { ui.warn("还没有可编辑的历史消息"); return; }
+    editPrevious = true;
+    ui.rl?.write(lastUserText);
+  };
   while (running) {
     let input;
     try {
@@ -1054,6 +1090,17 @@ async function runPlain({ config, provider, agent, autoSaver, ui }) {
     }
     const trimmed = input.trim();
     if (!trimmed) continue;
+
+    let wasRewound = false;
+    if (editPrevious) {
+      editPrevious = false;
+      if (trimmed === lastUserText) {
+        agent.rewind(trimmed);
+        wasRewound = true;
+        ui.info("已回退到上一条消息，重新执行");
+      }
+    }
+    lastUserText = trimmed;
 
     if (trimmed.startsWith("/")) {
       const r = await handleCommand(trimmed, ctx);
@@ -1074,6 +1121,12 @@ async function runPlain({ config, provider, agent, autoSaver, ui }) {
     }
 
     const files = ctx.pendingAttachments.splice(0);
+    if (wasRewound) {
+      // Esc+Esc 重跑：rewind 已把用户消息放回，不能再 append 一份。
+      wasRewound = false;
+      await agent.run("", { attachments: files, reuseLastUser: true });
+    } else {
+          }
     await agent.run(trimmed, { attachments: files });
     const compact = await agent.maybeCompact();
     if (compact) ui.info(`context compacted (dropped ${compact.dropped} messages)`);
