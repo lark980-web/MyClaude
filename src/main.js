@@ -772,7 +772,27 @@ async function handleCommand(raw, ctx) {
       ui.info(`messages=${s.messages} turns=${s.turns}`);
       return {};
     }
-        case "output-style": {
+        case "statusline": {
+      // Claude Code 的 /statusline：自定义状态行脚本。脚本 stdout 第一行作为
+      // 每回合前的状态行（可显示分支/token 等）。off 清除。
+      const cmd = String(arg || "").trim();
+      if (!cmd || cmd === "off") {
+        config.statusLineCommand = "";
+        saveConfig({ statusLineCommand: "" });
+        ui.info("状态行已清除");
+        return {};
+      }
+      config.statusLineCommand = cmd;
+      saveConfig({ statusLineCommand: cmd });
+      ui.success("状态行命令已设置：" + cmd + "（每回合前刷新）");
+      return {};
+    }
+    case "bashes": {
+      // Claude Code 的 /bashes：列出后台 shell。MyClaude 的 /tasks 是超集
+      // （含全部后台任务 + 输出读取 + 终止），直接别名。
+      return handleCommand("/tasks", ctx);
+    }
+    case "output-style": {
       // Claude Code 的 /output-style：无参列出全部风格并标当前；带参切换并
       // 重建系统提示。自定义风格是 output-styles/<name>.md。
       const styles = listOutputStyles();
@@ -1089,7 +1109,15 @@ async function runPlain({ config, provider, agent, autoSaver, ui }) {
       // same run/save/compact path as typed input.
       if (r.customPrompt) {
         ui.info(`执行自定义命令 /${r.customName}\n`);
-        const files = ctx.pendingAttachments.splice(0);
+        // 状态行刷新（/statusline）：脚本 stdout 首行作为本回合前的状态显示。
+    if (config.statusLineCommand) {
+      try {
+        const sl = spawnSync("cmd.exe", ["/d", "/s", "/c", config.statusLineCommand], { cwd: process.cwd(), encoding: "utf8", timeout: 3000, windowsHide: true });
+        const line = String(sl.stdout || "").split(/\r?\n/).find((l) => l.trim());
+        if (line) { ui.info("── " + line.trim()); }
+      } catch {}
+    }
+    const files = ctx.pendingAttachments.splice(0);
         await withCommandScope(agent, config, provider, r.custom || {}, async () => {
           agent.run(r.customPrompt, { attachments: files });
         });
