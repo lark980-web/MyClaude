@@ -1908,7 +1908,8 @@ running.add(key);
           }
           // Await it: without this the save and the "done" event raced the
           // compaction, so the stored history could keep the pre-compaction tail.
-          await agent.maybeCompact?.();
+          const compacted = await agent.maybeCompact?.();
+        if (compacted) { sse(res, { type: "compact", dropped: compacted.dropped }); }
         } catch (e) {
           ui.error(`agent error: ${e.message}`);
         }

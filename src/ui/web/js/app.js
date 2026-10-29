@@ -2254,7 +2254,8 @@
       refreshSessions();
       return;
     }
-    if (ev.type === "done") { setBusy(false); }
+    if (ev.type === "compact") { addNotice("上下文已压缩（丢弃 " + (ev.dropped ?? "?") + " 条旧消息），长对话继续", "info"); }
+          if (ev.type === "done") { setBusy(false); }
   }
 
   function sendMessage() {
