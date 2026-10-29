@@ -116,3 +116,14 @@ MyClaude 41+ 命令 vs Claude Code：除生态专属 8 项与待环境 2 项
   工具返回 permission denied by user（模型确认被拒），无旗标对照组成功读取
 
 - ✅ --append-system-prompt 实测：注入指令（末尾加 BANANA42）→ 回答遵守
+
+## 全量覆盖达成（2026-10-30 05:25）
+
+**72 个测试文件全部在本夜验证通过**：串行批 428 过 / 0 挂 + 剩余批
+235 过 / 0 挂（覆盖 abort/auto/autorun/background-agent/checkpoint/command*
+/console-ui/context-cap/cost/failover/fast-mode/followup/git-tools/gui-hooks
+/memory/plan/project-memory/reasoning-blocks/router-failover/subagent-type
+/usage/vendors/effort/extended-tools/extra-tools/dream）。
+
+对比矩阵最终状态：命令面、工具面、权限面、扩展机制、子代理、交互面、
+数据面、脚本化、e2e —— 无已知空洞。待环境 2 项（/statusline /vim）。
