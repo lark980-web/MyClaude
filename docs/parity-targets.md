@@ -94,3 +94,11 @@ MyClaude 41+ 命令 vs Claude Code：除生态专属 8 项与待环境 2 项
 
 - ✅ 扩展机制三件套：MCP（auth 9/command 4/http 6/oauth 16/prompts 5/resource-tools 5）
   + plugins 8 + skills 8 —— 61 项全过。MCP 含 OAuth 登录流、资源与提示读取
+
+## 串行全量结果（2026-10-30 04:20）
+
+- 72 文件串行：64 完成，**428 过 / 0 挂**
+- 8 个 GUI 系文件 60s 限时内未完成（负载加剧），它们在负载较低时段
+  均已单独通过（gui 组 28/28、disconnect 3/3、midrun-flush、max-turns）；
+  其后的 compact/stats 改动已经真实 e2e 验证
+- 结论：并行 spawn 在当前常驻负载下不可用；串行 + 按需加大限时可跑
