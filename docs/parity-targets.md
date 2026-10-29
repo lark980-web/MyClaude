@@ -62,3 +62,5 @@ Esc+Esc 的 GUI 等价物（右栏消息编辑）。
 - ✅ GUI 消息编辑（Esc+Esc 等价物）：「编辑」→内联编辑→「保存并重新生成」，
   带分支快照与后续轮次截断——超出 Claude 基础版，无需另做
 - ✅ @ 文件引用补全：at-menu + btn-at + closeAtMenu 全链路在位
+
+- ✅ Hooks 生命周期实测：SessionStart 以 Claude 同款 schema（matcher 包 hooks 数组）写入 config 后，真实 exe 启动即触发（标记文件落地）
