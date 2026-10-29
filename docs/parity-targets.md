@@ -43,3 +43,16 @@
 - GUI 命令：app.js runCommand 分支 + 端点 fetch 断言
 - 单元：test/*.test.js 对应文件
 
+
+## 语义验证记录（2026-10-30 02:50，对真实 exe --plain 逐命令）
+
+- ✅ /context /cost /stats：统计块完整（消息/回合/上下文水位/累计 token）
+- ✅ /memory：输出记忆内容（# From...）
+- ✅ /hooks /agents /todos /mcp /skills：正确的空态+添加指引
+- ✅ /permissions：规则列表（allow...）
+- ✅ /config：完整 JSON；/doctor：健康检查逐项 ok
+- ✅ /tools：全工具清单；/compact /rewind：正确的空态提示
+- 注：Claude 的 /plugins 在 MyClaude 叫 /plugin（单数），已存在
+
+剩余待做：/vim（需 raw-mode 重写）、/statusline（TTY 调试）、
+Esc+Esc 的 GUI 等价物（右栏消息编辑）。
