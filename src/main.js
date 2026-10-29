@@ -54,6 +54,8 @@ Options:
   --resume <id>            resume a specific saved session
   --config-path            print config file path
   -p, --print <prompt>   run one turn non-interactively, print the answer, exit
+  --allowed-tools <tools...>  comma/space separated tools to allow
+  --disallowed-tools <t...>   tools to deny
   -v, --version            print version
   -h, --help               this help
 
@@ -115,9 +117,22 @@ function parseArgs(argv) {
     configPath: argv.includes("--config-path"),
     continueSession: argv.includes("--continue") || argv.includes("-c"),
     outputFormat: null,
+    allowedTools: [],
+    disallowedTools: [],
     resume: null,
   };
-    const ofIdx = argv.findIndex((a) => a === "--output-format");
+    const gatherVariadic = (flag) => {
+    const idx = argv.findIndex((a) => a === flag);
+    if (idx < 0) return [];
+    const vals = [];
+    for (let k = idx + 1; k < argv.length && !argv[k].startsWith("-"); k++) {
+      vals.push(...argv[k].split(","));
+    }
+    return vals.map((v) => v.trim()).filter(Boolean);
+  };
+  opts.allowedTools = gatherVariadic("--allowed-tools").concat(gatherVariadic("--allowedTools"));
+  opts.disallowedTools = gatherVariadic("--disallowed-tools").concat(gatherVariadic("--disallowedTools"));
+  const ofIdx = argv.findIndex((a) => a === "--output-format");
   if (ofIdx >= 0) opts.outputFormat = argv[ofIdx + 1] ?? null;
 const resumeIdx = argv.findIndex((a) => a === "--resume" || a === "-r");
   if (resumeIdx >= 0) opts.resume = argv[resumeIdx + 1] ?? null;
@@ -1250,6 +1265,13 @@ async function main() {
 
   const provider = createProvider(config);
 
+  // CLI 权限旗标（对齐 Claude Code --allowed-tools/--disallowed-tools）：
+  // 合并进 config.permissions，对 TUI 与 -p 都生效。
+  if (opts.allowedTools.length || opts.disallowedTools.length) {
+    config.permissions = config.permissions || {};
+    if (opts.allowedTools.length) { config.permissions.allow = [...(config.permissions.allow || []), ...opts.allowedTools]; }
+    if (opts.disallowedTools.length) { config.permissions.deny = [...(config.permissions.deny || []), ...opts.disallowedTools]; }
+  }
   if (opts.oneShot) {
     const jsonOut = opts.outputFormat === "json";
     const jsonl = opts.outputFormat === "stream-json";
