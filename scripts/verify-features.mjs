@@ -36,6 +36,7 @@ const FILES = {
     'reviewPrompt',
     "上下文分解",
     'listOutputStyles',
+    'statSync',
     'oneShotSaver',
     'outputFormat',
     '--output-format',

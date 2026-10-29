@@ -127,3 +127,5 @@ MyClaude 41+ 命令 vs Claude Code：除生态专属 8 项与待环境 2 项
 
 对比矩阵最终状态：命令面、工具面、权限面、扩展机制、子代理、交互面、
 数据面、脚本化、e2e —— 无已知空洞。待环境 2 项（/statusline /vim）。
+
+- ✅ /add-dir 崩溃已修（statSync 漏导入）：追加成功、/status 可见、守卫已纳标记
