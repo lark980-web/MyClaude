@@ -111,3 +111,6 @@ MyClaude 41+ 命令 vs Claude Code：除生态专属 8 项与待环境 2 项
 
 - ✅ --output-format stream-json 实测：每事件一行合法 JSON（text/tool_use/
   tool_result/result），result 带 sessionId 与 token 统计——脚本化三格式齐
+
+- ✅ --allowed-tools/--disallowed-tools CLI 旗标实测：disallow Read 后
+  工具返回 permission denied by user（模型确认被拒），无旗标对照组成功读取
