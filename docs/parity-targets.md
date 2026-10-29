@@ -81,3 +81,6 @@ MyClaude 41+ 命令 vs Claude Code：除生态专属 8 项与待环境 2 项
   output-style session-hooks double-escape changes-api bash-timeout-promote
 - 组合跑会超时：node --test 并行多文件时同时 spawn 多个 exe，机械盘 IO
   争用（用户 GUI+AI 会话常驻加剧）。非产品问题，负载低时再补全量。
+
+- ✅ 子代理定义实测：.myclaude/agents/<名>.md（frontmatter name/description）
+  被 /agents 正确列出，Task 工具 subagent_type 直接可用——与 Claude Code 同机制
