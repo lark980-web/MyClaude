@@ -166,7 +166,18 @@ const gitNumstat = (scope, onlyPaths) => {
   if (r.error || (r.status !== 0 && r.status !== 1)) {
     const msg = String(r.stderr || "");
     if (/not a git repository/i.test(msg)) { return { ok: false, reason: "non-git" }; }
-    return { ok: false, reason: "git-failed", error: msg.slice(0, 200) };
+    // Graceful-shutdown flush: Ctrl+C or a clean close must persist every
+  // session still in memory. (A force-kill cannot run handlers — that is
+  // what the mid-run interval flush covers.) "exit" handlers must be sync;
+  // saveSession is.
+  const flushAllSavers = () => {
+    for (const [, s] of savers) { try { s.save({ force: true }); } catch {} }
+  };
+  process.once("exit", flushAllSavers);
+  for (const sig of ["SIGINT", "SIGTERM"]) {
+    process.on(sig, () => { flushAllSavers(); process.exit(0); });
+  }
+  return { ok: false, reason: "git-failed", error: msg.slice(0, 200) };
   }
   const statusMap = {};
   for (const line of String(run(statusArgs).stdout || "").split("\n")) {
@@ -1851,6 +1862,11 @@ running.add(key);
         const ui = consoleUi(makeTurnUi(res, key), key);
         const agent = await agentFor(key, ui);
         const saver = saverFor(key, agent);
+        // Force-close resilience: saving only at turn end meant a killed
+        // process lost the WHOLE in-flight turn ("任务执行过的内容都遗失了").
+        // Flush every 2.5s while the run is alive; the saver's own 1s throttle
+        // coalesces these into cheap atomic writes.
+        const flushTimer = setInterval(() => { try { saver.save(); } catch {} }, 2500);
         let runResult = null;
 
 
@@ -1912,6 +1928,7 @@ running.add(key);
         res.end();
         } finally {
           // Free the slot no matter how the run ended: error, interrupt, done.
+          if (typeof flushTimer !== "undefined") { clearInterval(flushTimer); }
           running.delete(key);
         }
         return;
@@ -2065,38 +2082,104 @@ if (path === "/api/session" && req.method === "POST") {
       if (path === "/api/transcribe" && req.method === "POST") {
         const body = await readJson(req);
         const audioData = String(body.audio || "").trim();
-        const mimeType = String(body.mimeType || "audio/webm").trim();
+        const mimeType = String(body.mimeType || "audio/wav").trim();
         const lang = String(body.lang || "zh-CN").trim();
         if (!audioData) {
           sendJson(res, 400, { ok: false, error: "缺少音频数据" });
           return;
         }
+        const langHint = lang === "zh-HK" ? "粤语/繁体中文" : lang === "zh-TW" ? "繁体中文（台湾）" : "简体中文（普通话）";
+        const prompt = `请将这段语音准确转写为${langHint}文本（若包含英文编程术语、API名称或代码符号请保留原词），自动补充自然的中文标点符号。只直接输出转写后的文字，不要输出任何额外解释。`;
+
+        const tryGatewayTranscribe = async () => {
+          // The user's own provider (provider.json baseUrl) often has an
+          // audio-capable chat model even without a Gemini key. Find it by
+          // asking the endpoint for its model list and picking the first
+          // entry whose modalities include audio input.
+          const base = String(config.baseUrl || "").replace(/\/+$/, "");
+          if (!base) throw new Error("未配置任何模型服务");
+          const headers = { "Content-Type": "application/json" };
+          if (config.apiKey) headers.Authorization = `Bearer ${config.apiKey}`;
+
+          let audioModel = String(config.transcribeModel || "").trim();
+          if (!audioModel) {
+            try {
+              const lr = await fetch(`${base}/models`, { headers, signal: AbortSignal.timeout(8000) });
+              if (lr.ok) {
+                const lj = await lr.json();
+                const audioM = (lj.data || []).find((m) => (m.modalities?.input || []).includes("audio"));
+                audioModel = audioM?.id || "";
+              }
+            } catch {}
+          }
+          if (!audioModel && config.model) {
+            // 某些聚合网关的 /models 不标注 modalities，但实际路由得了音频。
+            // 最后兜底：用当前对话模型试一次，失败时错误会带上模型名，可诊断。
+            audioModel = config.model;
+          }
+          if (!audioModel) throw new Error("当前模型服务没有支持音频输入的模型（无法转写）");
+
+          const cr = await fetch(`${base}/chat/completions`, {
+            method: "POST",
+            headers,
+            body: JSON.stringify({
+              model: audioModel,
+              messages: [
+                {
+                  role: "user",
+                  content: [
+                    { type: "text", text: prompt },
+                    { type: "input_audio", input_audio: { data: audioData, format: mimeType.includes("wav") ? "wav" : "webm" } },
+                  ],
+                },
+              ],
+              max_tokens: 2048,
+            }),
+            signal: AbortSignal.timeout(120000),
+          });
+          const raw = await cr.text();
+          if (!cr.ok) {
+            let msg = raw.slice(0, 300);
+            try { msg = JSON.parse(raw)?.error?.message || msg; } catch {}
+            throw new Error(`转写模型 ${audioModel} 返回 ${cr.status}：${msg}`);
+          }
+          let text = "";
+          try { text = String(JSON.parse(raw)?.choices?.[0]?.message?.content || ""); } catch {}
+          text = text.trim();
+          if (!text) throw new Error("转写结果为空");
+          return text;
+        };
+
         const apiKey = process.env.GEMINI_API_KEY;
-        if (!apiKey) {
-          sendJson(res, 503, { ok: false, error: "未配置 GEMINI_API_KEY，请优先使用浏览器原生免费中文语音识别" });
+        if (apiKey) {
+          try {
+            const ai = new GoogleGenAI({
+              apiKey,
+              httpOptions: { headers: { "User-Agent": "aistudio-build" } }
+            });
+            const response = await ai.models.generateContent({
+              model: "gemini-3.5-transcribe",
+              contents: {
+                parts: [
+                  { inlineData: { mimeType, data: audioData } },
+                  { text: prompt }
+                ]
+              }
+            });
+            const text = String(response.text || "").trim();
+            sendJson(res, 200, { ok: true, text });
+          } catch (e) {
+            sendJson(res, 500, { ok: false, error: String(e?.message || e) });
+          }
           return;
         }
+
+        // No Gemini key: fall back to the user's own configured provider.
         try {
-          const ai = new GoogleGenAI({
-            apiKey,
-            httpOptions: { headers: { "User-Agent": "aistudio-build" } }
-          });
-          const langHint = lang === "zh-HK" ? "粤语/繁体中文" : lang === "zh-TW" ? "繁体中文（台湾）" : "简体中文（普通话）";
-          const response = await ai.models.generateContent({
-            model: "gemini-3.5-transcribe",
-            contents: {
-              parts: [
-                { inlineData: { mimeType, data: audioData } },
-                {
-                  text: `请将这段语音准确转写为${langHint}文本（若包含英文编程术语、API名称或代码符号请保留原词），自动补充自然的中文标点符号。只直接输出转写后的文字，不要输出任何额外解释。`
-                }
-              ]
-            }
-          });
-          const text = String(response.text || "").trim();
+          const text = await tryGatewayTranscribe();
           sendJson(res, 200, { ok: true, text });
         } catch (e) {
-          sendJson(res, 500, { ok: false, error: String(e?.message || e) });
+          sendJson(res, 502, { ok: false, error: String(e?.message || e) });
         }
         return;
       }

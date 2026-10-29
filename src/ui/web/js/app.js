@@ -4497,109 +4497,109 @@
     }, [{ label: "关闭", fn: closeModal }]);
   }
 
-  function openTasks() {
-    // Agent Inbox 风格（参照 affectui.com）：筛选页签带滚动计数、状态标签、
-    // 活动计时，行可展开看输出尾巴并可终止。弹窗打开期间每 1.5s 轮询。
-    var inbox = { filter: "all", timer: null, open: true, lastCount: {} };
-    function fmtClock(ms) {
-      var s = Math.max(0, Math.floor(ms / 1000));
-      var m = Math.floor(s / 60); s = s % 60;
-      return (m > 0 ? m + "m " : "") + (s < 10 && m > 0 ? "0" : "") + s + "s";
-    }
-    function statusTag(t) {
-      var cls = t.status === "running" ? "run" : (t.exitCode === 0 ? "ok" : "fail");
-      var zh = t.status === "running" ? "运行中" : (t.exitCode === 0 ? "完成" : "失败");
-      var tag = el("span", "pill " + cls, zh);
-      if (t.status === "running") tag.classList.add("pulse");
-      return tag;
-    }
-    function drawTabs(list) {
-      var counts = { all: list.length, running: 0, done: 0, fail: 0 };
-      list.forEach(function (t) {
-        if (t.status === "running") counts.running++;
-        else if (t.exitCode === 0) counts.done++;
-        else counts.fail++;
-      });
-      inbox.lastCount = counts;
-      return [["all", "全部"], ["running", "运行中"], ["done", "完成"], ["fail", "失败"]].map(function (pair) {
-        var b = el("button", "inbox-tab" + (inbox.filter === pair[0] ? " active" : ""), pair[1] + " " + counts[pair[0]]);
-        b.type = "button";
-        b.addEventListener("click", function () { inbox.filter = pair[0]; render(); });
-        return b;
-      });
-    }
-    function render() {
-      // 任意关闭路径（X / 遮罩 / 关闭按钮）都会让弹窗 hidden —— 以它为准停轮询。
-      var mbox = $("modal");
-      if (!inbox.open || !mbox || mbox.hidden) { if (inbox.timer) { clearInterval(inbox.timer); inbox.timer = null; } return; }
-      getJSON("/api/tasks").then(function (j) {
-        var body = $("modal-body");
-        if (!body || !body.classList.contains("inbox-body")) return;
-        body.innerHTML = "";
-        var list = j.tasks || [];
-        var tabs = el("div", "inbox-tabs");
-        drawTabs(list).forEach(function (b) { tabs.appendChild(b); });
-        body.appendChild(tabs);
-        var shown = list.filter(function (t) {
-          if (inbox.filter === "all") return true;
-          if (inbox.filter === "running") return t.status === "running";
-          if (inbox.filter === "done") return t.status !== "running" && t.exitCode === 0;
-          return t.status !== "running" && t.exitCode !== 0;
-        });
-        if (!shown.length) { body.appendChild(el("div", "empty-note", "暂无后台任务")); return; }
-        shown.forEach(function (t) {
-          var row = el("div", "inbox-row" + (t.status === "running" ? " live" : ""));
-          var head = el("div", "inbox-head");
-          head.appendChild(statusTag(t));
-          var cmd = el("div", "inbox-cmd", t.command || t.id);
-          cmd.title = t.command || "";
-          head.appendChild(cmd);
-          var clock = el("span", "inbox-clock", t.startedAt ? fmtClock(Date.now() - t.startedAt) : "—");
-          head.appendChild(clock);
-          row.appendChild(head);
-          var detail = null;
-          head.addEventListener("click", function () {
-            if (detail && detail.parentNode) { detail.remove(); row.classList.remove("open"); return; }
-            detail = el("div", "inbox-detail");
-            detail.appendChild(el("div", "inbox-id", t.id + (t.pid ? " · pid " + t.pid : "")));
-            var outPre = el("pre", "inbox-out", "加载输出…");
-            detail.appendChild(outPre);
-            var acts = el("div", "inbox-acts");
-            var refresh = el("button", "inbox-btn", "刷新输出");
-            refresh.type = "button";
-            refresh.addEventListener("click", function (ev) {
-              ev.stopPropagation();
-              getJSON("/api/tasks/output?id=" + encodeURIComponent(t.id)).then(function (o) {
-                outPre.textContent = (o.output || "(无输出)").slice(-4000);
-                outPre.scrollTop = outPre.scrollHeight;
-              }).catch(function (e) { outPre.textContent = "读取失败: " + e.message; });
-            });
-            acts.appendChild(refresh);
-            if (t.status === "running") {
-              var kill = el("button", "inbox-btn danger", "终止");
-              kill.type = "button";
-              kill.addEventListener("click", function (ev) {
-                ev.stopPropagation();
-                postJSON("/api/tasks/kill", { id: t.id }).then(function () { render(); });
-              });
-              acts.appendChild(kill);
-            }
-            detail.appendChild(acts);
-            row.appendChild(detail);
-            row.classList.add("open");
-            refresh.click();
-          });
-          body.appendChild(row);
-        });
-      }).catch(function () {});
-    }
-    openModal("后台任务", function (body) {
-      body.classList.add("inbox-body");
-      body.appendChild(el("div", "empty-note", "加载中…"));
-    }, [{ label: "关闭", fn: function () { inbox.open = false; if (inbox.timer) clearInterval(inbox.timer); closeModal(); } }]);
-    render();
-    inbox.timer = setInterval(render, 1500);
-  }
+  function openTasks() {
+    // Agent Inbox 风格（参照 affectui.com）：筛选页签带滚动计数、状态标签、
+    // 活动计时，行可展开看输出尾巴并可终止。弹窗打开期间每 1.5s 轮询。
+    var inbox = { filter: "all", timer: null, open: true, lastCount: {} };
+    function fmtClock(ms) {
+      var s = Math.max(0, Math.floor(ms / 1000));
+      var m = Math.floor(s / 60); s = s % 60;
+      return (m > 0 ? m + "m " : "") + (s < 10 && m > 0 ? "0" : "") + s + "s";
+    }
+    function statusTag(t) {
+      var cls = t.status === "running" ? "run" : (t.exitCode === 0 ? "ok" : "fail");
+      var zh = t.status === "running" ? "运行中" : (t.exitCode === 0 ? "完成" : "失败");
+      var tag = el("span", "pill " + cls, zh);
+      if (t.status === "running") tag.classList.add("pulse");
+      return tag;
+    }
+    function drawTabs(list) {
+      var counts = { all: list.length, running: 0, done: 0, fail: 0 };
+      list.forEach(function (t) {
+        if (t.status === "running") counts.running++;
+        else if (t.exitCode === 0) counts.done++;
+        else counts.fail++;
+      });
+      inbox.lastCount = counts;
+      return [["all", "全部"], ["running", "运行中"], ["done", "完成"], ["fail", "失败"]].map(function (pair) {
+        var b = el("button", "inbox-tab" + (inbox.filter === pair[0] ? " active" : ""), pair[1] + " " + counts[pair[0]]);
+        b.type = "button";
+        b.addEventListener("click", function () { inbox.filter = pair[0]; render(); });
+        return b;
+      });
+    }
+    function render() {
+      // 任意关闭路径（X / 遮罩 / 关闭按钮）都会让弹窗 hidden —— 以它为准停轮询。
+      var mbox = $("modal");
+      if (!inbox.open || !mbox || mbox.hidden) { if (inbox.timer) { clearInterval(inbox.timer); inbox.timer = null; } return; }
+      getJSON("/api/tasks").then(function (j) {
+        var body = $("modal-body");
+        if (!body || !body.classList.contains("inbox-body")) return;
+        body.innerHTML = "";
+        var list = j.tasks || [];
+        var tabs = el("div", "inbox-tabs");
+        drawTabs(list).forEach(function (b) { tabs.appendChild(b); });
+        body.appendChild(tabs);
+        var shown = list.filter(function (t) {
+          if (inbox.filter === "all") return true;
+          if (inbox.filter === "running") return t.status === "running";
+          if (inbox.filter === "done") return t.status !== "running" && t.exitCode === 0;
+          return t.status !== "running" && t.exitCode !== 0;
+        });
+        if (!shown.length) { body.appendChild(el("div", "empty-note", "暂无后台任务")); return; }
+        shown.forEach(function (t) {
+          var row = el("div", "inbox-row" + (t.status === "running" ? " live" : ""));
+          var head = el("div", "inbox-head");
+          head.appendChild(statusTag(t));
+          var cmd = el("div", "inbox-cmd", t.command || t.id);
+          cmd.title = t.command || "";
+          head.appendChild(cmd);
+          var clock = el("span", "inbox-clock", t.startedAt ? fmtClock(Date.now() - t.startedAt) : "—");
+          head.appendChild(clock);
+          row.appendChild(head);
+          var detail = null;
+          head.addEventListener("click", function () {
+            if (detail && detail.parentNode) { detail.remove(); row.classList.remove("open"); return; }
+            detail = el("div", "inbox-detail");
+            detail.appendChild(el("div", "inbox-id", t.id + (t.pid ? " · pid " + t.pid : "")));
+            var outPre = el("pre", "inbox-out", "加载输出…");
+            detail.appendChild(outPre);
+            var acts = el("div", "inbox-acts");
+            var refresh = el("button", "inbox-btn", "刷新输出");
+            refresh.type = "button";
+            refresh.addEventListener("click", function (ev) {
+              ev.stopPropagation();
+              getJSON("/api/tasks/output?id=" + encodeURIComponent(t.id)).then(function (o) {
+                outPre.textContent = (o.output || "(无输出)").slice(-4000);
+                outPre.scrollTop = outPre.scrollHeight;
+              }).catch(function (e) { outPre.textContent = "读取失败: " + e.message; });
+            });
+            acts.appendChild(refresh);
+            if (t.status === "running") {
+              var kill = el("button", "inbox-btn danger", "终止");
+              kill.type = "button";
+              kill.addEventListener("click", function (ev) {
+                ev.stopPropagation();
+                postJSON("/api/tasks/kill", { id: t.id }).then(function () { render(); });
+              });
+              acts.appendChild(kill);
+            }
+            detail.appendChild(acts);
+            row.appendChild(detail);
+            row.classList.add("open");
+            refresh.click();
+          });
+          body.appendChild(row);
+        });
+      }).catch(function () {});
+    }
+    openModal("后台任务", function (body) {
+      body.classList.add("inbox-body");
+      body.appendChild(el("div", "empty-note", "加载中…"));
+    }, [{ label: "关闭", fn: function () { inbox.open = false; if (inbox.timer) clearInterval(inbox.timer); closeModal(); } }]);
+    render();
+    inbox.timer = setInterval(render, 1500);
+  }
   function openFiles(dir) {
     var path = dir || ((S.config && S.config.cwd) || ".");
     getJSON("/api/fs?path=" + encodeURIComponent(path)).then(function (j) {
@@ -8535,8 +8535,41 @@ function switchInspectorTab(tab) {
     scriptProc: null,
     timerId: null,
     startedAt: 0,
-    manualStop: false
+    manualStop: false,
+    recCtx: null,
+    recSource: null,
+    recProc: null,
+    recPcm: [],
+    recOnDone: null,
+    freeFallbackTried: false
   };
+
+  /** 将 Float32 PCM 打包为 16-bit 单声道 WAV 的 ArrayBuffer。 */
+  function encodeWav16k(samples, sampleRate) {
+    var buf = new ArrayBuffer(44 + samples.length * 2);
+    var v = new DataView(buf);
+    function wstr(o, s) { for (var i = 0; i < s.length; i++) { v.setUint8(o + i, s.charCodeAt(i)); } }
+    wstr(0, "RIFF");
+    v.setUint32(4, 36 + samples.length * 2, true);
+    wstr(8, "WAVE");
+    wstr(12, "fmt ");
+    v.setUint32(16, 16, true);
+    v.setUint16(20, 1, true);
+    v.setUint16(22, 1, true);
+    v.setUint32(24, sampleRate, true);
+    v.setUint32(28, sampleRate * 2, true);
+    v.setUint16(32, 2, true);
+    v.setUint16(34, 16, true);
+    wstr(36, "data");
+    v.setUint32(40, samples.length * 2, true);
+    var o = 44;
+    for (var i = 0; i < samples.length; i++) {
+      var s = Math.max(-1, Math.min(1, samples[i]));
+      v.setInt16(o, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+      o += 2;
+    }
+    return buf;
+  }
 
   /**
    * 为中文语音识别结果补充自然标点并转换口语标点指令（全部免费本地规则）。
@@ -8679,6 +8712,7 @@ function switchInspectorTab(tab) {
   function startVoiceInput() {
     if (voiceState.active) { return; }
     voiceState.manualStop = false;
+    voiceState.freeFallbackTried = false;
     voiceState.startedAt = Date.now();
     clearInterval(voiceState.timerId);
     voiceState.timerId = setInterval(updateVoiceTimer, 500);
@@ -8755,6 +8789,26 @@ function switchInspectorTab(tab) {
         if (err === "aborted") {
           return;
         }
+        if (err === "network" || err === "language-not-supported") {
+          // Chrome 的识别后端在 Google 服务器上，网络被阻断时必报 network；
+          // 此时静默重启只会无限失败。只降级一次：改走「录音后转写」。
+          if (!voiceState.freeFallbackTried) {
+            voiceState.freeFallbackTried = true;
+            voiceState.manualStop = true;
+            voiceState.active = false;
+            try { rec.stop(); } catch (e) {}
+            toast("浏览器免费识别连不上识别服务，已切换到「录音后转写」", "warn");
+            // 只在本会话内降级：一次网络抖动不该永久改写用户的默认引擎。
+            voiceState.engine = "gemini";
+            var sel = $("voice-engine");
+            if (sel) { sel.value = "gemini"; }
+            startGeminiTranscribeRecording();
+            return;
+          }
+          toast("语音识别服务连接失败，请使用「AI 精准转写」引擎", "err");
+          stopVoiceInput();
+          return;
+        }
         toast("语音识别提示：" + err, "warn");
       };
 
@@ -8780,6 +8834,18 @@ function switchInspectorTab(tab) {
     }
   }
 
+  /** 转写失败时，若引擎是因免费识别断网自动降级来的，回退 free 让下次重试。 */
+  function revertAutoEngineIfAuto() {
+    if (voiceState.freeFallbackTried && voiceState.engine === "gemini") {
+      voiceState.engine = "free";
+      voiceState.freeFallbackTried = false;
+      var sel = $("voice-engine");
+      if (sel) { sel.value = "free"; }
+      toast("已回退到浏览器免费识别，下次按住说话会重试直连", "info");
+    }
+  }
+
+
   /**
    * 录音后调用后端 /api/transcribe（若未配置 API Key 则提示切换回免费极速识别）。
    */
@@ -8796,48 +8862,81 @@ function switchInspectorTab(tab) {
     navigator.mediaDevices.getUserMedia({ audio: true }).then(function (stream) {
       voiceState.mediaStream = stream;
       voiceState.mediaChunks = [];
-      var mime = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
-        ? "audio/webm;codecs=opus"
-        : "audio/webm";
-      var recorder = new MediaRecorder(stream, { mimeType: mime });
-      voiceState.mediaRecorder = recorder;
+      // 统一录成 WAV：后端网关转写只稳定支持 wav，webm 容器很多模型不认。
+      // MediaRecorder 的 webm 流先经 AudioContext 解码重采样为 16k 单声道 PCM。
+      try {
+        var AC = window.AudioContext || window.webkitAudioContext;
+        voiceState.recCtx = new AC();
+        voiceState.recSource = voiceState.recCtx.createMediaStreamSource(stream);
+        // ScriptProcessor 已废弃但在所有浏览器可用；本仓库实时模式已同样使用。
+        var proc = voiceState.recCtx.createScriptProcessor(4096, 1, 1);
+        voiceState.recProc = proc;
+        voiceState.recPcm = [];
+        proc.onaudioprocess = function (ev) {
+          if (!voiceState.active) { return; }
+          voiceState.recPcm.push(new Float32Array(ev.inputBuffer.getChannelData(0)));
+        };
+        voiceState.recSource.connect(proc);
+        proc.connect(voiceState.recCtx.destination);
+        voiceState.mediaRecorder = null; // no MediaRecorder; WAV assembled on stop
+      } catch (e) {
+        voiceState.recCtx = null;
+        toast("录音初始化失败：" + e.message, "err");
+        stopVoiceInput();
+        return;
+      }
       voiceState.active = true;
       setVoiceUI(true, "正在录音（AI 转写）…", "说完后点击「完成」自动转写为中文并补充标点");
+
 
-      recorder.ondataavailable = function (e) {
-        if (e.data && e.data.size > 0) { voiceState.mediaChunks.push(e.data); }
-      };
-
-      recorder.onstop = function () {
-        var chunks = voiceState.mediaChunks.slice();
-        voiceState.mediaChunks = [];
-        if (!chunks.length) { return; }
-        var blob = new Blob(chunks, { type: recorder.mimeType || "audio/webm" });
-        readFileDataURL(blob).then(function (dataUrl) {
-          var base64 = (dataUrl.split(",")[1] || "");
-          if (!base64) { return; }
-          toast("正在转写中文语音…", "info");
-          postJSON("/api/transcribe", {
-            audio: base64,
-            mimeType: (recorder.mimeType || "audio/webm").split(";")[0],
-            lang: voiceState.lang
-          }).then(function (j) {
-            if (j && j.ok && j.text) {
-              appendTranscriptToInput(j.text, false);
-              toast("语音转写完成", "ok");
-            } else {
-              throw new Error((j && j.error) || "转写失败");
-            }
-          }).catch(function (err) {
-            toast(err.message + "（已为你切回免费极速识别）", "warn");
-            voiceState.engine = "free";
-            var sel = $("voice-engine");
-            if (sel) { sel.value = "free"; }
-          });
+      voiceState.recOnDone = function () {
+        var pcmChunks = voiceState.recPcm || [];
+        var ctx = voiceState.recCtx;
+        voiceState.recPcm = [];
+        if (!pcmChunks.length || !ctx) {
+          toast("没有录到声音", "warn");
+          return;
+        }
+        var total = 0;
+        for (var ci = 0; ci < pcmChunks.length; ci++) { total += pcmChunks[ci].length; }
+        var merged = new Float32Array(total);
+        var off = 0;
+        for (var cj = 0; cj < pcmChunks.length; cj++) { merged.set(pcmChunks[cj], off); off += pcmChunks[cj].length; }
+        var sr = ctx.sampleRate;
+        // Downmix to 16 kHz mono to keep the upload small.
+        var targetSr = 16000;
+        var outLen = Math.floor(merged.length * targetSr / sr);
+        var out = new Float32Array(outLen);
+        for (var k = 0; k < outLen; k++) {
+          var srcIdx = Math.floor(k * sr / targetSr);
+          out[k] = merged[srcIdx] || 0;
+        }
+        var wavBuf = encodeWav16k(out, targetSr);
+        var base64 = "";
+        var bytes = new Uint8Array(wavBuf);
+        var CH = 0x8000;
+        for (var bi = 0; bi < bytes.length; bi += CH) {
+          base64 += String.fromCharCode.apply(null, bytes.subarray(bi, bi + CH));
+        }
+        base64 = btoa(base64);
+        toast("正在转写中文语音…", "info");
+        postJSON("/api/transcribe", {
+          audio: base64,
+          mimeType: "audio/wav",
+          lang: voiceState.lang
+        }).then(function (j) {
+          if (j && j.ok && j.text) {
+            appendTranscriptToInput(j.text, false);
+            toast("语音转写完成", "ok");
+          } else {
+            toast("转写失败：" + ((j && j.error) || "未知错误"), "err");
+            revertAutoEngineIfAuto();
+          }
+        }).catch(function (err) {
+          toast("转写失败：" + err.message, "err");
+          revertAutoEngineIfAuto();
         });
       };
-
-      recorder.start();
     }).catch(function (e) {
       voiceState.active = false;
       clearInterval(voiceState.timerId);
@@ -8964,6 +9063,24 @@ function switchInspectorTab(tab) {
       try { voiceState.mediaRecorder.stop(); } catch (e) {}
     }
     voiceState.mediaRecorder = null;
+    // WAV 模式录音：点「完成」时先拼 WAV 上传，再拆音频链路。
+    if (typeof voiceState.recOnDone === "function") {
+      var done = voiceState.recOnDone;
+      voiceState.recOnDone = null;
+      try { done(); } catch (e) {}
+    }
+    if (voiceState.recProc) {
+      try { voiceState.recProc.disconnect(); } catch (e) {}
+      voiceState.recProc = null;
+    }
+    if (voiceState.recSource) {
+      try { voiceState.recSource.disconnect(); } catch (e) {}
+      voiceState.recSource = null;
+    }
+    if (voiceState.recCtx) {
+      try { voiceState.recCtx.close(); } catch (e) {}
+      voiceState.recCtx = null;
+    }
 
     if (voiceState.scriptProc) {
       try { voiceState.scriptProc.disconnect(); } catch (e) {}
