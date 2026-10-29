@@ -84,3 +84,6 @@ MyClaude 41+ 命令 vs Claude Code：除生态专属 8 项与待环境 2 项
 
 - ✅ 子代理定义实测：.myclaude/agents/<名>.md（frontmatter name/description）
   被 /agents 正确列出，Task 工具 subagent_type 直接可用——与 Claude Code 同机制
+
+- ✅ plan 模式只读实测：plan 下要求写文件 → 文件未被创建（双层防护：
+  系统提示注入 + PLAN_MODE_BLOCKED 拒绝名单；只读工具放行；ExitPlanMode 审批流）
