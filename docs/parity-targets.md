@@ -18,7 +18,7 @@
   双击 Esc → 取上一条用户消息填回输入框并把会话 rewind 到该消息前
 - 注意：agent.rewind(text) 已存在（/undo 用过），复用
 
-### 2. /statusline 自定义状态行（TUI）
+### 2. /statusline 自定义状态行（TUI）—— 首次实现有挂起问题已回滚，待交互调试
 - Claude Code：statusline 命令 + settings.json 的 statusLine 字段，
   自定义脚本输出一行状态（模型/分支/token 等）
 - 实现点：config.statusLineCommand；TUI 每次渲染底行时 spawn 脚本取输出；
