@@ -4832,6 +4832,21 @@
       case "commands":
         openCommandsModal();
         break;
+      case "output-style":
+        getJSON("/api/output-styles").then(function (j) {
+          var lines = (j.styles || []).map(function (s) {
+            return s.name + "（" + s.label + "）" + (s.description ? " — " + s.description : "") + (j.current === s.name ? " ← 当前" : "");
+          });
+          addNotice("输出风格：\n" + lines.join("\n") + "\n切换：/output-style <名称>", "info");
+        }).catch(function (e) { toast("加载风格失败: " + e.message, "err"); });
+        break;
+      case "output-style-set": {
+        if (!arg) { runCommand("/output-style"); break; }
+        postJSON("/api/config", { outputStyle: arg }).then(function () {
+          toast("输出风格 → " + arg, "ok");
+        }).catch(function (e) { toast("切换失败: " + e.message, "err"); });
+        break;
+      }
       case "review": {
         // Claude Code 的 /review：组审查提示词，当普通消息发给 agent。
         var target = arg.trim();

@@ -613,6 +613,12 @@ const makeTurnUi = (res, key) => {
           config.providers = { ...(config.providers || {}), ...body.providers };
           saveConfig({ providers: config.providers });
         }
+      if (body.outputStyle !== undefined) {
+        // /output-style：切换后重建每个活跃 agent 的系统提示。
+        config.outputStyle = String(body.outputStyle || "default");
+        saveConfig({ outputStyle: config.outputStyle });
+        for (const a of sessions.values()) { try { a.setOutputStyle(config.outputStyle); } catch {} }
+      }
       if (body.maxTurns !== undefined) {
         // The turn cap was previously unreachable from the GUI/HTTP side.
         // Clamp to a sane band; agents share this config object by reference.
@@ -1787,6 +1793,10 @@ const makeTurnUi = (res, key) => {
         return;
       }
 
+      if (path === "/api/output-styles" && req.method === "GET") {
+        sendJson(res, 200, { styles: listOutputStyles(), current: config.outputStyle || "default" });
+        return;
+      }
       if (path === "/api/busy" && req.method === "GET") {
         const key = keyOf(url.searchParams.get("sessionKey") ? { sessionKey: url.searchParams.get("sessionKey") } : {});
         sendJson(res, 200, { busy: running.has(key) });

@@ -4,6 +4,7 @@ import { PermissionEngine, loadMemory } from "./permissions.js";
 import { normalizeMode, isCommonFileCommand, isDestructiveCommand, FILE_EDIT_TOOLS } from "./modes.js";
 import { isAutoApprovable } from "./command-safety.js";
 import { reviewToolCall } from "./auto-review.js";
+import { outputStyleFragment } from "../output-style.js";
 import { SYSTEM_PROMPT } from "./prompt.js";
 import { buildUserContent, buildToolAttachmentContent, resolveAttachments } from "../attachments.js";
 import { setQuestionPresenter } from "../tools/extended.js";
@@ -194,6 +195,9 @@ export class Agent {
         "conflict with a habit or a general assumption, follow them.");
     }
     parts.push(SYSTEM_PROMPT);
+    // Output style (/output-style)：reshape how the assistant communicates.
+    const styleFrag = outputStyleFragment(this.config.outputStyle);
+    if (styleFrag) { parts.push("\n\n" + styleFrag); }
     // Extra working directories registered with /add-dir: telling the model
     // where else it may look is what makes them usable.
     if (Array.isArray(this.config.additionalDirectories) && this.config.additionalDirectories.length) {
@@ -260,6 +264,11 @@ export class Agent {
     return this.config.permissionMode;
   }
 
+  setOutputStyle(name) {
+    this.config.outputStyle = String(name || "default");
+    this.systemPrompt = this.buildSystemPrompt();
+    return this.config.outputStyle;
+  }
   setVision(enabled) {
     this.config.vision = !!enabled;
     this.systemPrompt = this.buildSystemPrompt();

@@ -771,7 +771,28 @@ async function handleCommand(raw, ctx) {
       ui.info(`messages=${s.messages} turns=${s.turns}`);
       return {};
     }
-        case "review": {
+        case "output-style": {
+      // Claude Code 的 /output-style：无参列出全部风格并标当前；带参切换并
+      // 重建系统提示。自定义风格是 output-styles/<name>.md。
+      const styles = listOutputStyles();
+      if (!arg) {
+        ui.info("可用输出风格：");
+        for (const s of styles) {
+          const mark = (config.outputStyle || "default") === s.name ? " ← 当前" : "";
+          ui.info("  " + s.name + "（" + s.label + "）" + (s.description ? " — " + s.description : "") + mark);
+        }
+        ui.info("切换：/output-style <名称>");
+        return {};
+      }
+      const pick = styles.find((s) => s.name === arg);
+      if (!pick) { ui.warn("未知风格：" + arg + "（可用：" + styles.map((s) => s.name).join(", ") + "）"); return {}; }
+      config.outputStyle = pick.name;
+      saveConfig({ outputStyle: pick.name });
+      agent.setOutputStyle(pick.name);
+      ui.success("输出风格 → " + pick.name + "（" + pick.label + "）");
+      return {};
+    }
+    case "review": {
       // Claude Code 的 /review：把审查提示词当普通回合跑，agent 用自己的
       // Bash/Read 工具拉 diff、读上下文、产出分级报告。复用 customPrompt
       // 通道，走同一套 run/save/compact 路径。
