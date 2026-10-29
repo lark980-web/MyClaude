@@ -28,7 +28,7 @@ import { VERSION } from "./version.js";
 import { GATEWAY_KEY_ENV, costLineFor, NO_PRICE_NOTICE } from "./models.js";
 import { inspectProject, renderProjectMemory, renderTranscriptMarkdown } from "./project-memory.js";
 import { withCommandScope } from "./command-scope.js";
-import { writeFileSync, readFileSync, existsSync } from "node:fs";
+import { writeFileSync, readFileSync, existsSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
 import { registry as taskRegistry } from "./tasks/registry.js";
