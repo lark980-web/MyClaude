@@ -143,3 +143,13 @@ node scripts/build-exe.mjs      # 约 40–60s
 
 - 源文件多为 CRLF；`src/ui/web/css/styles.css` 是 LF —— 改动时保持原文件行尾
 - 用 `edit` 做局部替换，别整文件重写（会把行尾改掉，产生几万行假 diff）
+
+## 并发会话守卫
+
+本仓库可能与其它 AI 会话并发编辑。任何会话改动源码后、以及构建前，跑：
+
+```bash
+node scripts/verify-features.mjs
+```
+
+exit 1 = 有功能被覆盖，先从 git 历史恢复（git show <commit>:<file>），再构建。
