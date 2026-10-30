@@ -2070,6 +2070,25 @@
       if (st && log) { log.parentNode.insertBefore(live, log.nextSibling); }
     }
     live.hidden = !v;
+    // 任务进行时间：busy 期间每秒刷新（Claude Code 计时 spinner 的等价物）
+    if (v) {
+      S.busyStartedAt = Date.now();
+      if (!S.busyTimer) {
+        S.busyTimer = setInterval(function () {
+          var s = Math.floor((Date.now() - (S.busyStartedAt || Date.now())) / 1000);
+          var mm = Math.floor(s / 60), ss = s % 60;
+          var label = "任务进行中 · " + (mm > 0 ? mm + "m " : "") + (ss < 10 && mm > 0 ? "0" : "") + ss + "s";
+          var stat2 = $("stat");
+          if (stat2) { stat2.textContent = label; }
+          var liveEl = $("live");
+          if (liveEl) { liveEl.title = label; }
+        }, 1000);
+      }
+    } else {
+      if (S.busyTimer) { clearInterval(S.busyTimer); S.busyTimer = null; }
+      var stat3 = $("stat");
+      if (stat3) { stat3.textContent = ""; }
+    }
     var app = $("app");
     if (app) { app.classList.toggle("busy", !!v); }
   }
@@ -4510,9 +4529,9 @@
   }
 
   function openTasks() {
-    // Agent Inbox 风格（参照 affectui.com）：筛选页签带滚动计数、状态标签、
-    // 活动计时，行可展开看输出尾巴并可终止。弹窗打开期间每 1.5s 轮询。
-    var inbox = { filter: "all", timer: null, open: true, lastCount: {} };
+    // Agent Inbox 直渲染进右栏「任务」页签（affectui.com 风格：筛选页签+
+    // 计数+状态标签+活动计时+可展开输出+终止）。页签激活期间每 1.5s 轮询。
+    var inbox = { filter: "all", timer: null };
     function fmtClock(ms) {
       var s = Math.max(0, Math.floor(ms / 1000));
       var m = Math.floor(s / 60); s = s % 60;
@@ -4525,32 +4544,22 @@
       if (t.status === "running") tag.classList.add("pulse");
       return tag;
     }
-    function drawTabs(list) {
-      var counts = { all: list.length, running: 0, done: 0, fail: 0 };
-      list.forEach(function (t) {
-        if (t.status === "running") counts.running++;
-        else if (t.exitCode === 0) counts.done++;
-        else counts.fail++;
-      });
-      inbox.lastCount = counts;
-      return [["all", "全部"], ["running", "运行中"], ["done", "完成"], ["fail", "失败"]].map(function (pair) {
-        var b = el("button", "inbox-tab" + (inbox.filter === pair[0] ? " active" : ""), pair[1] + " " + counts[pair[0]]);
-        b.type = "button";
-        b.addEventListener("click", function () { inbox.filter = pair[0]; render(); });
-        return b;
-      });
-    }
     function render() {
-      // 任意关闭路径（X / 遮罩 / 关闭按钮）都会让弹窗 hidden —— 以它为准停轮询。
-      var mbox = $("modal");
-      if (!inbox.open || !mbox || mbox.hidden) { if (inbox.timer) { clearInterval(inbox.timer); inbox.timer = null; } return; }
+      if (S.inspTab !== "tasks") { if (inbox.timer) { clearInterval(inbox.timer); inbox.timer = null; } return; }
       getJSON("/api/tasks").then(function (j) {
-        var body = $("modal-body");
-        if (!body || !body.classList.contains("inbox-body")) return;
+        var body = $("tasks-body");
+        if (!body || S.inspTab !== "tasks") { return; }
         body.innerHTML = "";
         var list = j.tasks || [];
+        var counts = { all: list.length, running: 0, done: 0, fail: 0 };
+        list.forEach(function (t) { if (t.status === "running") counts.running++; else if (t.exitCode === 0) counts.done++; else counts.fail++; });
         var tabs = el("div", "inbox-tabs");
-        drawTabs(list).forEach(function (b) { tabs.appendChild(b); });
+        [["all", "全部"], ["running", "运行中"], ["done", "完成"], ["fail", "失败"]].forEach(function (pair) {
+          var b = el("button", "inbox-tab" + (inbox.filter === pair[0] ? " active" : ""), pair[1] + " " + counts[pair[0]]);
+          b.type = "button";
+          b.addEventListener("click", function () { inbox.filter = pair[0]; render(); });
+          tabs.appendChild(b);
+        });
         body.appendChild(tabs);
         var shown = list.filter(function (t) {
           if (inbox.filter === "all") return true;
@@ -4566,8 +4575,7 @@
           var cmd = el("div", "inbox-cmd", t.command || t.id);
           cmd.title = t.command || "";
           head.appendChild(cmd);
-          var clock = el("span", "inbox-clock", t.startedAt ? fmtClock(Date.now() - t.startedAt) : "—");
-          head.appendChild(clock);
+          head.appendChild(el("span", "inbox-clock", t.startedAt ? fmtClock(Date.now() - t.startedAt) : "—"));
           row.appendChild(head);
           var detail = null;
           head.addEventListener("click", function () {
@@ -4581,19 +4589,13 @@
             refresh.type = "button";
             refresh.addEventListener("click", function (ev) {
               ev.stopPropagation();
-              getJSON("/api/tasks/output?id=" + encodeURIComponent(t.id)).then(function (o) {
-                outPre.textContent = (o.output || "(无输出)").slice(-4000);
-                outPre.scrollTop = outPre.scrollHeight;
-              }).catch(function (e) { outPre.textContent = "读取失败: " + e.message; });
+              getJSON("/api/tasks/output?id=" + encodeURIComponent(t.id)).then(function (o) { outPre.textContent = (o.output || "(无输出)").slice(-4000); outPre.scrollTop = outPre.scrollHeight; }).catch(function (e) { outPre.textContent = "读取失败: " + e.message; });
             });
             acts.appendChild(refresh);
             if (t.status === "running") {
               var kill = el("button", "inbox-btn danger", "终止");
               kill.type = "button";
-              kill.addEventListener("click", function (ev) {
-                ev.stopPropagation();
-                postJSON("/api/tasks/kill", { id: t.id }).then(function () { render(); });
-              });
+              kill.addEventListener("click", function (ev) { ev.stopPropagation(); postJSON("/api/tasks/kill", { id: t.id }).then(function () { render(); }); });
               acts.appendChild(kill);
             }
             detail.appendChild(acts);
@@ -4605,12 +4607,8 @@
         });
       }).catch(function () {});
     }
-    openModal("后台任务", function (body) {
-      body.classList.add("inbox-body");
-      body.appendChild(el("div", "empty-note", "加载中…"));
-    }, [{ label: "关闭", fn: function () { inbox.open = false; if (inbox.timer) clearInterval(inbox.timer); closeModal(); } }]);
     render();
-    inbox.timer = setInterval(render, 1500);
+    if (!inbox.timer) { inbox.timer = setInterval(render, 1500); }
   }
   function openFiles(dir) {
     var path = dir || ((S.config && S.config.cwd) || ".");
@@ -5070,8 +5068,6 @@
     if (bFiles) { bFiles.addEventListener("click", function () { openFiles(); }); }
     var bTools = $("btn-tools");
     if (bTools) { bTools.addEventListener("click", openTools); }
-    var bTasks = $("btn-tasks");
-    if (bTasks) { bTasks.addEventListener("click", openTasks); }
     var bSessions = $("btn-sessions");
     if (bSessions) { bSessions.addEventListener("click", openSessions); }
     var bSettings = $("btn-settings");
@@ -7060,7 +7056,7 @@
     }).catch(function (e) { pre.textContent = "加载失败：" + e.message; });
   }
 function switchInspectorTab(tab) {
-    S.inspTab = tab === "artifact" ? "artifact" : tab === "changes" ? "changes" : "info";
+    S.inspTab = tab === "artifact" ? "artifact" : tab === "changes" ? "changes" : tab === "tasks" ? "tasks" : "info";
     var app = $("app");
     var tInfo = $("tab-insp-info");
     var tArt = $("tab-insp-artifact");
@@ -7073,12 +7069,17 @@ function switchInspectorTab(tab) {
     if (bInfo) { bInfo.hidden = S.inspTab !== "info"; }
     if (bArt) { bArt.hidden = S.inspTab !== "artifact"; }
     if (bChg) { bChg.hidden = S.inspTab !== "changes"; }
+    var bTasks = $("tasks-body");
+    if (bTasks) { bTasks.hidden = S.inspTab !== "tasks"; }
     if (tChg) { tChg.classList.toggle("active", S.inspTab === "changes"); }
+    var tTasks = $("tab-insp-tasks");
+    if (tTasks) { tTasks.classList.toggle("active", S.inspTab === "tasks"); }
     if (app) {
       app.classList.toggle("artifact-open", app.classList.contains("insp-open") && S.inspTab === "artifact");
     }
     if (S.inspTab === "artifact") { renderArtifactStage(); }
     else if (S.inspTab === "changes") { loadChanges(S.changesScope || "turn"); }
+    else if (S.inspTab === "tasks") { if (typeof openTasks === "function") { openTasks(); } }
     else { renderInspector(); }
   }
 
@@ -7685,6 +7686,8 @@ function switchInspectorTab(tab) {
     if (tabArt) { tabArt.addEventListener("click", function () { switchInspectorTab("artifact"); }); }
     var tabChg = $("tab-insp-changes");
     if (tabChg) { tabChg.addEventListener("click", function () { switchInspectorTab("changes"); }); }
+    var tabTasks = $("tab-insp-tasks");
+    if (tabTasks) { tabTasks.addEventListener("click", function () { switchInspectorTab("tasks"); }); }
 
     var selArt = $("artifact-select");
     if (selArt) {

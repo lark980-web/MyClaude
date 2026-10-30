@@ -133,10 +133,7 @@
           <span>工具</span>
           <span class="rail-badge" id="tool-count">0</span>
         </button>
-        <button class="rail-item rail-subitem" id="btn-tasks" title="后台任务">
-          <svg width="15" height="15"><use href="#i-task"/></svg>
-          <span>任务</span>
-        </button>
+        
       </div>
     </nav>
 
@@ -437,6 +434,9 @@
           <span>Artifacts</span>
           <span class="insp-tab-badge" id="artifact-count" hidden>0</span>
         </button>
+        <button class="insp-tab" id="tab-insp-tasks" data-tab="tasks" type="button">
+          <span>任务</span>
+        </button>
         <button class="insp-tab" id="tab-insp-changes" data-tab="changes" type="button">变更</button>
       </div>
       <div class="insp-head-right">
@@ -446,6 +446,7 @@
       </div>
     </header>
     <div class="insp-scroll" id="changes-body" hidden></div>
+        <div class="insp-scroll" id="tasks-body" hidden></div>
     <div class="insp-scroll" id="insp-body"></div>
     <div class="artifact-pane" id="artifact-pane" hidden>
       <div class="artifact-bar" id="artifact-bar">
