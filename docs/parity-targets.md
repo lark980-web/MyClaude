@@ -175,3 +175,6 @@ MyClaude 41+ 命令 vs Claude Code：除生态专属 8 项与待环境 2 项
 **教训**：此前多轮“没实现”的结论全部源于测试脚本自身的选择器错误
 （insp-toggle 不存在、.settings/.ctx-item 用错、#modal 与专用 modal 混淆）。
 ego 真浏览器 + 正确选择器后全部确认可用。截图存 ego-ui-verify-20261031-0500/。
+
+- ✅ 右栏第 4 页签「任务」（Agent Inbox 常驻，左栏入口移除）+ busy 计时器
+  + 中断留存实测（ego 验证通过）
