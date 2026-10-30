@@ -124,6 +124,19 @@ const running = new Set();
   const confirmResolvers = new Map();
   const questionResolvers = new Map();
 
+  /**
+   * The interactive prompt a session is currently blocked on, if any.
+   *
+   * A refresh must not kill a task that is merely waiting for the user: the
+   * question card is re-rendered from the resume response and the answer can
+   * still arrive over /api/answer from the new page.
+   */
+  const pendingFor = (key) => {
+    for (const [id, e] of questionResolvers) { if (e.key === key && e.questions) { return { question: { id, questions: e.questions } }; } }
+    for (const [id, e] of confirmResolvers) { if (e.key === key && e.name) { return { confirm: { id, name: e.name, args: e.args, diff: buildConfirmDiff(e.name, e.args) } }; } }
+    return null;
+  };
+
   /** Resolve any stuck interactive prompts for one session (answer null / deny). */
   const flushInteractive = (key) => {
     for (const [id, e] of confirmResolvers) { if (e.key === key) { confirmResolvers.delete(id); e.resolve(false); } }
@@ -344,7 +357,7 @@ function buildConfirmDiff(name, args) {
     confirmTool: (name, args) =>
       new Promise((resolve) => {
         const id = Math.random().toString(36).slice(2);
-        confirmResolvers.set(id, { key, resolve });
+        confirmResolvers.set(id, { key, resolve, name, args });
         sse(res, { type: "confirm", id, name, args, diff: buildConfirmDiff(name, args) });
         setTimeout(() => {
           if (confirmResolvers.has(id)) {
@@ -356,7 +369,7 @@ function buildConfirmDiff(name, args) {
     askQuestions: (questions) =>
       new Promise((resolve) => {
         const id = Math.random().toString(36).slice(2);
-        questionResolvers.set(id, { key, resolve });
+        questionResolvers.set(id, { key, resolve, questions });
         sse(res, { type: "question", id, questions });
         setTimeout(() => {
           if (questionResolvers.has(id)) {
@@ -1880,6 +1893,9 @@ const statsOf = (agent) => {
         // gone because the fresh page believed the session was idle.
         res.on("close", () => {
           if (turnFinished) { return; }
+          // Blocked on the user? Keep it alive: the refreshed page re-renders the
+          // prompt from pendingFor() and the answer arrives via /api/answer.
+          if (pendingFor(key)) { return; }
           flushInteractive(key);
           const a = sessions.get(key);
           if (a && typeof a.abort === "function") { a.abort(); }
@@ -2102,6 +2118,7 @@ if (path === "/api/session" && req.method === "POST") {
           messages: agent.messages.length,
           source,
           stats: statsOf(agent),
+          pending: pendingFor(wanted) || pendingFor(keyOf(body)),
           transcript: agent.messages
         });
         return;

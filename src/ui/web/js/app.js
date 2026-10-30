@@ -893,6 +893,7 @@
       card.appendChild(el("div", "empty-note", answers.join(" · ")));
     }
     postJSON("/api/answer", { id: id, answers: answers }).catch(function () {});
+    if (!S.busy) { toast("已提交，任务在后台继续，完成后刷新即可看到结果", "info"); }
   }
 
   /**
@@ -3540,7 +3541,7 @@
     // turns a convenience into noise. Only an explicit click reports back.
     var quiet = opts && opts.quiet;
     if (S.busy) { toast("请等待当前回复结束", "warn"); return; }
-    postJSON("/api/session", { action: "resume", id: id }).then(function (j) {
+    postJSON("/api/session", { action: "resume", id: id, sessionKey: S.sessionKey || id }).then(function (j) {
       S.sessionKey = j.id;
       try { localStorage.setItem(LS_SESSION, j.id); } catch (e) { }
       if (j.stats) { S.stats = { messages: j.stats.messages || 0, turns: j.stats.turns || 0, tokens: j.stats.tokens || 0, inputTokens: j.stats.inputTokens || 0, outputTokens: j.stats.outputTokens || 0, contextLimit: j.stats.contextLimit || 0, contextUsed: j.stats.contextUsed || 0 }; }
@@ -3548,7 +3549,10 @@
       renderInspector();
       refreshSessions();
       refreshStats();
-      if (!quiet) { toast("已恢复 " + j.messages + " 条消息", "ok"); }
+      // 刷新不应丢掉待答问题：服务器仍卡在提问上，这里重新渲染，答完任务继续。
+      if (j.pending && j.pending.question) { showQuestion(j.pending.question); toast("该会话有一个待回答的问题，已重新显示", "info"); }
+      else if (j.pending && j.pending.confirm) { showConfirm(j.pending.confirm); toast("该会话有一个待授权的工具调用，已重新显示", "info"); }
+            if (!quiet) { toast("已恢复 " + j.messages + " 条消息", "ok"); }
     }).catch(function (e) {
       // A silent failure here is the "my conversation disappeared" report:
       // the user has to know the restore did not happen.
