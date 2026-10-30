@@ -501,52 +501,67 @@ const statsOf = (agent) => {
     };
   }
 
-  async function searchWorkspaceFiles(query = "", limit = 40) {
-    const root = resolve(cwd);
-    const results = [];
-    const q = String(query || "").trim().toLowerCase();
-    const skipDirs = new Set(["node_modules", ".git", "dist", "build", ".next", "coverage"]);
+  /**
+ * Workspace file index for the @ mention menu.
+ *
+ * The first version walked the whole tree on every request; on a HDD that
+ * stalled typing "@" for 10s+ per keystroke. The index is cached with a TTL
+ * and rebuilt in the background, so requests always answer from memory.
+ */
+const fileIndex = { at: 0, building: false, list: [] };
 
-    async function walk(dir, depth) {
-      if (depth > 5 || results.length >= 250) return;
-      let entries = [];
-      try {
-        entries = await readdir(dir, { withFileTypes: true });
-      } catch {
-        return;
-      }
-      for (const e of entries) {
-        if (skipDirs.has(e.name)) continue;
-        const full = join(dir, e.name);
-        if (e.isDirectory()) {
-          await walk(full, depth + 1);
-        } else {
-          const ext = extname(e.name).toLowerCase();
-          if (BINARY_EXT.has(ext)) continue;
-          const rel = relative(root, full).replace(/\\/g, "/");
-          if (!q || rel.toLowerCase().includes(q)) {
-            let size = 0;
-            try { size = (await stat(full)).size; } catch {}
-            results.push({ name: e.name, rel, path: full, size });
-          }
-        }
-      }
+function buildFileIndex() {
+  const root = resolve(cwd);
+  const results = [];
+  const skipDirs = new Set(["node_modules", ".git", "dist", "build", ".next", "coverage", ".myclaude", "mitm-logs", ".cdp-profile", "scratch"]);
+  function walkSync(dir, depth) {
+    if (depth > 5 || results.length >= 400) return;
+    let entries = [];
+    try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    for (const e of entries) {
+      if (skipDirs.has(e.name)) continue;
+      const full = join(dir, e.name);
+      if (e.isDirectory()) { walkSync(full, depth + 1); continue; }
+      const ext = extname(e.name).toLowerCase();
+      if (BINARY_EXT.has(ext)) continue;
+      const rel = relative(root, full).replace(/\\/g, "/");
+      let size = 0;
+      try { size = statSync(full).size; } catch {}
+      results.push({ name: e.name, rel, path: full, size });
     }
-
-    await walk(root, 0);
-    results.sort((a, b) => {
-      if (q) {
-        const aBase = a.name.toLowerCase().startsWith(q) ? 0 : 1;
-        const bBase = b.name.toLowerCase().startsWith(q) ? 0 : 1;
-        if (aBase !== bBase) return aBase - bBase;
-      }
-      return a.rel.length - b.rel.length || a.rel.localeCompare(b.rel);
-    });
-    return results.slice(0, limit);
   }
+  walkSync(resolve(cwd), 0);
+  results.sort((a, b) => a.rel.length - b.rel.length || a.rel.localeCompare(b.rel));
+  return results;
+}
 
+function ensureFileIndex() {
+  const now = Date.now();
+  if (fileIndex.building) return;
+  if (now - fileIndex.at < 60000 && fileIndex.list.length) return;
+  fileIndex.at = now;
+  fileIndex.building = true;
+  setImmediate(() => {
+    try { fileIndex.list = buildFileIndex(); fileIndex.at = Date.now(); } catch {}
+    fileIndex.building = false;
+  });
+}
 
-  /* ----------------------------------------------------------------- routes -- */
+async function searchWorkspaceFiles(query = "", limit = 40) {
+  ensureFileIndex();
+  const q = String(query || "").trim().toLowerCase();
+  const hits = fileIndex.list.filter((f) => !q || f.rel.toLowerCase().includes(q) || f.name.toLowerCase().includes(q));
+  hits.sort((a, b) => {
+    if (q) {
+      const aBase = a.name.toLowerCase().startsWith(q) ? 0 : 1;
+      const bBase = b.name.toLowerCase().startsWith(q) ? 0 : 1;
+      if (aBase !== bBase) return aBase - bBase;
+    }
+    return a.rel.length - b.rel.length || a.rel.localeCompare(b.rel);
+  });
+  return hits.slice(0, limit);
+}
+/* ----------------------------------------------------------------- routes -- */
 
   const server = createServer(async (req, res) => {
     const url = new URL(req.url, `http://localhost:${port}`);
