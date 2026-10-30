@@ -156,3 +156,22 @@ MyClaude 41+ 命令 vs Claude Code：除生态专属 8 项与待环境 2 项
 
 **本轮唯一真缺陷**：AskUserQuestion 待答问题刷新后丢失 → 已修（ef2bae0，带端到端测试）。
 **本轮环境**：清理 41 项垃圾（f1f8800/ffaf75b）；服务经启动脚本恢复。
+
+## ego 真浏览器实测（2026-10-31 05:20，Clash TUN 已被 ego 绕过）
+
+| 项 | 实测 |
+|---|---|
+| 右栏打开（btn-insp-toggle） | ✅ inspOpen:true |
+| 会话详情页签 | ✅ 模型/模式/轮次/Token/上下文/备用模型全渲染 |
+| 变更页签 | ✅ active 切换、Turn/Branch、空态 |
+| Artifacts 页签 | ✅ 面板可见 |
+| 模型菜单 | ✅ open、76 模型、4 分组 |
+| 任务面板 Agent Inbox | ✅ 4 筛选页签、空态正确 |
+| 会话右键菜单 | ✅ 置顶/归档/重命名/导出 Markdown/删除 |
+| 设置中心 | ✅ model-config-modal 三选项卡 |
+| -p stream-json 脚本链路 | ✅ result 行带 sessionId |
+| -p 审查流 | ✅ 真实读文件+结论 |
+
+**教训**：此前多轮“没实现”的结论全部源于测试脚本自身的选择器错误
+（insp-toggle 不存在、.settings/.ctx-item 用错、#modal 与专用 modal 混淆）。
+ego 真浏览器 + 正确选择器后全部确认可用。截图存 ego-ui-verify-20261031-0500/。
