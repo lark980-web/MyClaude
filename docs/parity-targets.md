@@ -129,3 +129,30 @@ MyClaude 41+ 命令 vs Claude Code：除生态专属 8 项与待环境 2 项
 数据面、脚本化、e2e —— 无已知空洞。待环境 2 项（/statusline /vim）。
 
 - ✅ /add-dir 崩溃已修（statSync 漏导入）：追加成功、/status 可见、守卫已纳标记
+## 界面功能点对照清单（2026-10-31 逐项核查，证据＝代码实现点）
+
+| # | 功能点 | 状态 | 证据 |
+|---|---|---|---|
+| 1 | 输入框：@ 引用 / 斜杠菜单 / 图片粘贴 / Shift+Enter | ✅ | at-menu+closeAtMenu、slashOpen+updateSlashMenu、attachments+preview |
+| 2 | 消息渲染：markdown / 高亮 / 工具卡片 / 思考块 / diff | ✅ | MD.render、code-head、tool-card+secOut、thought+reasoningBuf、dl-add/dl-del/dl-hunk |
+| 3 | 消息操作：复制/编辑分支/重试/置顶/朗读 | ✅ | copyText、_branches+switchUserBranch、retry、togglePinMessage、speechSynthesis |
+| 4 | 右栏：会话详情+上下文分解 / 变更 Turn+Branch / Artifacts | ✅ | renderSessionSection+ctx-field、loadChanges+openChangeDiff、artifact-pane |
+| 5 | 会话管理：列表/置顶/归档/搜索/重命名/删除 | ✅ | renderChatList、ctxItem 重命名+置顶+归档+导出+删除、drawCmd 搜会话 |
+| 6 | 模型菜单：分组/搜索/速度条/厂商/配置 | ✅ | model-cat-tabs、modelQuery、model-speedbar、model-vendor-tab |
+| 7 | 权限模式切换（7 模式）与工具确认卡片 | ✅ | permissionMode、buildConfirmDiff、「需要授权」 |
+| 8 | TodoWrite 实时面板 | ✅ | todos 事件 + renderTodoSection |
+| 9 | 任务面板 Agent Inbox | ✅ | inbox-tabs/inbox-clock/fmtClock |
+| 10 | 提示词库与 Projects | ✅ | openPromptLibraryModal、plib-* |
+| 11 | 语音输入与 TTS | ✅ | SpeechRecognition、speechSynthesis、voice-timer |
+| 12 | 主题明暗切换 | ✅ | data-theme、toggleTheme |
+| 13 | 通知与 toast | ✅ | toast、addNotice |
+| 14 | 快捷键集 | ✅ | Alt+V、Esc、↑↓ 历史 |
+| 15 | 设置中心 | ✅ | openSettings |
+| 16 | 流式渲染与自动跟随 | ✅ | scrollStream、programmaticScroll |
+| 17 | compact 自动+手动（含 GUI 通知） | ✅ | maybeCompact、compact 事件、「上下文已压缩」 |
+| 18 | export 导出 | ✅ | renderTranscriptMarkdown、导出 Markdown |
+| 19 | 空态与加载态 | ✅ | empty-note/empty-hint |
+| 20 | 窄窗适配 | ✅ | @media (max-width |
+
+**本轮唯一真缺陷**：AskUserQuestion 待答问题刷新后丢失 → 已修（ef2bae0，带端到端测试）。
+**本轮环境**：清理 41 项垃圾（f1f8800/ffaf75b）；服务经启动脚本恢复。
