@@ -55,6 +55,7 @@ const FILES = {
   ],
   "src/agent/agent.js": [
     'setOutputStyle',
+    'Files this run touched',
     'this.stopRequested = false',
     'outputStyleFragment',
   ],

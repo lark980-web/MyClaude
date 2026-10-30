@@ -206,6 +206,21 @@ const gitNumstat = (scope, onlyPaths) => {
     totalRemoved += removed;
     files.push({ path: m[3], added, removed, status: binary ? "binary" : (statusMap[m[3]] || "M") });
   }
+  if (scope === "turn" && paths && paths.length) {
+    // 未跟踪文件在 git diff HEAD 里不显示：turn 收集的新文件会被漏掉。
+    // 对收集路径限定 ls-files --others，未跟踪的按新文件计入。
+    const un = run(["ls-files", "--others", "--exclude-standard", "--", ...paths]);
+    for (const f of String(un.stdout || "").split("\n").filter(Boolean)) {
+      if (files.length >= 500) { truncated = true; break; }
+      try {
+        const st2 = statSync(join(cwd, f));
+        if (st2.size > 512 * 1024) { files.push({ path: f, added: 0, removed: 0, status: "A", large: true }); continue; }
+        const lines = readFileSync(join(cwd, f), "utf8").split("\n").length;
+        files.push({ path: f, added: lines, removed: 0, status: "A" });
+        totalAdded += lines;
+      } catch {}
+    }
+  }
   // Untracked files (Write created something new): numstat skips them.
   if (scope === "branch") {
     const un = run(["ls-files", "--others", "--exclude-standard"]);
@@ -2027,7 +2042,7 @@ running.add(key);
         const key = url.searchParams.get("sessionKey") || "default";
         const scope = url.searchParams.get("scope") === "branch" ? "branch" : "turn";
         const agent = sessions.get(key);
-        const result = gitNumstat(scope, scope === "turn" ? [...((agent && agent.turnFiles) || [])] : null);
+                const result = gitNumstat(scope, scope === "turn" ? [...((agent && agent.turnFiles) || [])] : null);
         sendJson(res, 200, result);
         return;
       }

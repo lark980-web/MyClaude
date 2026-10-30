@@ -511,15 +511,17 @@ export class Agent {
     // Each run gets its own Stop-hook budget.
     this.stopHookUsed = false;
 
+    // Files this run touched via Edit/Write/MultiEdit — the "Turn" scope of
+    // the changes panel. Reset once per run (not per model turn): resetting
+    // inside the turn loop wiped the set after the final text-only turn, so
+    // the panel showed nothing even though the agent had just written files.
+    this.turnFiles = new Set();
     for (let turn = 0; turn < this.config.maxTurns; turn++) {
       if (this.stopRequested) {
         this.ui.info("\n(interrupted)");
         this.messages.push({ role: "assistant", content: "(interrupted)" });
         return { interrupted: true };
       }
-      // Files this run touched via Edit/Write/MultiEdit — the "Turn" scope of
-      // the changes panel (Claude Code tracks its own tool edits the same way).
-      this.turnFiles = new Set();
       this.turnCount++;
       this.abortController = new AbortController();
 
