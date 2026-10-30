@@ -225,7 +225,8 @@ export class OpenAIProvider {
         try {
           args = t.arguments ? JSON.parse(t.arguments) : {};
         } catch {
-          args = { __raw: t.arguments, __parseError: true };
+          const repaired = repairToolJson(t.arguments);
+          args = repaired || { __raw: t.arguments, __parseError: true };
         }
         return { id: t.id, name: t.name, arguments: args, raw: t.arguments };
       });
@@ -278,6 +279,44 @@ export class OpenAIProvider {
       } : null,
     };
   }
+}
+
+
+/**
+ * Repair a tool-call argument string that a model emitted as "almost JSON".
+ *
+ * Some providers (observed with spark-x2.6) stream real newlines/tabs INSIDE
+ * string values instead of the \n escape, which makes JSON.parse throw and
+ * the tool then runs with no arguments (Write crashed with
+ * ERR_INVALID_ARG_TYPE on an undefined path). Escaping control characters
+ * that sit inside a string literal recovers those calls.
+ */
+function repairToolJson(text) {
+  if (typeof text !== "string" || !text.trim()) return null;
+  let out = "";
+  let inString = false;
+  let escaped = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (inString) {
+      if (escaped) { out += ch; escaped = false; continue; }
+      if (ch === "\\") { out += ch; escaped = true; continue; }
+      if (ch === '"') { out += ch; inString = false; continue; }
+      const code = ch.charCodeAt(0);
+      if (code === 10) { out += "\\n"; continue; }
+      if (code === 13) { out += "\\r"; continue; }
+      if (code === 9) { out += "\\t"; continue; }
+      if (code < 0x20) { out += "\\u" + code.toString(16).padStart(4, "0"); continue; }
+      out += ch;
+      continue;
+    }
+    if (ch === '"') { inString = true; }
+    out += ch;
+  }
+  try { return JSON.parse(out); } catch {}
+  const stripped = out.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/, "").replace(/,\s*([}\]])/g, "$1");
+  try { return JSON.parse(stripped); } catch {}
+  return null;
 }
 
 export function createProvider(config) {

@@ -184,6 +184,10 @@ export const writeTool = {
     required: ["file_path", "content"],
   },
   async run({ file_path, content }) {
+    if (typeof file_path !== "string" || !file_path) {
+      return err("缺少 file_path 参数（模型输出的工具参数不是合法 JSON，已自动尝试修复仍失败；请重新调用并给出 file_path）");
+    }
+
     try {
       await mkdir(dirname(file_path), { recursive: true });
       await writeFile(file_path, content, "utf8");
