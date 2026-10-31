@@ -303,7 +303,17 @@
       });
     }
     var b = $("btn-to-bottom");
-    if (b) { b.hidden = !(st.scrollHeight - st.scrollTop - st.clientHeight > 240); }
+    if (b) {
+      b.hidden = !(st.scrollHeight - st.scrollTop - st.clientHeight > 240);
+      // 与输入卡片右上对齐：右移量 = 流区右缘 - 输入卡片右缘 + 16
+      try {
+        var inEl2 = $("in");
+        var card2 = inEl2;
+        while (card2 && card2 !== document.body) { var cs2 = getComputedStyle(card2); if (parseFloat(cs2.borderRadius) > 8 && cs2.boxShadow !== "none") break; card2 = card2.parentElement; }
+        var diff2 = (st.getBoundingClientRect().left + st.clientWidth) - card2.getBoundingClientRect().right; // clientWidth 排除滚动条
+        b.style.marginRight = (16 + diff2) + "px";
+      } catch (e2) {}
+    }
   }
 
   function hideWelcome() {
