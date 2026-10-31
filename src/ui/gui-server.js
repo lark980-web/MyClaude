@@ -12,7 +12,7 @@ import { createProvider } from "../providers/openai.js";
 import { createAgent } from "../agent/runtime.js";
 import { allRegisteredTools, registerTools, multiEditTool, todoWriteTool, webFetchTool } from "../tools/index.js";
 import { EXTENDED_TOOLS } from "../tools/extended.js";
-import { getTodos } from "../tools/extra.js";
+import { getTodos, setTodos } from "../tools/extra.js";
 import { taskSummaries, readTaskOutput, killTask } from "../tools/tasks.js";
 import { listOutputStyles } from "../output-style.js";
 import { loadConfig, saveConfig } from "../config.js";
@@ -162,7 +162,8 @@ const sse = (res, event) => {
           permissionMode: agent.mode ?? config.permissionMode,
           turnCount: agent.turnCount,
           version: VERSION,
-          ui: "gui"
+          ui: "gui",
+          todos: getTodos(key)
         })
       });
       savers.set(key, saver);
@@ -2106,6 +2107,8 @@ if (path === "/api/session" && req.method === "POST") {
         const wanted = keyOf(body);
         const key = wanted === target.id ? wanted : target.id;
         const agent = await agentFor(key, consoleUi(makeUi({ write: () => {}, writableEnded: true }, key), key));
+        // 恢复该会话的待办列表（TodoWrite 状态刷新后不丢）
+        try { setTodos(key, Array.isArray(target.todos) ? target.todos : []); } catch (e) {}
         // The live agent is the source of truth when it is ahead of the file.
         // Auto-save is throttled, so during a run the file trails by a whole
         // turn; overwriting the live agent with it is what made a refresh
@@ -2137,6 +2140,7 @@ if (path === "/api/session" && req.method === "POST") {
           source,
           stats: statsOf(agent),
           pending: pendingFor(wanted) || pendingFor(keyOf(body)),
+          todos: getTodos(key),
           transcript: agent.messages
         });
         return;

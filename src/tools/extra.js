@@ -57,6 +57,11 @@ export const todoWriteTool = {
   },
 };
 
+export function setTodos(sessionKey = "default", todos = []) {
+  if (Array.isArray(todos) && todos.length) { todoStore.set(sessionKey, todos); }
+  else { todoStore.delete(sessionKey); }
+}
+
 export function getTodos(sessionKey = "default") {
   return todoStore.get(sessionKey) || [];
 }

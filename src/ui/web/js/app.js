@@ -2850,7 +2850,8 @@
       S.todos.forEach(function (t) {
         var row = el("div", "todo" +
           (t.status === "completed" ? " done" : t.status === "in_progress" ? " active" : ""));
-        row.appendChild(el("span", "todo-box", "\u2713"));
+        row.appendChild(el("span", "todo-box",
+          t.status === "completed" ? "\u2713" : t.status === "in_progress" ? "\u25b8" : "\u25cb"));
         row.appendChild(el("span", "todo-text", t.content));
         s.body.appendChild(row);
       });
@@ -3575,6 +3576,7 @@
       try { localStorage.setItem(LS_SESSION, j.id); } catch (e) { }
       try { window.__resumeDbg = { stats: j.stats || null, quiet: !!quiet, at: new Date().toISOString() }; } catch (e2) {}
       if (j.stats) { S.stats = { messages: j.stats.messages || 0, turns: j.stats.turns || 0, tokens: j.stats.tokens || 0, inputTokens: j.stats.inputTokens || 0, outputTokens: j.stats.outputTokens || 0, contextLimit: j.stats.contextLimit || 0, contextUsed: j.stats.contextUsed || 0 }; }
+      if (Array.isArray(j.todos)) { S.todos = j.todos; } // 待办列表随会话恢复
       replayTranscript(j.transcript || []);
       renderInspector();
       refreshSessions();
