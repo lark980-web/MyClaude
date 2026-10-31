@@ -640,15 +640,14 @@ async function handleCommand(raw, ctx) {
     case "context": {
       // Claude Code 的 /context：按来源分解 + 可视化水位条，而不是一行总数。
       const segLen = (s) => (typeof s === "string" ? s.length : JSON.stringify(s ?? "").length);
-      const sysChars = segLen(agent.systemPrompt || "");
-      const msgsChars = agent.messages.reduce((sum, m) => sum + segLen(m.content) + 24, 0);
-      const est = (chars) => Math.round(chars / 2.5); // CJK 偏重：/2.5 而非 /4
-      const sysTok = est(sysChars);
-      const histTok = est(msgsChars);
+      const bd = (typeof agent.contextBreakdown === "function") ? agent.contextBreakdown() : null;
+      const sysTok = bd ? bd.system : Math.round(segLen(agent.systemPrompt || "") / 2.5);
+      const histTok = bd ? bd.history : Math.round((agent.messages.reduce((sum, m) => sum + segLen(m.content) + 24, 0)) / 2.5);
       const toolCount = allRegisteredTools().length;
       const win = agent.contextWindow || config.contextWindow || 200000;
       const limit = Math.round(win * (config.compactThreshold || 0.8));
-      const free = Math.max(0, limit - sysTok - histTok);
+      const total = sysTok + histTok;
+      const free = Math.max(0, limit - total);
       const bar = (label, tokens, width = 32) => {
         const share = Math.max(0, Math.min(1, tokens / limit));
         const fill = Math.round(share * width);

@@ -423,7 +423,10 @@ const statsOf = (agent) => {
     // Prefer the endpoint's own accounting; fall back to the character
     // estimate when a provider does not report usage.
     const reported = agent ? (agent.totalInputTokens || 0) + (agent.totalOutputTokens || 0) : 0;
-    const used = reported || approxTokens(agent);
+    // 真实上下文大小 = 下一次请求实际携带的载荷（系统提示+历史），
+    // 由 agent 的 CJK 感知估算器计算；累计 input+output 不是上下文大小。
+    const breakdown = (agent && typeof agent.contextBreakdown === "function") ? agent.contextBreakdown() : null;
+    const used = breakdown ? breakdown.total : (reported || approxTokens(agent));
     // The agent resolves the real window per model; config.contextWindow is
     // only the pre-selection fallback.
     const window = (agent && agent.contextWindow) || config.contextWindow || 200000;
@@ -434,8 +437,8 @@ const statsOf = (agent) => {
       tokens: used,
       inputTokens: agent ? agent.totalInputTokens || 0 : 0,
       outputTokens: agent ? agent.totalOutputTokens || 0 : 0,
-      systemTokens: agent ? Math.round(segLen(agent.systemPrompt || "") / 2.5) : 0,
-      historyTokens: agent ? Math.max(0, approxTokens(agent)) : 0, // approxTokens 只算消息，已是历史估算
+      systemTokens: breakdown ? breakdown.system : (agent ? Math.round(segLen(agent.systemPrompt || "") / 2.5) : 0),
+      historyTokens: breakdown ? breakdown.history : (agent ? Math.max(0, approxTokens(agent)) : 0),
       contextLimit: limit,
       contextUsed: limit ? used : 0
     };

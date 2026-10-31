@@ -275,6 +275,18 @@ export class Agent {
     return this.config.vision;
   }
 
+  /**
+   * CJK-aware estimate of what the next request would actually carry:
+   * system prompt + current history. This is the truthful "context size"
+   * for the sidebar cells, /context and the topbar ring — the cumulative
+   * input+output counters are not (each turn re-sends the whole history).
+   */
+  contextBreakdown() {
+    const sys = estimateTokens([{ role: "system", content: this.systemPrompt || "" }]);
+    const hist = estimateTokens(this.messages);
+    return { system: sys, history: hist, total: sys + hist };
+  }
+
   reloadMemory() {
     this.memory = loadMemory(process.cwd());
     this.systemPrompt = this.buildSystemPrompt();
