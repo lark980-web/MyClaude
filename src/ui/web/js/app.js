@@ -3573,6 +3573,7 @@
     postJSON("/api/session", { action: "resume", id: id, sessionKey: S.sessionKey || id }).then(function (j) {
       S.sessionKey = j.id;
       try { localStorage.setItem(LS_SESSION, j.id); } catch (e) { }
+      try { window.__resumeDbg = { stats: j.stats || null, quiet: !!quiet, at: new Date().toISOString() }; } catch (e2) {}
       if (j.stats) { S.stats = { messages: j.stats.messages || 0, turns: j.stats.turns || 0, tokens: j.stats.tokens || 0, inputTokens: j.stats.inputTokens || 0, outputTokens: j.stats.outputTokens || 0, contextLimit: j.stats.contextLimit || 0, contextUsed: j.stats.contextUsed || 0 }; }
       replayTranscript(j.transcript || []);
       renderInspector();
@@ -3814,15 +3815,6 @@
     S.thinking = ["high", "medium", "low"].indexOf(S.config && S.config.effort) >= 0;
     renderThinkingButton();
       S.vision = j.vision !== false;
-      S.stats = {
-        messages: j.messages != null ? j.messages : S.stats.messages,
-        turns: j.turns != null ? j.turns : S.stats.turns,
-        tokens: j.tokens || 0,
-        inputTokens: j.inputTokens || 0,
-        outputTokens: j.outputTokens || 0,
-        contextLimit: j.contextLimit || 0,
-        contextUsed: j.contextUsed || 0
-      };
       if (j.routing) { S.routing = j.routing; }
       renderTopMeta();
       renderVision();
@@ -9153,15 +9145,6 @@ function switchInspectorTab(tab) {
     S.thinking = ["high", "medium", "low"].indexOf(S.config && S.config.effort) >= 0;
     renderThinkingButton();
       S.vision = j.vision !== false;
-      S.stats = {
-        messages: j.messages || 0,
-        turns: j.turns || 0,
-        tokens: j.tokens || 0,
-        inputTokens: j.inputTokens || 0,
-        outputTokens: j.outputTokens || 0,
-        contextLimit: j.contextLimit || 0,
-        contextUsed: j.contextUsed || 0
-      };
       if (j.routing) { S.routing = j.routing; }
       setMode(j.permissionMode || "ask");
       renderVision();
