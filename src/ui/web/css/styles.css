@@ -1458,7 +1458,7 @@ pre.code.wrap { white-space: pre-wrap; overflow-wrap: anywhere; }
 .to-bottom {
   position: sticky;
   bottom: 12px;
-  margin: -46px auto 12px;
+  margin: -46px 16px 12px auto; /* 右对齐（用户反馈：居中悬浮挡内容，靠右更合理） */
   width: 34px; height: 34px;
   display: flex; align-items: center; justify-content: center;
   border-radius: 50%;
