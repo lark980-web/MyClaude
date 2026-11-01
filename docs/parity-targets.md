@@ -227,3 +227,12 @@ ego 真浏览器全路径：
 - AUTOPILOT：自动通过工作区信任对话框与 custom API key 确认
 - ego 实测：信任✓自动通过、key确认✓、主界面渲染✓（权限模式条/输入框）
 - 官方 exe 字节未动，签名完整；密钥与 MyClaude 共用（~/.myclaude/config.json）
+## 原生 Claude Code 免登录启动器（2026-11-01 终版）
+
+用户要求：官方原生界面，仅去掉登录。产物 E:/WorkSpaces/Test09/claude-nologin/：
+- 启动原生Claude.cmd + _native-prep.cjs（官方 exe 字节未动）
+- 四道门全部官方配置预置：env key（第一凭据）、hasCompletedOnboarding、
+  projects[<cwd>].hasTrustDialogAccepted（正斜杠键）、
+  customApiKeyResponses.approved（key 尾部 20 字符——从 276 bundle 组件反推）
+- pty 实测：信任✓跳过、key确认✓跳过、主界面✓直达；-p 实测无登录门禁
+- 前提：Anthropic 协议端点（OpenAI 协议网关不兼容）
