@@ -236,3 +236,13 @@ ego 真浏览器全路径：
   customApiKeyResponses.approved（key 尾部 20 字符——从 276 bundle 组件反推）
 - pty 实测：信任✓跳过、key确认✓跳过、主界面✓直达；-p 实测无登录门禁
 - 前提：Anthropic 协议端点（OpenAI 协议网关不兼容）
+### 终版补全：协议转换网关（同日晚）
+
+用户无 Anthropic key，仅有 OpenAI 协议的 zcode 网关（127.0.0.1:3425）。
+补写 gateway.mjs（4567 端口）：Anthropic /v1/messages ↔ OpenAI /v1/chat/completions
+双向转换（system/tools/tool_use/tool_result/流式 SSE 全支持）。
+启动器自动拉起网关并指 ANTHROPIC_BASE_URL=http://127.0.0.1:4567。
+
+**端到端实测**：官方 claude.exe → 网关 → zcode → GLM-5.3-Flash 回复
+"Hi! I'm ready to help — what would you like to work on?"
+（网关日志：POST /v1/messages?beta=true ×2 = 工具定义与对话都走通了）
