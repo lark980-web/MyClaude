@@ -185,3 +185,13 @@ ego 真浏览器 + 正确选择器后全部确认可用。截图存 ego-ui-verif
 
 - ✅ 右栏统计归零真因修复：/api/config 回调错误写入 S.stats（字段不存在→0）
   与 quiet resume 竞态。ego 复测 轮次 219/消息 68/上下文 36k 全部一致
+
+## 中断可见性实测（2026-11-01）
+
+- 真实多步任务（3×Read）45s 时中断 → 会话文件留存 6 条：
+  user + assistant(3×tool_calls) + 3×tool 结果(993/717/748 字符) + assistant 总结未出
+- resume transcript 字段完整（tool_calls.id / tool_call_id / function.name / content）
+  → 前端 replayTranscript 可全量渲染工具卡片（渲染逻辑 10-31 ego 已验证）
+- stats 恢复：5315 tok / 2 turns；todos 恢复 ✓
+- ego 通道被 onboarding 门禁挡住（需用户在桌面完成一次引导），
+  DOM 级复验待通道恢复后补
