@@ -194,4 +194,5 @@ ego 真浏览器 + 正确选择器后全部确认可用。截图存 ego-ui-verif
   → 前端 replayTranscript 可全量渲染工具卡片（渲染逻辑 10-31 ego 已验证）
 - stats 恢复：5315 tok / 2 turns；todos 恢复 ✓
 - ego 通道被 onboarding 门禁挡住（需用户在桌面完成一次引导），
-  DOM 级复验待通道恢复后补
+  DOM 级复验 ✓ 通过：刷新后 3 个工具卡片全渲染（1 聚合组 + 3 明细），
+  参数/耗时/结果摘要完整可见；msgs=3、末条 assistant 总结已留存
