@@ -196,3 +196,15 @@ ego 真浏览器 + 正确选择器后全部确认可用。截图存 ego-ui-verif
 - ego 通道被 onboarding 门禁挡住（需用户在桌面完成一次引导），
   DOM 级复验 ✓ 通过：刷新后 3 个工具卡片全渲染（1 聚合组 + 3 明细），
   参数/耗时/结果摘要完整可见；msgs=3、末条 assistant 总结已留存
+
+## 超时自救矩阵（2026-11-01 实测）
+
+| 层 | 机制 | 默认 | 实测 |
+|---|---|---|---|
+| 请求首字节 | requestTimeoutMs 计时中止 | 90s | ✓ |
+| 流空闲看门狗 | streamIdleTimeoutMs 每 chunk 重置 | 120s | ✓ 触发转 408 交给 router |
+| 容灾切换 | ProviderRouter 按候选序列重试 408/409/425/429/5xx/529/超时文本 | failoverBudgetMs 300s 总预算 | ✓ 8/8 测试 |
+| Bash 超时 | 不杀进程，转后台任务并给 task id 令模型 BashOutput 轮询 | timeout_ms 120s（最低 60s） | ✓ 真回合实测「自救成功 轮询1次」 |
+| 上下文超限 | maybeCompact 按模型目录窗口×0.8 预压缩（CJK 感知估算） | compactThreshold 0.8 | ✓ 3+3 测试 |
+| 回合上限 | autorun 自动续跑（autoRun 开关） | 关 | ✓ 代码在位 |
+| 中断留存 | mid-run flush 每 2.5s | - | ✓ 测试 + DOM 实测 |
