@@ -218,3 +218,12 @@ ego 真浏览器全路径：
 - 变更分支 diff：overlay 弹出 199982 字符 ✓
 - 任务页签 4 筛选 ✓、Artifacts 空态 ✓
 - 真实打字回合：12s 流式完成、artifact 卡片自动生成「冒烟测试通过 · 可交互预览」✓
+
+## Claude 官方 exe 界面版（2026-11-01）
+
+逆向 claude-src 的官方 exe（2.1.302）+ 免登录包装 + xterm.js 浏览器界面：
+- 产物：E:/WorkSpaces/Test09/claude-nologin/（claude.cmd / 启动界面版.cmd / web-ui/）
+- 免登录：ANTHROPIC_API_KEY env（官方第一凭据来源）+ 预置 hasCompletedOnboarding
+- AUTOPILOT：自动通过工作区信任对话框与 custom API key 确认
+- ego 实测：信任✓自动通过、key确认✓、主界面渲染✓（权限模式条/输入框）
+- 官方 exe 字节未动，签名完整；密钥与 MyClaude 共用（~/.myclaude/config.json）
