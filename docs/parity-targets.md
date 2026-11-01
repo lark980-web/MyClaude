@@ -258,3 +258,12 @@ run_code 子进程每轮被收割 → schtasks MINUTE 每分钟守护任务（�
 - 保留：api.anthropic.com 主机 75 处（模型 API）、全部工具、原生 TUI、其他功能
 - 端到端实测：补丁 exe + 协议网关 → GLM 回复"成功"（exit 0, is_error false）
 - 产物：claude-nologin/claude-nologin.exe + 启动原生Claude.cmd（自动起网关+预置信任）
+### 决定性证据：官方桌面版 GUI 是云端网页（2026-11-01）
+
+对已安装的 Claude Desktop（MSIX, 3.6556.2.0）完整复制（4598 文件/639MB）并运行，
+主日志决定性一行：
+  `Loaded https://claude.ai (web commit 606fb97..., desktop commit 20c019a...)`
+= 桌面 App 只是 Electron 壳，**整个图形界面是启动时从 claude.ai 加载的网页**。
+GUI 代码在 Anthropic 服务端，本地不存在 → 「切除 GUI 的登录」物理不可能；
+且用户账号截图显示「组织已停用」= 服务端封禁，本地修改同样无效。
+本地可行路径 = 已交付的：补丁版 claude.exe（终端引擎）+ 协议网关 + 自研 GUI（7781）。
