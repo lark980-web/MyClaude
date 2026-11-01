@@ -8041,7 +8041,9 @@ function switchInspectorTab(tab) {
     // 同步顶栏配置按钮状态徽章
     var topCfgBadge = $("top-cfg-status-badge");
     if (topCfgBadge) {
-      if (v && (v.indexOf("Google") >= 0 || v.indexOf("Gemini") >= 0)) {
+      var _bu = (S.config && S.config.baseUrl) || "";
+      var _localGw = /^(https?:\/\/)?(127\.0\.0\.1|localhost|0\.0\.0\.0)(:\d+)?/i.test(_bu);
+      if ((v && (v.indexOf("Google") >= 0 || v.indexOf("Gemini") >= 0)) || _localGw) {
         topCfgBadge.textContent = "免配即用";
         topCfgBadge.className = "topbar-cfg-badge free";
       } else if (S.config && S.config.apiKeyConfigured) {
@@ -8069,7 +8071,9 @@ function switchInspectorTab(tab) {
       wDot.title = "延迟：" + perf.ms + "ms";
     }
     if (wStatusPill) {
-      if (v && (v.indexOf("Google") >= 0 || v.indexOf("Gemini") >= 0)) {
+      var _bu = (S.config && S.config.baseUrl) || "";
+      var _localGw = /^(https?:\/\/)?(127\.0\.0\.1|localhost|0\.0\.0\.0)(:\d+)?/i.test(_bu);
+      if ((v && (v.indexOf("Google") >= 0 || v.indexOf("Gemini") >= 0)) || _localGw) {
         wStatusPill.textContent = "🟢 运行正常 · 免配即用 (" + perf.ms + "ms)";
         wStatusPill.className = "wmc-status-pill ok";
       } else if (S.config && S.config.apiKeyConfigured) {
