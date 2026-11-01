@@ -246,3 +246,6 @@ ego 真浏览器全路径：
 **端到端实测**：官方 claude.exe → 网关 → zcode → GLM-5.3-Flash 回复
 "Hi! I'm ready to help — what would you like to work on?"
 （网关日志：POST /v1/messages?beta=true ×2 = 工具定义与对话都走通了）
+### 常驻方案（终）
+
+run_code 子进程每轮被收割 → schtasks MINUTE 每分钟守护任务（检查 7781 未听即拉起）部署成功，实测 CHECK: 200 UP。GUI/网关进程由用户会话持有，刷新浏览器即可用。
