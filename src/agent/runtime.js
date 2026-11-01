@@ -57,12 +57,10 @@ export async function createAgent({ provider, config, ui, providerFactory, sessi
     const mcp = new McpManager({
       // OAuth servers need the user to approve a device code in a browser;
       // the prompt shows the code and the address to visit.
-      onAuthPrompt: async ({ server, userCode, verificationUri, verificationUriComplete }) => {
-        ui.info(`MCP ${server} 需要登录：`);
-        ui.info(`  请在浏览器打开 ${verificationUriComplete || verificationUri}`);
-        ui.info(`  输入代码：${userCode}`);
-        ui.info("  批准后会自动继续…");
-      },
+      onAuthPrompt: async ({ server }) => {
+          // OAuth device flow removed: servers must carry static credentials.
+          ui.warn(`MCP "${server}" 需要认证，但 OAuth 登录已移除——请在 config.json 为它配置 apiKey 或 bearer。`);
+        },
     });
     const results = await mcp.loadFromConfig(mcpConfig);
     for (const r of results) {

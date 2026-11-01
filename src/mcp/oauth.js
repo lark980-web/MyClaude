@@ -67,36 +67,7 @@ export function metadataUrls(issuer, name) {
  * @param {{fetchImpl?: Function, timeoutMs?: number}} [opts]
  * @returns {Promise<Object>}
  */
-export async function discoverMetadata(baseUrl, opts = {}) {
-  const doFetch = opts.fetchImpl || fetch;
-  const timeoutMs = opts.timeoutMs || 10000;
-  const issuer = new URL(String(baseUrl));
-  for (const name of METADATA_PATHS) {
-    for (const url of metadataUrls(issuer, name)) {
-      const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), timeoutMs);
-      try {
-        const res = await doFetch(url, {
-          headers: { Accept: "application/json" },
-          signal: ctrl.signal,
-        });
-        if (!res.ok) { continue; }
-        const body = await res.json();
-        if (!body || typeof body !== "object") { continue; }
-        // A metadata document without a token endpoint is useless to us.
-        if (!body.token_endpoint) { continue; }
-        return { ...body, issuer: body.issuer || issuer.origin, metadataUrl: url };
-      } catch {
-        // A missing or malformed document just means the next candidate is
-        // tried; the server may only publish one of the two spellings.
-      } finally {
-        clearTimeout(timer);
-      }
-    }
-  }
-  const tried = METADATA_PATHS.map((n) => "/.well-known/" + n).join(", ");
-  throw new Error(`No OAuth metadata found for ${issuer.origin} (tried ${tried})`);
-}
+// removed: OAuth device flow no longer part of the build
 
 /**
  * Register a client with the authorization server (RFC 7591).
@@ -109,29 +80,7 @@ export async function discoverMetadata(baseUrl, opts = {}) {
  * @param {{clientId?: string, fetchImpl?: Function}} [opts]
  * @returns {Promise<Object>}
  */
-export async function registerClient(meta, opts = {}) {
-  const doFetch = opts.fetchImpl || fetch;
-  if (opts.clientId) { return { client_id: opts.clientId }; }
-  if (!meta.registration_endpoint) {
-    throw new Error(
-      "The MCP server does not publish a registration_endpoint, so a client id " +
-      "must be configured for it (mcpServers.<name>.clientId)."
-    );
-  }
-  const res = await doFetch(meta.registration_endpoint, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Accept: "application/json" },
-    body: JSON.stringify(CLIENT_INFO),
-  });
-  if (!res.ok) {
-    throw new Error("Client registration failed (HTTP " + res.status + ")");
-  }
-  const body = await res.json();
-  if (!body || !body.client_id) {
-    throw new Error("Client registration returned no client_id");
-  }
-  return body;
-}
+// removed: OAuth device flow no longer part of the build
 
 /**
  * Ask the authorization server for a device code (RFC 8628).
@@ -141,34 +90,7 @@ export async function registerClient(meta, opts = {}) {
  * @param {{scope?: string, fetchImpl?: Function}} [opts]
  * @returns {Promise<Object>}
  */
-export async function startDeviceAuthorization(meta, clientId, opts = {}) {
-  const doFetch = opts.fetchImpl || fetch;
-  const endpoint = meta.device_authorization_endpoint;
-  if (!endpoint) {
-    throw new Error(
-      "The MCP server does not advertise a device_authorization_endpoint, so the " +
-      "device authorization grant cannot be used."
-    );
-  }
-  const form = new URLSearchParams({
-    client_id: clientId,
-    grant_type: "urn:ietf:params:oauth:grant-type:device_code",
-  });
-  if (opts.scope) { form.set("scope", opts.scope); }
-  const res = await doFetch(endpoint, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
-    body: form.toString(),
-  });
-  if (!res.ok) {
-    throw new Error("Device authorization failed (HTTP " + res.status + ")");
-  }
-  const body = await res.json();
-  if (!body || !body.device_code || !body.user_code) {
-    throw new Error("Device authorization returned no device_code");
-  }
-  return body;
-}
+// removed: OAuth device flow no longer part of the build
 
 /**
  * Poll the token endpoint until the user approves the device code.
@@ -182,53 +104,7 @@ export async function startDeviceAuthorization(meta, clientId, opts = {}) {
  * @param {{intervalMs?: number, expiresIn?: number, onWait?: Function, fetchImpl?: Function, sleep?: Function}} [opts]
  * @returns {Promise<Object>} the token response
  */
-export async function pollForToken(meta, clientId, deviceCode, opts = {}) {
-  const doFetch = opts.fetchImpl || fetch;
-  const sleep = opts.sleep || ((ms) => new Promise((r) => setTimeout(r, ms)));
-  let interval = opts.intervalMs || 5000;
-  const deadline = Date.now() + (opts.expiresIn || 900) * 1000;
-
-  while (Date.now() < deadline) {
-    const form = new URLSearchParams({
-      client_id: clientId,
-      device_code: deviceCode,
-      grant_type: "urn:ietf:params:oauth:grant-type:device_code",
-    });
-    const res = await doFetch(meta.token_endpoint, {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
-      body: form.toString(),
-    });
-    let body = null;
-    try { body = await res.json(); } catch { body = null; }
-
-    if (res.ok && body && (body.access_token || body.id_token)) {
-      return body;
-    }
-    const code = body && body.error ? String(body.error) : "";
-    if (code === "authorization_pending") {
-      if (opts.onWait) { opts.onWait(); }
-      await sleep(interval);
-      continue;
-    }
-    if (code === "slow_down") {
-      // The server wants us to poll less often.
-      interval += 5000;
-      await sleep(interval);
-      continue;
-    }
-    if (code === "expired_token" || code === "access_denied") {
-      throw new Error(
-        code === "expired_token"
-          ? "The device code expired before it was approved."
-          : "The authorization request was denied."
-      );
-    }
-    const detail = body && body.error_description ? ": " + body.error_description : "";
-    throw new Error("Token request failed (HTTP " + res.status + detail + ")");
-  }
-  throw new Error("Timed out waiting for the device authorization to be approved.");
-}
+// removed: OAuth device flow no longer part of the build
 
 /**
  * Exchange a refresh token for a new access token.

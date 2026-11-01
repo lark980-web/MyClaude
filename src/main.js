@@ -79,7 +79,6 @@ Commands (interactive):
   /add-dir <路径>    追加工作目录
   /auto [on|off]     自主模式：回合上限后自动续跑（默认关）
   /agents            子代理定义
-  /mcp login <名>      登录需要 OAuth 的 MCP 服务器
   /mcp logout <名>     清除已保存的 MCP 令牌
   /model [name]      show or set model
   /provider [name]   show or set provider
@@ -335,31 +334,12 @@ async function handleCommand(raw, ctx) {
     case "mcp": {
       // "/mcp login <server>" starts the OAuth device flow for one server.
       if (rest[0] === "login") {
-        const target = rest[1];
-        if (!target) {
-          ui.info("用法：/mcp login <服务器名>");
+          // OAuth device-flow login was removed: MCP servers are configured with
+          // static apiKey/bearer credentials only, so there is nothing to sign in to.
+          ui.warn("MCP OAuth 登录已移除：请在 config.json 的 mcpServers 里直接配置 apiKey 或 bearer 静态凭据。");
           return {};
         }
-        const spec = (config.mcpServers || {})[target];
-        if (!spec) {
-          ui.info(`没有名为 "${target}" 的 MCP 服务器。`);
-          return {};
-        }
-        const manager = agent.mcpManager;
-        if (!manager || !manager.authorize) {
-          ui.info("当前会话没有可用的 MCP 管理器。");
-          return {};
-        }
-        try {
-          ui.info(`正在为 "${target}" 发起 OAuth 登录…`);
-          await manager.authorize(target, spec);
-          ui.info(`"${target}" 登录成功，令牌已保存。`);
-        } catch (e) {
-          ui.warn(`"${target}" 登录失败：${e.message}`);
-        }
-        return {};
-      }
-      // "/mcp logout <server>" forgets the stored token.
+        // (removed OAuth login block)
       if (rest[0] === "logout") {
         const target = rest[1];
         if (!target) {
@@ -1313,6 +1293,14 @@ async function main() {
       getMeta: () => ({ cwd: process.cwd(), model: config.model, provider: config.provider, ui: "cli" }),
     });
     try {
+      // -p 也要能跑斜杠命令（如 /mcp login 的提示、/status）：一条即退。
+      if (opts.oneShot.startsWith("/")) {
+        const r = await handleCommand(opts.oneShot, { agent, config, ui, provider, autoSaver: oneShotSaver });
+        try { oneShotSaver.save({ force: true }); } catch {}
+        if (jsonl) emit({ type: "result", result: "ok" });
+        else if (!jsonOut) { /* handleCommand 已输出 */ }
+        process.exit(0);
+      }
       const result = await agent.run(opts.oneShot);
       if (result.error) process.exitCode = 1;
       try { oneShotSaver.save({ force: true }); } catch {}

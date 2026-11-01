@@ -2,13 +2,8 @@ import { spawn } from "node:child_process";
 import { existsSync, statSync } from "node:fs";
 import { isAbsolute, extname } from "node:path";
 import { StreamableHttpTransport, SseHttpTransport } from "./http-transport.js";
-import {
-  OAuthTokenStore,
-  discoverMetadata,
-  registerClient,
-  startDeviceAuthorization,
-  pollForToken,
-} from "./oauth.js";
+// OAuth device flow removed from the build; the token store remains for pre-existing tokens.
+import { OAuthTokenStore } from "./oauth.js";
 import { registry } from "../tasks/registry.js";
 import { startMcpTask } from "../tasks/kinds.js";
 
@@ -459,17 +454,8 @@ export class McpManager {
       return null;
     }
     const row = this.tokenStore.get(name);
-    if (!row || !row.access_token) { return null; }
-    let meta = null;
-    try {
-      meta = await discoverMetadata(spec.url);
-    } catch {
-      // Without metadata the token cannot be refreshed, but the stored access
-      // token may still be valid, so use it as-is.
-      return { Authorization: "Bearer " + row.access_token };
-    }
-    const token = await this.tokenStore.accessToken(name, meta);
-    return token ? { Authorization: "Bearer " + token } : null;
+    // Tokens left over from before the OAuth removal are used as-is; no refresh.
+    return row && row.access_token ? { Authorization: "Bearer " + row.access_token } : null;
   }
 
   /**
@@ -480,33 +466,9 @@ export class McpManager {
    * @returns {Promise<string>} the access token
    */
   async authorize(name, spec) {
-    const meta = await discoverMetadata(spec.url);
-    const registration = await registerClient(meta, { clientId: spec.clientId });
-    const clientId = registration.client_id;
-    const device = await startDeviceAuthorization(meta, clientId, { scope: spec.scope });
-
-    if (this.onAuthPrompt) {
-      await this.onAuthPrompt({
-        server: name,
-        userCode: device.user_code,
-        verificationUri: device.verification_uri,
-        verificationUriComplete: device.verification_uri_complete || "",
-      });
-    }
-
-    const tokens = await pollForToken(meta, clientId, device.device_code, {
-      expiresIn: device.expires_in,
-      intervalMs: (device.interval || 5) * 1000,
-    });
-    const now = Date.now();
-    this.tokenStore.set(name, {
-      access_token: tokens.access_token || tokens.id_token,
-      refresh_token: tokens.refresh_token || "",
-      expires_at: tokens.expires_in ? now + tokens.expires_in * 1000 : 0,
-      client_id: clientId,
-      scope: tokens.scope || spec.scope || "",
-    });
-    return tokens.access_token || tokens.id_token;
+    // OAuth device flow removed: there is no login any more. A server that
+    // rejects requests must be given a static credential in config.json.
+    throw new Error("MCP OAuth 登录已移除——请在 config.json 为该服务器配置 apiKey 或 bearer 静态凭据。");
   }
 
   async loadFromConfig(mcpServers = {}) {
