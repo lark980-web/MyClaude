@@ -933,15 +933,76 @@
     wrap.scrollIntoView({ block: "nearest" });
   }
 
-  function addNotice(text, kind) {
-    hideWelcome();
-    var root = logRoot();
-    var box = el("div", "notice " + (kind || "info"));
-    box.appendChild(el("span", "notice-ico", kind === "ok" ? "\u2713" : kind === "err" ? "\u00D7" : kind === "warn" ? "!" : "i"));
-    box.appendChild(el("span", "notice-text", text));
-    root.appendChild(box);
-    scrollStream();
-    return box;
+  /**
+   * 把供应商返回的原始错误 JSON 转成人类可读的提示 + 可操作建议。
+   * 供应商（ZCode/OpenAI/Anthropic 兼容层）常把 {"error":{...}} 整段丢上来，
+   * 直接显示会让用户看到一坨 JSON，不知道该做什么。
+   */
+  function humanizeApiError(raw) {
+    var s = String(raw == null ? "" : raw);
+    var msg = "", code = "", type = "";
+    try {
+      var m = s.match(/\{[\s\S]*\}/);
+      if (m) {
+        var j = JSON.parse(m[0]);
+        var e = j.error || j;
+        msg = e.message || e.detail || "";
+        code = String(e.code || j.code || "");
+        type = String(e.type || j.type || "");
+      }
+    } catch (err) {}
+    var lower = (msg + " " + type + " " + code + " " + s).toLowerCase();
+    var hint = "";
+    if (/risk|blocked|forbidden|封禁|封停|停用|禁用|拦截|异常活动|banned|suspend|unusual activity|abuse/.test(lower)) {
+      hint = "供应商风控拦截了本次请求。这通常是账号侧限制，换一个供应商或模型、或到供应商控制台申诉后即可恢复。";
+    } else if (/401|invalid.*key|unauthor|认证|密钥|api key/.test(lower)) {
+      hint = "密钥无效或未配置。请点右上角「模型与供应商配置」填写正确的 API Key。";
+    } else if (/429|rate.?limit|quota|限流|too many/.test(lower)) {
+      hint = "请求过于频繁或额度用尽。稍等片刻重试，或在配置里切换备用模型。";
+    } else if (/402|insufficient|balance|余额|欠费/.test(lower)) {
+      hint = "账户余额不足，请到供应商控制台充值后重试。";
+    } else if (/404|model.*not.*found|no such model|模型不存在|没有该模型|模型不可用/.test(lower)) {
+      hint = "该模型在接口上不存在。请在模型菜单里换一个可用模型。";
+    } else if (/timeout|timed out|超时|ETIMEDOUT/.test(lower)) {
+      hint = "请求超时。检查网络或代理后重试。";
+    } else if (/ECONNREFUSED|ENOTFOUND|fetch failed|network|连接失败|connection refused|getaddrinfo/.test(lower)) {
+      hint = "连不上接口地址。确认本地网关/代理是否在运行，或检查「接口服务地址」配置。";
+    } else if (/context.*(length|window)|too long|超出.*上下文/.test(lower)) {
+      hint = "上下文超出模型窗口。用 /compact 压缩后重试。";
+    }
+    var head = msg || s.replace(/\s+/g, " ").slice(0, 200);
+    if (head.length > 300) { head = head.slice(0, 300) + "…"; }
+    return { text: head, hint: hint };
+  }
+
+  function addNotice(text, kind) {
+    hideWelcome();
+    var root = logRoot();
+    var box = el("div", "notice " + (kind || "info"));
+    box.appendChild(el("span", "notice-ico", kind === "ok" ? "\u2713" : kind === "err" ? "\u00D7" : kind === "warn" ? "!" : "i"));
+    var k = kind || "info";
+    if (k === "err" && /\{|error|\[error\]/i.test(String(text))) {
+      var h = humanizeApiError(text);
+      box.appendChild(el("span", "notice-text", h.text));
+      if (h.hint) { box.appendChild(el("div", "notice-hint", h.hint)); }
+      var raw = el("button", "notice-raw-btn", "查看原始错误");
+      raw.type = "button";
+      var rawPre = el("pre", "notice-raw");
+      rawPre.style.display = "none";
+      rawPre.textContent = String(text);
+      raw.addEventListener("click", function () {
+        var open = rawPre.style.display !== "none";
+        rawPre.style.display = open ? "none" : "block";
+        raw.textContent = open ? "查看原始错误" : "收起原始错误";
+      });
+      box.appendChild(raw);
+      box.appendChild(rawPre);
+    } else {
+      box.appendChild(el("span", "notice-text", text));
+    }
+    root.appendChild(box);
+    scrollStream();
+    return box;
   }
 
   /* ============================================================ 输入区 === */

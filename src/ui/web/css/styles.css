@@ -6412,3 +6412,10 @@ body.no-motion *, body.no-motion *::before, body.no-motion *::after { animation:
 .model-opt:hover .model-speedbar-fill { transform: scaleX(1); }
 .model-speedbar.medium .model-speedbar-fill { background: var(--warn); }
 .model-speedbar.slow .model-speedbar-fill { background: var(--crit); }
+
+
+/* 错误提示：人话 + 可操作建议 + 可展开原始错误 */
+.notice-hint{margin-top:6px;font-size:12.5px;line-height:1.6;color:var(--text-2,#9aa0a6);border-left:2px solid currentColor;padding-left:9px;opacity:.9}
+.notice-raw-btn{margin-top:8px;background:none;border:1px solid currentColor;color:inherit;opacity:.7;border-radius:6px;padding:3px 10px;font-size:11.5px;cursor:pointer}
+.notice-raw-btn:hover{opacity:1}
+.notice-raw{margin:8px 0 0;padding:10px 12px;background:rgba(0,0,0,.25);border-radius:8px;font-family:var(--mono,monospace);font-size:11.5px;white-space:pre-wrap;word-break:break-all;max-height:220px;overflow:auto;opacity:.85}
