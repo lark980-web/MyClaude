@@ -8,6 +8,12 @@
 
 ## [Unreleased]
 
+### Design（追问美工卡片）
+- 追问建议从「一句话药丸」升级为设计卡片：编号标记（等宽 01/02/03）+ 短标题 + 完整说明
+  三层结构；hover 抬升 2px + 陶土橙描边 + 阴影 + 箭头右移；focus-visible 环；720px 塌单列。
+- buildFollowupPrompts 输出 {标题,说明} 结构（按 artifact/代码/通用三套语境）。
+- dist/myclaude.exe 重新打包（bun 1.4.2，15s）——此前 exe 是 11-01 旧版，GUI 新样式从未到达用户。
+- 视觉验证：Edge headless 截图实测渲染（编号/标题/说明/双态页脚全部正确，零截断）。
 ### Fixed（中断后会话永久失败 —— "Error in input stream" 连环报错根因）
 - 根因：回合被杀在「assistant 声明 tool_calls」与「工具结果落盘」之间，会话尾部留下
   悬空调用；OpenAI 协议要求 tool_calls 必须紧跟匹配的工具结果，坏历史每次续跑都原样

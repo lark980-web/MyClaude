@@ -16,16 +16,21 @@ const here = dirname(fileURLToPath(import.meta.url));
 const app = readFileSync(join(here, "..", "src", "ui", "web", "js", "app.js"), "utf8");
 const css = readFileSync(join(here, "..", "src", "ui", "web", "css", "styles.css"), "utf8");
 
-test("follow-up suggestions render as wrapping cards, not truncated pills", () => {
+test("follow-up suggestions render as designed cards with full text", () => {
   assert.match(css, /\.followup-row \{[^}]*display: grid/);
   assert.match(css, /\.followup-row \{[^}]*grid-template-columns: repeat\(3, minmax\(0, 1fr\)\)/);
-  // The truncation trio must be gone from the chip text node.
-  const chipText = css.match(/\.followup-chip > span:first-child \{[^}]*\}/);
-  assert.ok(chipText, "chip text rule exists");
-  assert.ok(!/text-overflow: ellipsis/.test(chipText[0]), "no ellipsis truncation");
-  assert.ok(!/white-space: nowrap/.test(chipText[0]), "no forced single line");
-  assert.match(chipText[0], /white-space: normal/);
-  // Narrow viewports collapse to one column so cards never clip.
+  // 卡片体系：编号 + 标题 + 描述 三层结构，全部存在
+  for (const sel of [".followup-card", ".fc-top", ".fc-num", ".fc-arrow", ".fc-title", ".fc-desc"]) {
+    assert.ok(css.includes(sel + " {"), sel + " must exist");
+  }
+  // 截断三件套在 followup 区域绝迹（老药丸把追问切成半句）。
+  const zone = css.slice(css.indexOf(".followup-row"), css.indexOf(".fc-desc") + 400);
+  assert.ok(!/text-overflow: ellipsis/.test(zone), "no ellipsis truncation");
+  assert.ok(!/white-space: nowrap/.test(zone), "no forced single line");
+  // 交互态齐全：hover 抬升、focus-visible、active。
+  assert.match(css, /\.followup-card:hover \{[^}]*translateY\(-2px\)/);
+  assert.match(css, /\.followup-card:focus-visible/);
+  // 窄屏塌成一列，卡片永不裁字。
   assert.match(css, /@media \(max-width: 720px\) \{\s*\.followup-row \{ grid-template-columns: 1fr; \}/);
 });
 

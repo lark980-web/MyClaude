@@ -3301,47 +3301,56 @@ body.no-motion *, body.no-motion *::before, body.no-motion *::after { animation:
   color: var(--fg-4);
   user-select: none;
 }
-.followup-chip {
+.followup-card {
   display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  min-height: 56px;
-  padding: 10px 12px;
-  border-radius: 12px;
+  flex-direction: column;
+  gap: 3px;
+  min-height: 92px;
+  padding: 12px 14px 13px;
+  border-radius: 14px;
   border: 1px solid var(--line-strong);
   background: var(--panel);
   color: var(--fg-2);
-  font-size: 13px;
-  line-height: 1.5;
   text-align: left;
-  transition: background var(--t) var(--ease), border-color var(--t) var(--ease), color var(--t) var(--ease), transform 120ms var(--ease);
+  cursor: pointer;
+  transition: transform 140ms var(--ease), border-color var(--t) var(--ease), box-shadow var(--t) var(--ease);
 }
-.followup-chip:hover {
-  background: var(--accent-soft);
-  border-color: color-mix(in srgb, var(--accent) 42%, var(--line-strong));
-  color: var(--accent);
-  transform: translateY(-1px);
+.followup-card:hover {
+  transform: translateY(-2px);
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--line-strong));
+  box-shadow: 0 8px 22px -10px rgba(31, 30, 29, 0.16);
 }
-.followup-chip:active {
-  transform: scale(0.98);
+.followup-card:active { transform: translateY(0) scale(0.99); }
+.followup-card:focus-visible { outline: 2px solid var(--accent-ring); outline-offset: 2px; }
+.fc-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
 }
-/* The text node inside a chip: the part that actually truncates. */
-.followup-chip > span:first-child {
-  /* 完整句子：允许换行，不再截断。 */
-  flex: 1;
-  min-width: 0;
-  white-space: normal;
-  overflow-wrap: anywhere;
+.fc-num {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.1em;
+  color: var(--fg-4);
 }
-.followup-arrow {
-  align-self: flex-end;
-  font-size: 12px;
+.fc-arrow {
+  font-size: 13px;
   color: var(--fg-4);
   transition: transform var(--t) var(--ease), color var(--t) var(--ease);
 }
-.followup-chip:hover .followup-arrow {
-  color: var(--accent);
-  transform: translateX(2px);
+.followup-card:hover .fc-arrow { color: var(--accent); transform: translateX(3px); }
+.fc-title {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--fg);
+  line-height: 1.4;
+}
+.fc-desc {
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--fg-3);
+  overflow-wrap: anywhere;
 }
 
 /* Artifacts 2.0：全屏画布、在线代码编辑器、底部 AI 局部迭代栏 */

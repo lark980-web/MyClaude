@@ -1418,31 +1418,32 @@
     }
   }
 
-  function buildFollowupPrompts(rawText, bodyEl) {
-    var txt = String(rawText || "");
-    var hasArtifact = bodyEl && bodyEl.querySelector(".artifact-card");
-    var hasCode = /```/.test(txt) || (bodyEl && bodyEl.querySelector(".codeblock"));
-    if (hasArtifact) {
-      return [
-        "再优化一下视觉细节和配色",
-        "加上响应式布局和深浅色切换",
-        "讲讲怎么集成到现有项目"
-      ];
-    }
-    if (hasCode) {
-      return [
-        "补上边界情况的单元测试",
-        "查一下异常、性能和安全隐患",
-        "再精简重构并补上中文注释"
-      ];
-    }
-    return [
-        "展开说说实现方案和步骤",
-        "总结 3 个行动项和验证方法",
-        "分析边界情况和替代方案"
-    ];
-  }
-
+  function buildFollowupPrompts(rawText, bodyEl) {
+    // 美工卡片：每条建议两层信息——短标签 + 完整句子（点击发送的是完整句子）。
+    var txt = String(rawText || "");
+    var hasArtifact = bodyEl && bodyEl.querySelector(".artifact-card");
+    var hasCode = /```/.test(txt) || (bodyEl && bodyEl.querySelector(".codeblock"));
+    if (hasArtifact) {
+      return [
+        { t: "视觉打磨", d: "再优化一下视觉细节和配色" },
+        { t: "响应式", d: "加上响应式布局和深浅色切换" },
+        { t: "集成落地", d: "讲讲怎么集成到现有项目" }
+      ];
+    }
+    if (hasCode) {
+      return [
+        { t: "补测试", d: "补上边界情况的单元测试" },
+        { t: "安全审查", d: "查一下异常、性能和安全隐患" },
+        { t: "重构注释", d: "再精简重构并补上中文注释" }
+      ];
+    }
+    return [
+      { t: "展开方案", d: "展开说说实现方案和步骤" },
+      { t: "行动清单", d: "总结 3 个行动项和验证方法" },
+      { t: "边界分析", d: "分析边界情况和替代方案" }
+    ];
+  }
+
   /* ---- 语音朗读 (TTS SpeechSynthesis 内联播放控制栏) 与内联引文渲染 ---- */
   var LS_TTS_RATE = "myclaude.tts.rate";
   var TTS_SPEEDS = [0.75, 1.0, 1.25, 1.5, 2.0];
@@ -1967,23 +1968,23 @@
     if (handle.wrap && (handle.raw || "").trim().length > 20) {
       var fRow = el("div", "followup-row");
       fRow.appendChild(el("span", "followup-label", "继续追问："));
-      buildFollowupPrompts(handle.raw, handle.body).forEach(function (promptText) {
-        var chip = el("button", "followup-chip");
-        chip.type = "button";
-        chip.appendChild(el("span", null, promptText));
-        chip.appendChild(el("span", "followup-arrow", "\u2192"));
-        chip.addEventListener("click", function () {
+      buildFollowupPrompts(handle.raw, handle.body).forEach(function (item, idx) {
+        var card = el("button", "followup-card");
+        card.type = "button";
+        var top = el("span", "fc-top");
+        top.appendChild(el("span", "fc-num", (idx + 1 < 10 ? "0" : "") + (idx + 1)));
+        top.appendChild(el("span", "fc-arrow", "\u2192"));
+        card.appendChild(top);
+        card.appendChild(el("span", "fc-title", item.t));
+        card.appendChild(el("span", "fc-desc", item.d));
+        card.addEventListener("click", function () {
           var ta = $("in");
           if (!ta) { return; }
-          ta.value = promptText;
+          ta.value = item.d;
           autoGrow(ta);
-          if (!S.busy) {
-            sendMessage();
-          } else {
-            ta.focus();
-          }
+          if (!S.busy) { sendMessage(); } else { ta.focus(); }
         });
-        fRow.appendChild(chip);
+        fRow.appendChild(card);
       });
       handle.wrap.appendChild(fRow);
     }
