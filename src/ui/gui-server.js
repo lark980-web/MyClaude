@@ -2005,6 +2005,49 @@ running.add(key);
         return;
       }
 
+      /* ---- full-text search across sessions ---- */
+      if (path === "/api/search" && req.method === "GET") {
+        const q = String((url.searchParams.get("q") || "")).trim();
+        if (!q) { sendJson(res, 200, { query: "", results: [] }); return; }
+        const needle = q.toLowerCase();
+        const results = [];
+        let scanned = 0;
+        for (const row of listSessions()) {
+          if (scanned >= 300) break;
+          scanned++;
+          const data = loadSession(row.id);
+          if (!data || !Array.isArray(data.messages)) continue;
+          const title = withTitle(row).title || data.id;
+          for (let i = 0; i < data.messages.length; i++) {
+            const m = data.messages[i];
+            if (!m) continue;
+            let text = "";
+            if (typeof m.content === "string") text = m.content;
+            else if (Array.isArray(m.content)) {
+              text = m.content.map((c) => (c && typeof c.text === "string" ? c.text : "")).join(" ");
+            }
+            if (!text || text.length < 2) continue;
+            const at = text.toLowerCase().indexOf(needle);
+            if (at < 0) continue;
+            const from = Math.max(0, at - 60);
+            const to = Math.min(text.length, at + q.length + 100);
+            results.push({
+              sessionId: row.id,
+              title,
+              role: m.role || "?",
+              index: i,
+              snippet: (from > 0 ? "…" : "") + text.slice(from, to).replace(/\s+/g, " ") + (to < text.length ? "…" : ""),
+              hitStart: at - from + (from > 0 ? 1 : 0),
+              hitLen: q.length,
+            });
+            if (results.length >= 60) break;
+          }
+          if (results.length >= 60) break;
+        }
+        sendJson(res, 200, { query: q, scanned, results });
+        return;
+      }
+
       /* ---- sessions ---- */
       if (path === "/api/sessions" && req.method === "GET") {
         pruneSessions();

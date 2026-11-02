@@ -140,3 +140,10 @@ MyClaude 已有 **29 个**，Claude 侧提取到 **57 个候选**，确认缺 **
 - 修复：/status 丢逗号必崩、会话每轮分裂、resume 磁盘覆盖内存、
   忙时消息静默丢弃、abort 不达工具子进程、.gitignore 损坏致 ripgrep 全挂
 - 自检矩阵 scripts/self-audit.mjs：对真实 exe 9 场景 9/9 通过
+
+## 2026-11-02 夜间补记
+
+- /api/search + 搜索面板：跨会话全文搜索（对齐 claude.ai 会话搜索）
+- 供应商错误人性化：8 类错误分类 + 可操作建议 + 原始错误折叠
+- 本地网关免配即用：不再误报「需配置 API Key」
+- 任务类型实测：MyClaude 8 种 vs claude-src 10 种；差 teammate/in_process_teammate/remote_agent（架构级，不复刻），local_workflow 对应现有 workflow

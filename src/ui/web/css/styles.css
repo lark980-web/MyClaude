@@ -6419,3 +6419,18 @@ body.no-motion *, body.no-motion *::before, body.no-motion *::after { animation:
 .notice-raw-btn{margin-top:8px;background:none;border:1px solid currentColor;color:inherit;opacity:.7;border-radius:6px;padding:3px 10px;font-size:11.5px;cursor:pointer}
 .notice-raw-btn:hover{opacity:1}
 .notice-raw{margin:8px 0 0;padding:10px 12px;background:rgba(0,0,0,.25);border-radius:8px;font-family:var(--mono,monospace);font-size:11.5px;white-space:pre-wrap;word-break:break-all;max-height:220px;overflow:auto;opacity:.85}
+
+
+/* 全文搜索面板 */
+.search-bar{margin-bottom:10px}
+.search-input{width:100%;padding:9px 12px;border-radius:9px;border:1px solid var(--line,#2a2a2a);background:var(--bg-2,#1a1a1a);color:var(--text,#e6e6e6);font-size:13.5px;outline:none}
+.search-input:focus{border-color:var(--accent,#d97757)}
+.search-count{font-size:11.5px;opacity:.6;margin:4px 0 8px}
+.search-results{max-height:52vh;overflow-y:auto}
+.search-item{display:block;width:100%;text-align:left;background:none;border:0;border-radius:9px;padding:9px 11px;cursor:pointer;margin-bottom:2px}
+.search-item:hover{background:var(--hover,rgba(255,255,255,.06))}
+.search-item-head{display:flex;gap:8px;align-items:center;margin-bottom:3px}
+.search-role{font-size:10.5px;padding:1px 7px;border-radius:5px;background:var(--hover,rgba(255,255,255,.08));opacity:.8;flex-shrink:0}
+.search-role.is-user{background:rgba(217,119,87,.18);color:#e08b6a;opacity:1}
+.search-title{font-size:12.5px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.search-snippet{font-size:12px;opacity:.72;line-height:1.55;word-break:break-word}

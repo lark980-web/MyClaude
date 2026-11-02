@@ -5128,7 +5128,7 @@
     var bNew = $("btn-new-chat");
     if (bNew) { bNew.addEventListener("click", newChat); }
     var bSearch = $("btn-search-chat");
-    if (bSearch) { bSearch.addEventListener("click", openCmd); }
+    if (bSearch) { bSearch.addEventListener("click", openSearch); }
     var bFiles = $("btn-files");
     if (bFiles) { bFiles.addEventListener("click", function () { openFiles(); }); }
     var bTools = $("btn-tools");
@@ -8590,6 +8590,57 @@ function switchInspectorTab(tab) {
     }, [{ label: "关闭", fn: closeModal }]);
   }
 
+  /* ---- 全文搜索：跨会话搜消息正文 ---- */
+  function openSearch() {
+    openModal("搜索对话内容", function (body) {
+      var bar = el("div", "search-bar");
+      var input = el("input", "search-input");
+      input.type = "search";
+      input.placeholder = "输入关键词，搜索全部历史消息…";
+      bar.appendChild(input);
+      body.appendChild(bar);
+      var host = el("div", "search-results");
+      body.appendChild(host);
+      var timer = null;
+      function run() {
+        var q = input.value.trim();
+        if (!q) { host.innerHTML = ""; return; }
+        getJSON("/api/search?q=" + encodeURIComponent(q)).then(function (j) {
+          clear(host);
+          if (!j.results || !j.results.length) {
+            host.appendChild(el("div", "empty-note", "没找到包含「" + q + "」的消息（已扫 " + (j.scanned || 0) + " 个会话）"));
+            return;
+          }
+          host.appendChild(el("div", "search-count", "找到 " + j.results.length + " 条 · 已扫 " + (j.scanned || 0) + " 个会话"));
+          j.results.forEach(function (r) {
+            var item = el("button", "search-item");
+            item.type = "button";
+            var head = el("div", "search-item-head");
+            head.appendChild(el("span", "search-role " + (r.role === "user" ? "is-user" : "is-asst"), r.role === "user" ? "你" : "Claude"));
+            head.appendChild(el("span", "search-title", r.title || r.sessionId));
+            item.appendChild(head);
+            var sn = el("div", "search-snippet");
+            sn.textContent = r.snippet || "";
+            item.appendChild(sn);
+            item.addEventListener("click", function () {
+              closeModal();
+              resumeSession(r.sessionId);
+            });
+            host.appendChild(item);
+          });
+        }).catch(function (e) {
+          clear(host);
+          host.appendChild(el("div", "empty-note", "搜索失败：" + e.message));
+        });
+      }
+      input.addEventListener("input", function () {
+        if (timer) { clearTimeout(timer); }
+        timer = setTimeout(run, 220);
+      });
+      setTimeout(function () { input.focus(); }, 30);
+    });
+  }
+
   function openCmd() {
     var c = $("cmd");
     if (!c) { return; }
