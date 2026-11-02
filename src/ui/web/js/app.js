@@ -987,6 +987,8 @@
       hint = "该模型在接口上不存在。请在模型菜单里换一个可用模型。";
     } else if (/timeout|timed out|超时|ETIMEDOUT/.test(lower)) {
       hint = "请求超时。检查网络或代理后重试。";
+    } else if (/error in input stream|stream interrupted|socket hang up|premature close|broken pipe|stream reset|stream closed|terminated/.test(lower)) {
+      hint = "上游到模型的流被掐断（网关侧瞬时故障）。断在开头会自动换线路重试；已输出过内容则点「重试」继续——会话历史的断点配对已自动修复。";
     } else if (/econnrefused|enotfound|fetch failed|network|连接失败|connection refused|getaddrinfo|eai_again/.test(lower)) {
       hint = "连不上接口地址。确认本地网关/代理是否在运行，或检查「接口服务地址」配置。";
     } else if (/context.*(length|window)|too long|超出.*上下文/.test(lower)) {

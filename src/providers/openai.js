@@ -148,6 +148,7 @@ export class OpenAIProvider {
     };
     armIdle();
 
+    try {
     while (true) {
       const { done, value } = await reader.read();
       if (idle) { clearTimeout(idle); idle = null; }
@@ -211,6 +212,18 @@ export class OpenAIProvider {
           }
         }
       }
+    }
+    } catch (e) {
+      if (idle) { clearTimeout(idle); idle = null; }
+      if (e && e.name === "AbortError") throw e;
+      // 流被掐断（网关/上游 socket 死亡）。分两种：
+      //  - 还没吐过任何内容：重试是安全的，标 502 交给 router 换候选；
+      //  - 已经向调用方输出过：重试会重复输出，标 noRetry 把决定权交回用户。
+      const emitted = text.length > 0 || reasoning.length > 0 || toolAccum.size > 0;
+      const err = e instanceof ProviderError ? e
+        : new ProviderError(`stream interrupted: ${e && e.message ? e.message : e}`, { status: 502 });
+      if (emitted) err.noRetry = true;
+      throw err;
     }
 
     if (idle) { clearTimeout(idle); idle = null; }

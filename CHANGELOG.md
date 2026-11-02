@@ -8,36 +8,24 @@
 
 ## [Unreleased]
 
-### Fixed
-- GUI 提示语撒谎：max_turns 卡片写着「或 /auto on 开启自主续跑」，但 GUI 命令分发
-  从未注册过 /auto（只有 CLI 有），用户照做只会得到「未知命令」。现已注册 /auto
-  on|off|status（写 /api/config 的 autoRun），并加入斜杠菜单。
-- test/gui-auto-command.test.js（5 项）：提示语引用的每个 /命令 必须真实可分发
-  （静态扫描 + 词边界启发式），autoRun 经 /api/config 双向持久化。
+### Fixed（中断后会话永久失败 —— "Error in input stream" 连环报错根因）
+- 根因：回合被杀在「assistant 声明 tool_calls」与「工具结果落盘」之间，会话尾部留下
+  悬空调用；OpenAI 协议要求 tool_calls 必须紧跟匹配的工具结果，坏历史每次续跑都原样
+  重发 → 上游拒绝并掐流 → 网关报 "Error in input stream"，重试永远失败。
+- session.js 新增 sanitizeToolPairing：loadSession 时自动补记「[已中断]」工具结果、
+  丢弃孤儿结果；幂等；真实坏会话（640 消息 / 1 悬空 Bash）实测修复。
+- 流中断分类：未输出任何内容 → 502 可重试（router 自动换候选）；已吐过内容 →
+  noRetry（绝不静默重放造成重复输出），交还用户点重试。
+- RETRYABLE_PATTERN 扩展传输层掐流签名（error in input stream / socket hang up /
+  premature close / broken pipe / terminated / econnreset 等）。
+- GUI：掐流错误给出人话提示（自动换线 vs 点重试的分流说明）。
+- gui-live-resume 测试收尾泄漏：stop() 先 closeAllConnections 再带超时关闭。
 
-### Changed
-- 用户配置：maxTurns 100 → 1000，autoRun 开启。到回合上限不再硬停，
-  自主续跑带护栏（轮数上限 + 时长预算 + 显式停止）。
+### Tests
+- test/session-sanitize.test.js（8 项）：尾部/中部悬空、孤儿结果、健康历史不变、
+  幂等、loadSession 落盘修复、掐流签名可重试、noRetry 优先于 502。
+- 回归：failover 8/8、gui-resume 3/3、provider-stream 2/2、live-resume 2/2。
 
-### Added
-- fullAccess 模式注入自主执行提示段：明示模型「用户已预先批准所有动作，直接执行、
-  不要请求许可、不要加免责声明；觉得有风险就一句话说明然后照做」。
-- test/mode-prompt-fragments.test.js（4 项）：fullAccess 片段存在、其他模式不带、
-  plan 片段不受影响、运行时切模式即时重建提示词。
-
-### Fixed（GUI 收束与追问卡片）
-- 回合结束无收束标记：任务戛然而止看不出结束。endTurn 现在打一条收束页脚
-  （绿点=回合完成+用时/轮数/tokens；橙点=Claude 在等你回复——助手以问句收尾时），
-  新回合自动清除旧标记，只保留最新一条。
-- 追问建议被 ellipsis 截成半句（max-width:11em + nowrap）：药丸行改为三列等宽
-  卡片网格，文字完整换行，720px 以下塌成一列；箭头贴右下角。
-- 模型芯片截断（loomy/DeepSeek-V4.1-…）：三处赋值补 title，悬停可见全名。
-- test/gui-turn-closure.test.js（5 项）：网格布局、无截断三件套、endTurn 接线、
-  新旧标记清理、问句/完成双态、页脚只用 :root 既有 token。
-### Verified
-- permission-modes 14/14、mode-prompt-fragments 4/4、gui-auto-command 5/5、
-  gui-features 13/13 全过；端到端 /api/chat 无 confirm 事件
-  （当前 error 来自上游 zcode 网关风控 code 3012，供应商侧封禁，非 MyClaude 拒绝）
 ## [0.18.0] - 2026-10-19
 
 模型引入方式对齐 DSH：单一网关 + 完整模型目录。

@@ -58,8 +58,16 @@ async function start() {
 }
 
 async function stop(ctx) {
-  await new Promise((r) => ctx.gui.close(r));
-  await new Promise((r) => ctx.backend.server.close(r));
+  // 第一条用例故意留一条永不结束的 SSE（in-flight 回合）；close() 会等所有连接，
+  // 于是 stop 永远挂住、进程不退出。先掐连接再关，并给关闭本身加超时兜底。
+  for (const srv of [ctx.gui, ctx.backend && ctx.backend.server]) {
+    if (!srv) continue;
+    if (typeof srv.closeAllConnections === "function") srv.closeAllConnections();
+    await Promise.race([
+      new Promise((r) => srv.close(r)),
+      new Promise((r) => setTimeout(r, 2000)),
+    ]);
+  }
 }
 
 async function readSse(res) {

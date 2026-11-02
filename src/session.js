@@ -113,11 +113,56 @@ export function saveSession(id, messages, meta = {}) {
   return file;
 }
 
+/**
+ * Repair tool-call pairing in a restored history.
+ *
+ * A run killed between an assistant tool_calls message and its tool results
+ * leaves a dangling call. OpenAI-compatible endpoints reject such a history
+ * outright (assistant.tool_calls must be followed by matching tool messages)
+ * - and because the broken history is replayed on every resume, the session
+ * fails forever. Synthesize an interrupted result for every dangling call and
+ * drop orphan results whose call is gone, so the conversation can continue.
+ *
+ * @param {Array<object>} messages
+ * @returns {{messages: Array<object>, fixed: number}}
+ */
+export function sanitizeToolPairing(messages) {
+  if (!Array.isArray(messages)) return { messages: messages || [], fixed: 0 };
+  const out = [];
+  let fixed = 0;
+  const pending = new Set();
+  const flushPending = () => {
+    for (const id of pending) {
+      out.push({ role: "tool", tool_call_id: id, content: "[已中断：工具结果未返回，会话恢复时自动补记]" });
+      fixed++;
+    }
+    pending.clear();
+  };
+  for (const m of messages) {
+    if (m && m.role === "tool") {
+      if (!pending.has(m.tool_call_id)) { fixed++; continue; }
+      pending.delete(m.tool_call_id);
+      out.push(m);
+      continue;
+    }
+    flushPending();
+    out.push(m);
+    if (m && m.role === "assistant" && Array.isArray(m.tool_calls)) {
+      for (const tc of m.tool_calls) if (tc && tc.id) pending.add(tc.id);
+    }
+  }
+  flushPending();
+  return { messages: out, fixed };
+}
+
 export function loadSession(id) {
   const file = join(SESSIONS_DIR, `${id}.json`);
   if (!existsSync(file)) return null;
   try {
-    return JSON.parse(readFileSync(file, "utf8"));
+    const data = JSON.parse(readFileSync(file, "utf8"));
+    // 修复悬空 tool_calls：否则每次续跑都会把坏历史发给上游，永远失败。
+    if (Array.isArray(data.messages)) data.messages = sanitizeToolPairing(data.messages).messages;
+    return data;
   } catch {
     return null;
   }

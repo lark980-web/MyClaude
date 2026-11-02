@@ -19,7 +19,7 @@ const RETRYABLE_STATUS = new Set([408, 409, 425, 429, 500, 502, 503, 504, 529]);
 
 /** Error text that signals a transient problem even without a status code. */
 const RETRYABLE_PATTERN =
-  /rate.?limit|too many requests|quota|capacity|overloaded|temporarily unavailable|timeout|timed out/i;
+  /rate.?limit|too many requests|quota|capacity|overloaded|temporarily unavailable|timeout|timed out|error in input stream|socket hang up|premature close|broken pipe|stream interrupted|stream reset|stream closed|econnreset|connection (?:reset|closed|killed)|terminated/i;
 
 /**
  * Decide whether a failed attempt is worth retrying elsewhere.
@@ -29,6 +29,8 @@ const RETRYABLE_PATTERN =
  */
 export function isRetryable(error) {
   if (!error) return false;
+  // 已向调用方吐过内容的流被掐断：重发会重复输出，绝不自动重试。
+  if (error.noRetry) return false;
   const status = Number(error.status || error.code || 0);
   if (RETRYABLE_STATUS.has(status)) return true;
   // Auth problems are permanent for this credential but a sibling candidate
