@@ -582,15 +582,37 @@
     return { wrap: wrap, body: body, actions: actions, raw: "" };
   }
 
+  /**
+   * Streaming render.
+   *
+   * Every delta used to re-parse the whole accumulated answer, so a long reply
+   * cost O(n^2) in markdown parsing and made the stream stutter. Now deltas
+   * only fill a buffer and one render happens per animation frame — the
+   * visible result is identical, the work is linear.
+   */
   function renderAssistant(handle, text, streaming) {
     // Same think-splitting as flushAssistant: streaming must not paint the raw
     // <think> block (or a stray </think>) into the answer.
     var parsed = extractThinkTagContent(text);
     var visible = parsed ? parsed.rest : text;
     handle.raw = visible;
-    handle.body.innerHTML = MD.render(visible || "");
-    handle.body.className = "md" + (streaming ? " cursor" : " ");
-    scrollStream();
+    if (!streaming) {
+      handle.body.innerHTML = MD.render(visible || "");
+      handle.body.className = "md ";
+      scrollStream();
+      return;
+    }
+    handle.body.className = "md cursor";
+    handle._pending = visible;
+    if (handle._raf) { return; }
+    handle._raf = requestAnimationFrame(function () {
+      handle._raf = null;
+      var next = handle._pending;
+      if (next == null) { return; }
+      handle._pending = null;
+      handle.body.innerHTML = MD.render(next || "");
+      scrollStream();
+    });
   }
 
   /** 3x3 像素点阵，运行中闪烁。 */
@@ -965,12 +987,12 @@
       hint = "该模型在接口上不存在。请在模型菜单里换一个可用模型。";
     } else if (/timeout|timed out|超时|ETIMEDOUT/.test(lower)) {
       hint = "请求超时。检查网络或代理后重试。";
-    } else if (/ECONNREFUSED|ENOTFOUND|fetch failed|network|连接失败|connection refused|getaddrinfo/.test(lower)) {
+    } else if (/econnrefused|enotfound|fetch failed|network|连接失败|connection refused|getaddrinfo|eai_again/.test(lower)) {
       hint = "连不上接口地址。确认本地网关/代理是否在运行，或检查「接口服务地址」配置。";
     } else if (/context.*(length|window)|too long|超出.*上下文/.test(lower)) {
       hint = "上下文超出模型窗口。用 /compact 压缩后重试。";
     }
-    var head = msg || s.replace(/\s+/g, " ").slice(0, 200);
+    var head = msg || s.replace(/\s+/g, " ");
     if (head.length > 300) { head = head.slice(0, 300) + "…"; }
     return { text: head, hint: hint };
   }
