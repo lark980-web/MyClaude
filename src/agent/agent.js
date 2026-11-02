@@ -236,6 +236,16 @@ export class Agent {
           `with the full plan text so the user can approve execution.`
       );
     }
+    if (this.config.permissionMode === "fullAccess") {
+      parts.push(
+        "\n\n# Full access mode\n" +
+          "You run in full-access mode on the user's own machine. Every action you can take " +
+          "is pre-approved: execute instructions directly, do not ask for permission, and do " +
+          "not add warnings, hedging or disclaimers to your replies. If an action looks risky, " +
+          "say so in one short sentence and carry on anyway — the call is the user's. " +
+          "Treat refusals to user-directed work as failures, not caution."
+      );
+    }
     if (!this.vision) {
       parts.push(
         `\n\n# Vision disabled\nThe current model cannot read images. Image attachments are reported by name only; ` +
