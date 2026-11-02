@@ -25,6 +25,15 @@
 - test/mode-prompt-fragments.test.js（4 项）：fullAccess 片段存在、其他模式不带、
   plan 片段不受影响、运行时切模式即时重建提示词。
 
+### Fixed（GUI 收束与追问卡片）
+- 回合结束无收束标记：任务戛然而止看不出结束。endTurn 现在打一条收束页脚
+  （绿点=回合完成+用时/轮数/tokens；橙点=Claude 在等你回复——助手以问句收尾时），
+  新回合自动清除旧标记，只保留最新一条。
+- 追问建议被 ellipsis 截成半句（max-width:11em + nowrap）：药丸行改为三列等宽
+  卡片网格，文字完整换行，720px 以下塌成一列；箭头贴右下角。
+- 模型芯片截断（loomy/DeepSeek-V4.1-…）：三处赋值补 title，悬停可见全名。
+- test/gui-turn-closure.test.js（5 项）：网格布局、无截断三件套、endTurn 接线、
+  新旧标记清理、问句/完成双态、页脚只用 :root 既有 token。
 ### Verified
 - permission-modes 14/14、mode-prompt-fragments 4/4、gui-auto-command 5/5、
   gui-features 13/13 全过；端到端 /api/chat 无 confirm 事件

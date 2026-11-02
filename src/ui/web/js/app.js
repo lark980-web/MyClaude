@@ -2207,6 +2207,8 @@
     }
 
     setBusy(true);
+    var oldEnd = logRoot().querySelector(".turn-end");
+    if (oldEnd && oldEnd.parentNode) { oldEnd.parentNode.removeChild(oldEnd); }
     state.thought = addThought("");
     state.thoughtTimer = setTimeout(function () {
       if (!state.asst && state.thought) {
@@ -2235,6 +2237,30 @@
     }
   }
 
+  /**
+   * 回合收束页脚。
+   *
+   * 回合结束是真实状态，此前任务戛然而止没有任何标记。只保留最新一条
+   * （历史不堆噪音）；助手以问句收尾时说「在等你回复」，否则报统计。
+   */
+  function addTurnEndMarker(state) {
+    var prev = logRoot().querySelector(".turn-end");
+    if (prev && prev.parentNode) { prev.parentNode.removeChild(prev); }
+    var secs = Math.max(1, Math.round((Date.now() - state.startedAt) / 1000));
+    var st = S.stats || {};
+    var fmt = function (n) { n = n || 0; return n >= 1000 ? (n / 1000).toFixed(1).replace(/\.0$/, "") + "k" : String(n); };
+    var last = (state.asst && state.asst.raw) || "";
+    var asking = /[?？]\s*["\u300d\u300f）)\]]?\s*$/.test(String(last).trim());
+    var box = el("div", "turn-end" + (asking ? " waiting" : ""));
+    box.appendChild(el("span", "te-dot"));
+    var bits = [asking ? "Claude 在等你回复" : "回合完成", secs + " 秒"];
+    if (st.turns) { bits.push(st.turns + " 轮"); }
+    if (st.inputTokens || st.outputTokens) { bits.push("\u2191" + fmt(st.inputTokens) + " \u2193" + fmt(st.outputTokens) + " tokens"); }
+    box.appendChild(el("span", null, bits.join(" \u00b7 ")));
+    logRoot().appendChild(box);
+    scrollStream();
+  }
+
   function endTurn(state) {
     clearTimeout(state.thoughtTimer);
     if (state.thought) {
@@ -2247,6 +2273,7 @@
       finalizeAssistantBranches(state.asst);
       addCopyActions(state.asst);
     }
+    addTurnEndMarker(state);
     setBusy(false);
     refreshStats();
   }
@@ -2517,6 +2544,7 @@
 
     if (!S.motion || !lastRenderedModel || lastRenderedModel === nextModel) {
       ml.textContent = labelText;
+      ml.title = labelText;
       lastRenderedModel = nextModel;
       updateModelBtnDot(nextModel);
       return;
@@ -2537,6 +2565,7 @@
 
     modelSwitchAnimTimer = setTimeout(function () {
       ml.textContent = labelText;
+      ml.title = labelText;
       updateModelBtnDot(nextModel);
       if (btn) {
         btn.classList.remove("label-out");
@@ -8109,6 +8138,7 @@ function switchInspectorTab(tab) {
     var modelLbl = $("model-label");
     if (modelLbl) {
       modelLbl.textContent = name || "选择模型";
+      modelLbl.title = name || "选择模型";
     }
 
     // 同步顶栏 Claude 药丸状态

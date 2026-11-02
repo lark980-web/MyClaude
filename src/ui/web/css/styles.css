@@ -3284,35 +3284,36 @@ body.no-motion *, body.no-motion *::before, body.no-motion *::after { animation:
 
 /* Claude 风格智能追问建议胶囊（Suggested Follow-ups） */
 .followup-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 7px;
-  /* Sits under the answer: same left edge as the message body, a little
-  air above so the pills do not collide with the text. */
+  /* 建议是同一内容类型的重复项：等宽三列卡片，标签占满首行。
+     窄屏自动塌成一列，文字永远完整可见——截断曾把追问切成半句。 */
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
   margin: 14px 0 2px;
   animation: rise 220ms var(--ease-out) both;
 }
+@media (max-width: 720px) {
+  .followup-row { grid-template-columns: 1fr; }
+}
 .followup-label {
+  grid-column: 1 / -1;
   font-size: 11.5px;
   color: var(--fg-4);
-  margin-right: 2px;
   user-select: none;
 }
 .followup-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  /* A suggestion reads as one phrase, not a sentence: cap it so the row keeps
-     its rhythm instead of one chip swallowing a whole line. */
-  max-width: 100%;
-  padding: 5px 11px;
-  border-radius: 999px;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-height: 56px;
+  padding: 10px 12px;
+  border-radius: 12px;
   border: 1px solid var(--line-strong);
   background: var(--panel);
   color: var(--fg-2);
-  font-size: 12.5px;
-  line-height: 1.35;
+  font-size: 13px;
+  line-height: 1.5;
+  text-align: left;
   transition: background var(--t) var(--ease), border-color var(--t) var(--ease), color var(--t) var(--ease), transform 120ms var(--ease);
 }
 .followup-chip:hover {
@@ -3326,15 +3327,15 @@ body.no-motion *, body.no-motion *::before, body.no-motion *::after { animation:
 }
 /* The text node inside a chip: the part that actually truncates. */
 .followup-chip > span:first-child {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  /* Ten characters or so: long enough for a question, short enough that
-     three of them share a line without one swallowing the row. */
-  max-width: 11em;
+  /* 完整句子：允许换行，不再截断。 */
+  flex: 1;
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 .followup-arrow {
-  font-size: 11px;
+  align-self: flex-end;
+  font-size: 12px;
   color: var(--fg-4);
   transition: transform var(--t) var(--ease), color var(--t) var(--ease);
 }
@@ -6434,3 +6435,32 @@ body.no-motion *, body.no-motion *::before, body.no-motion *::after { animation:
 .search-role.is-user{background:rgba(217,119,87,.18);color:#e08b6a;opacity:1}
 .search-title{font-size:12.5px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .search-snippet{font-size:12px;opacity:.72;line-height:1.55;word-break:break-word}
+
+
+/* ============================================ 回合结束页脚 ================ */
+/* 回合结束是一个真实状态：此前任务戛然而止没有任何收束标记。
+   细线 + 一行统计（用时/轮数/tokens），问句收尾时改为「在等你回复」。 */
+.turn-end {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 18px 0 6px;
+  color: var(--fg-4);
+  font-size: 11.5px;
+  user-select: none;
+  animation: rise 220ms var(--ease-out) both;
+}
+.turn-end::before, .turn-end::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+}
+.turn-end .te-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--good);
+  flex-shrink: 0;
+}
+.turn-end.waiting .te-dot { background: var(--accent); }
