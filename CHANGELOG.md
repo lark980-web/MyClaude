@@ -8,20 +8,27 @@
 
 ## [Unreleased]
 
+### Fixed
+- GUI 提示语撒谎：max_turns 卡片写着「或 /auto on 开启自主续跑」，但 GUI 命令分发
+  从未注册过 /auto（只有 CLI 有），用户照做只会得到「未知命令」。现已注册 /auto
+  on|off|status（写 /api/config 的 autoRun），并加入斜杠菜单。
+- test/gui-auto-command.test.js（5 项）：提示语引用的每个 /命令 必须真实可分发
+  （静态扫描 + 词边界启发式），autoRun 经 /api/config 双向持久化。
+
+### Changed
+- 用户配置：maxTurns 100 → 1000，autoRun 开启。到回合上限不再硬停，
+  自主续跑带护栏（轮数上限 + 时长预算 + 显式停止）。
+
 ### Added
 - fullAccess 模式注入自主执行提示段：明示模型「用户已预先批准所有动作，直接执行、
   不要请求许可、不要加免责声明；觉得有风险就一句话说明然后照做」。
 - test/mode-prompt-fragments.test.js（4 项）：fullAccess 片段存在、其他模式不带、
   plan 片段不受影响、运行时切模式即时重建提示词。
 
-### Changed
-- 用户默认配置 permissionMode 由 auto 切换为 fullAccess（~/.myclaude/config.json）。
-  端到端实测：真实回合流中不再出现 confirm 事件。
-
 ### Verified
-- permission-modes 14/14、mode-prompt-fragments 4/4 全过
-- 端到端：/api/chat 事件序列无 confirm（本地关卡全开）；
-  当前 error 来自上游 zcode 网关风控（code 3012，供应商侧封禁），非 MyClaude 拒绝
+- permission-modes 14/14、mode-prompt-fragments 4/4、gui-auto-command 5/5、
+  gui-features 13/13 全过；端到端 /api/chat 无 confirm 事件
+  （当前 error 来自上游 zcode 网关风控 code 3012，供应商侧封禁，非 MyClaude 拒绝）
 ## [0.18.0] - 2026-10-19
 
 模型引入方式对齐 DSH：单一网关 + 完整模型目录。

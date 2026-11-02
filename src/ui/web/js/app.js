@@ -4859,7 +4859,7 @@
     { k: "/help", d: "显示命令列表", fn: function () { runCommand("/help"); } },
     { k: "/new", d: "新对话", fn: function () { newChat(); } },
     { k: "/model", d: "查看或切换模型", fn: function () { openSettings(); } },
-    { k: "/mode", d: "切换权限模式", fn: function () { runCommand("/mode"); } },
+    { k: "/mode", d: "切换权限模式", fn: function () { runCommand("/mode"); } },    { k: "/auto", d: "自主续跑：到回合上限自动继续（/auto on|off|status）", fn: function () { runCommand("/auto status"); } },
     { k: "/tools", d: "可用工具", fn: function () { openTools(); } },
     { k: "/config", d: "查看当前配置", fn: function () { runCommand("/config"); } },
     { k: "/sessions", d: "历史会话", fn: function () { openSessions(); } },
@@ -4889,7 +4889,7 @@
       case "model":
         openSettings();
         break;
-      case "mode":
+      case "auto": {        // /auto on|off|status — 自主续跑开关。max_turns 提示卡推荐的就是这条命令，        // 它必须真实存在，否则提示语在撒谎。        var want = String(arg || "").trim().toLowerCase();        if (want === "on" || want === "off") {          postJSON("/api/config", { autoRun: want === "on" }).then(function () {            if (S.config) { S.config.autoRun = want === "on"; }            toast(want === "on" ? "自主续跑已开启：到回合上限自动继续（含轮数与时长护栏）" : "自主续跑已关闭", "ok");          }).catch(function (e) { addNotice("设置失败：" + e.message, "err"); });        } else if (want === "" || want === "status") {          addNotice("自主续跑：" + (S.config && S.config.autoRun ? "已开启" : "未开启") + "（/auto on 或 /auto off 切换）", "info");        } else {          addNotice("用法：/auto on|off|status", "warn");        }        break;      }      case "mode":
         if (["ask", "auto", "plan"].indexOf(arg) >= 0) {
           postJSON("/api/config", { permissionMode: arg }).then(function (j) {
             if (S.config) { S.config.permissionMode = j.permissionMode || arg; }
