@@ -51,6 +51,7 @@
     feedback: {},
     chatView: "project",
     sharedIds: [],
+    titleOverride: null,
     project: { activeProjectId: "proj-default", projects: [], name: "当前项目", instructions: "", files: [], knowledge: [], totalTokens: 0, limitTokens: 128000, capacityPct: 0 }
   };
 
@@ -959,6 +960,25 @@
     wrap.appendChild(btn);
     var hint = el("span", "empty-note", " 或 /auto on 开启自主续跑");
     wrap.appendChild(hint);
+    logRoot().appendChild(wrap);
+    wrap.scrollIntoView({ block: "nearest" });
+  }
+
+  /** 回合以错误收场 → 一键重试卡（对齐 claude.ai 失败后的 Retry）。 */
+  function addRetryCard() {
+    var wrap = el("div", "notice notice-warn");
+    var msg = el("span", null, "本次回复未能完成。");
+    var btn = el("button", "btn continue-btn", "重试");
+    btn.type = "button";
+    btn.title = "重新发送上一条消息";
+    btn.addEventListener("click", function () {
+      if (S.busy) { return; }
+      btn.disabled = true;
+      wrap.remove();
+      retryLast(null);
+    });
+    wrap.appendChild(msg);
+    wrap.appendChild(btn);
     logRoot().appendChild(wrap);
     wrap.scrollIntoView({ block: "nearest" });
   }
@@ -2626,6 +2646,8 @@
     refreshStats();
   }
 
+  var _turnHadError = false;
+
   function handleStreamEvent(ev, state) {
     // Reasoning streams on its own channel: it belongs in the collapsible
     // panel, never in the answer body.
@@ -2729,7 +2751,7 @@
     }
     if (ev.type === "info") { addNotice(ev.text, "info"); return; }
     if (ev.type === "warn") { addNotice(ev.text, "warn"); return; }
-    if (ev.type === "error") { addNotice(ev.text, "err"); return; }
+    if (ev.type === "error") { _turnHadError = true; addNotice(ev.text, "err"); return; }
     if (ev.type === "success") { addNotice(ev.text, "ok"); return; }
     if (ev.type === "session") {
       if (ev.id) {
@@ -2743,8 +2765,25 @@
       refreshSessions();
       return;
     }
+    if (ev.type === "session_title") {
+      // AI 自动命名到达：覆盖派生标题，刷新侧栏
+      if (ev.title) {
+        S.titleOverride = { key: S.sessionKey, title: ev.title };
+        renderTopMeta();
+        refreshSessions();
+      }
+      return;
+    }
     if (ev.type === "compact") { addNotice("上下文已压缩（丢弃 " + (ev.dropped ?? "?") + " 条旧消息），长对话继续", "info"); }
-          if (ev.type === "done") { playChime("done"); maybeNotify("回复已完成", "MyClaude 的新回复已生成，点击回到对话"); setBusy(false); }
+          if (ev.type === "done") {
+            playChime("done");
+            maybeNotify("回复已完成", "MyClaude 的新回复已生成，点击回到对话");
+            // 本回合出现过错误（如 provider error）→ 给一键重试，免得用户
+            // 重新打字或去找上一条消息。
+            if (_turnHadError && S.lastUserText) { addRetryCard(); }
+            _turnHadError = false;
+            setBusy(false);
+          }
   }
 
   function sendMessage() {
@@ -2978,7 +3017,8 @@
     var title = $("top-title");
     var first = logRoot() && logRoot().querySelector(".msg-user .bubble");
     if (title) {
-      var txt = first ? (first.textContent || "").trim().replace(/\s+/g, " ") : "新对话";
+      var override = S.titleOverride && S.titleOverride.key === S.sessionKey ? S.titleOverride.title : null;
+      var txt = override || (first ? (first.textContent || "").trim().replace(/\s+/g, " ") : "新对话");
       title.textContent = txt.length > 40 ? txt.slice(0, 37) + "…" : txt;
     }
     var wm = $("w-meta");
@@ -4202,6 +4242,8 @@
     postJSON("/api/session", { action: "resume", id: id, sessionKey: S.sessionKey || id }).then(function (j) {
       S.sessionKey = j.id;
       try { localStorage.setItem(LS_SESSION, j.id); } catch (e) { }
+      // 恢复存储的会话标题（AI 自动命名/手动重命名的结果优先于 DOM 派生）
+      S.titleOverride = { key: j.id, title: j.title || "" };
       try { window.__resumeDbg = { stats: j.stats || null, quiet: !!quiet, at: new Date().toISOString() }; } catch (e2) {}
       if (j.stats) { S.stats = { messages: j.stats.messages || 0, turns: j.stats.turns || 0, tokens: j.stats.tokens || 0, inputTokens: j.stats.inputTokens || 0, outputTokens: j.stats.outputTokens || 0, contextLimit: j.stats.contextLimit || 0, contextUsed: j.stats.contextUsed || 0 }; }
       if (Array.isArray(j.todos)) { S.todos = j.todos; } // 待办列表随会话恢复
@@ -4420,6 +4462,7 @@
     postJSON("/api/reset", {}).then(function () {
       msgSeqCounter = 0;
       S.sessionKey = null;
+      S.titleOverride = null;
       S.todos = [];
       S.artifacts = [];
       S.activeArtifactId = null;

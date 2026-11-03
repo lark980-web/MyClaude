@@ -24,6 +24,7 @@ import {
   loadSession,
   saveSession,
   deleteSession,
+  setSessionTitle,
   pruneSessions,
   SESSIONS_DIR,
 } from "../session.js";
@@ -393,6 +394,46 @@ const makeTurnUi = (res, key) => {
       }
     };
   };
+
+  /* ---- AI 自动会话标题 ----
+   * 每个会话只尝试一次（autoTitled 去重）；用户手动命过名（data.title 已存在）
+   * 或消息不足两回合时跳过。生成结果写盘并向前端发 session_title 事件。
+   * 8 秒超时兜底，失败静默——标题只是锦上添花，绝不能把回合拖死。 */
+  const autoTitled = new Set();
+
+  async function emitAutoTitle(res, agent, saver) {
+    try {
+      const id = saver && saver.id;
+      if (!id || autoTitled.has(id)) { return; }
+      autoTitled.add(id);
+      const data = loadSession(id);
+      if (!data || data.title) { return; }
+      const msgs = data.messages || [];
+      if (msgs.length < 2) { return; }
+      const firstUser = msgs.find((m) => m && m.role === "user");
+      const firstAsst = msgs.find((m) => m && m.role === "assistant" && m.content);
+      if (!firstUser || !firstAsst) { return; }
+      const uText = stripInjectedPrefixes(typeof firstUser.content === "string" ? firstUser.content
+        : (firstUser.content || []).filter((p) => p && p.type === "text").map((p) => p.text).join(" ")).slice(0, 400);
+      if (!uText) { return; }
+      const provider = createProvider(config);
+      const out = await Promise.race([
+        provider.complete({
+          messages: [{
+            role: "user",
+            content: "为下面的对话生成一个不超过16字的中文标题，概括用户的核心意图。只输出标题本身：不要引号、句号、前缀或任何解释。\n\n用户: " + uText + "\n\n助手: " + String(firstAsst.content).slice(0, 400),
+          }],
+          maxTokens: 512,
+        }),
+        new Promise((r) => setTimeout(() => r(null), 8000)),
+      ]);
+      const raw = out && out.text ? String(out.text).trim() : "";
+      const title = raw.replace(/^["'「『]+|["'」』。.]+$/g, "").replace(/\s+/g, " ").slice(0, 40);
+      if (!title) { return; }
+      setSessionTitle(id, title);
+      sse(res, { type: "session_title", title });
+    } catch {}
+  }
 
   /** Rough character-based token estimate (matches Agent.maybeCompact). */
   const approxTokens = (agent) => {
@@ -2026,6 +2067,10 @@ running.add(key);
           }
         }
         sse(res, { type: "session", id: saver.id, file: saver.file ?? null });
+        // AI 自动命名（对齐 claude.ai 的自动会话标题）：新会话第一回合结束后，
+        // 用当前模型生成一个 16 字内标题。放在 session 事件之后，前端把标题
+        // 绑定到刚采纳的会话 id；8 秒超时兜底，失败静默。
+        await emitAutoTitle(res, agent, saver);
         sse(res, { type: "done" });
         turnFinished = true;
         console.log("[" + key + "] 完成 — " + agent.messages.length + " 消息 / " + agent.turnCount + " 回合 / 输入 " + (agent.totalInputTokens || 0) + " / 输出 " + (agent.totalOutputTokens || 0) + " tokens");
@@ -2212,6 +2257,7 @@ if (path === "/api/session" && req.method === "POST") {
         sendJson(res, 200, {
           ok: true,
           id: target.id,
+          title: withTitle(target).title || null,
           messages: agent.messages.length,
           source,
           stats: statsOf(agent),

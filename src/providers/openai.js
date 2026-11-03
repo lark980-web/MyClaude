@@ -45,6 +45,9 @@ export class OpenAIProvider {
     }
     const controller = new AbortController();
     let timer = setTimeout(() => controller.abort(new Error("provider timeout")), this.timeoutMs);
+    // unref：请求在途时也不该拖住进程退出（曾经每次 complete() 都留一个
+    // 90s 悬挂定时器，测试 runner 与 GUI 关停都被迫等它）。
+    if (typeof timer.unref === "function") timer.unref();
     const onAbort = () => controller.abort(caller?.reason ?? new Error("aborted"));
     if (caller) {
       if (caller.aborted) onAbort();
@@ -55,8 +58,10 @@ export class OpenAIProvider {
     };
     try {
       const res = await fetch(url, { ...init, signal: controller.signal });
-      // Headers arrived: stop policing the whole request.
-      if (stream) clear();
+      // Headers arrived: stop policing the whole request. Both branches need
+      // this — a non-stream JSON response also resolves at headers, and the
+      // timer used to dangle for the full timeout after every complete().
+      clear();
       return res;
     } catch (e) {
       clear();
@@ -249,7 +254,7 @@ export class OpenAIProvider {
     return { text, reasoning, toolCalls, finishReason, usage };
   }
 
-  async complete({ messages, tools, signal }) {
+  async complete({ messages, tools, signal, maxTokens }) {
     const body = {
       model: this.model,
       messages,
