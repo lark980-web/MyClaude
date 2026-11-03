@@ -4904,6 +4904,12 @@
       setNotifyPref(on);
       if (on) { askNotifyPermission(function (granted) { if (!granted) { toast("浏览器拒绝了通知权限", "warn"); } }); }
     }));
+    grid.appendChild(toggleRow("AI 自动命名", "首回合结束后用当前模型生成会话标题（会多一次小请求）", (S.config && S.config.autoTitle !== false), function (on) {
+      postJSON("/api/config", { autoTitle: on }).then(function () {
+        if (S.config) { S.config.autoTitle = on; }
+        toast(on ? "AI 自动命名已开启" : "AI 自动命名已关闭", "ok");
+      }).catch(function (e) { toast("设置失败：" + e.message, "err"); });
+    }));
 
     // 显示名（问候语用）
     var nameRow = el("div", "cfg-general-row");

@@ -106,6 +106,21 @@ export async function startGui({ config: initialConfig, port = 7788, open = true
     } catch { /* corrupt lock = stale */ }
   }
   if (runningElsewhere) {
+    const existingUrl = `http://127.0.0.1:${runningElsewhere.port}`;
+    // 用户双击启动时（open=true）服务其实已经在跑：这不是错误，自动打开
+    // 已有实例的页面然后正常退出——「双击必达」而不是弹一句报错吓人。
+    if (open) {
+      console.log(`MyClaude GUI 已在运行 → ${existingUrl}（已为你打开浏览器）`);
+      try {
+        const { exec } = await import("node:child_process");
+        const openCmd =
+          process.platform === "win32" ? `start "" "${existingUrl}"`
+            : process.platform === "darwin" ? `open "${existingUrl}"`
+              : `xdg-open "${existingUrl}"`;
+        exec(openCmd);
+      } catch { /* 打不开浏览器就只提示地址 */ }
+      process.exit(0);
+    }
     throw new Error(`MyClaude GUI 已在运行（pid ${runningElsewhere.pid}，端口 ${runningElsewhere.port}）。两个实例会同时写同一份会话数据——请先关闭旧实例，或直接使用它的页面。`);
   }
   writeFileSync(lockPath, JSON.stringify({ pid: process.pid, port, at: Date.now() }));
@@ -403,6 +418,8 @@ const makeTurnUi = (res, key) => {
 
   async function emitAutoTitle(res, agent, saver) {
     try {
+      // autoTitle: false 时整个功能关闭（设置中心可切；测试用它解耦竞态）
+      if (config.autoTitle === false) { return; }
       const id = saver && saver.id;
       if (!id || autoTitled.has(id)) { return; }
       autoTitled.add(id);
@@ -681,6 +698,7 @@ async function searchWorkspaceFiles(query = "", limit = 40) {
           providers: config.providers || {},
           permissionMode: agent?.mode ?? config.permissionMode,
           vision: config.vision !== false,
+          autoTitle: config.autoTitle !== false,
           cwd,
           permissions: config.permissions || {},
           fallbacks: (config.fallbacks || []).map((f) => ({
@@ -765,6 +783,10 @@ async function searchWorkspaceFiles(query = "", limit = 40) {
           saveConfig({ vision: config.vision });
           for (const agent of sessions.values()) agent.setVision?.(config.vision);
         }
+        if (typeof body.autoTitle === "boolean") {
+          config.autoTitle = body.autoTitle;
+          saveConfig({ autoTitle: config.autoTitle });
+        }
         if (body.baseUrl) {
           config.baseUrl = String(body.baseUrl);
           provider.baseUrl = config.baseUrl.replace(/\/+$/, "");
@@ -807,6 +829,7 @@ async function searchWorkspaceFiles(query = "", limit = 40) {
           ok: true,
           permissionMode: config.permissionMode,
           vision: config.vision !== false,
+          autoTitle: config.autoTitle !== false,
           model: config.model,
           activeProviderKey: config.activeProviderKey,
           baseUrl: config.baseUrl,

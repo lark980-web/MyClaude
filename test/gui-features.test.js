@@ -82,6 +82,9 @@ async function start(configOverrides = {}, cwd) {
     model: "test-model",
     permissionMode: "ask",
     vision: true,
+    // 关掉 AI 自动命名：它的 fire-and-forget 标题请求会覆盖派生标题，
+    // 与「列表/重命名」断言产生时序竞态（autoTitle 开关本身在 0.19 加入）。
+    autoTitle: false,
     maxTurns: 6,
     contextWindow: 100000,
     compactThreshold: 0.8,
