@@ -8,6 +8,69 @@
 
 ## [Unreleased]
 
+### Added（GUI 对齐 claude.ai 第三轮 —— 外观/导航/引用）
+- **主题三态**：深 → 浅 → 跟随系统循环（`prefers-color-scheme` 实时联动），boot 认 auto 偏好。
+- **设置中心「通用与外观」页签**：主题/提示音/桌面通知/显示名/数据管理集中一处；
+  「查看 / 撤销分享」打开分享管理器（列出全部快照：打开/复制链接/逐个撤销）。
+- **右栏「消息目录」**：按用户提问编号列表，点击滚动+闪烁定位（长对话导航）。
+- **Artifact「在新窗口打开」**：blob URL 直开 HTML/SVG（沙箱外完整体验）。
+- **@ 菜单目录浏览**：文件索引纳入目录（尾斜杠），目录行回车进入继续找
+  （`@src/` → `@src/ui/` → …），菜单标注「目录 · 回车进入」——对齐 Claude Code 的 @ 目录行为。
+
+### Perf
+- **会话恢复渐进渲染**：641 条消息的会话曾把主线程卡 20-30s（服务端 resume 仅 0.2s，
+  时间全在客户端同步渲染）。现在首屏只渲染最近 60 条（起点对齐 user 消息保证
+  tool_calls 配对），顶部「加载更早 80 条」分批 prepend、滚动位置保持。
+  实测 641 条会话 522ms 首屏，分批 7 次收敛结果与全量渲染一致。
+
+### Tests
+- test/followup-chips.test.js 重写（5 项）：断言对象跟上美工卡片形态（{t,d} 三卡、
+  标签等长、说明互异、网格约束、hover 动效）；提取范围限定在 buildFollowupPrompts
+  函数体内，不再被快捷键/重试菜单等新数组干扰。07dc76f 升级卡片时该文件漏改。
+
+### Added（GUI 对齐 claude.ai 第二轮 —— 会话协作与反馈面）
+- **键盘快捷键面板**：`?` 或 `Ctrl+/` 唤起，三组分区（通用/对话/消息）kbd 样式总览；
+  `/shortcuts` 命令注册；面板底部集中提示音/桌面通知两个开关。新增 `Ctrl+Shift+O` 新对话。
+- **提示音**：WebAudio 合成三音色（回合完成双音上行 / 等待确认柔和单音 / 出错低音），
+  偏好持久化 localStorage，面板内点按可试听。
+- **桌面通知**：标签页隐藏时回合完成/等待确认发系统通知，标题栏未读计数 `(N)`，
+  回到页面即清零；含浏览器权限申请流。
+- **消息反馈 👍/👎**：助手消息 hover 工具栏新增；按「会话id+正文稳定摘要」存
+  `~/.myclaude/feedback.json` sidecar（不与自动保存赛跑），刷新/重放按摘要恢复点亮。
+- **分享对话（只读快照）**：`POST /api/share` 冻结会话快照（一会话一 token，重复分享覆盖），
+  `GET /share/<token>` 自包含只读页（明暗自适应、代码高亮、离线可读、noindex）；
+  右键菜单 分享/取消分享；`GET /api/shares` 全量索引；侧栏「已分享」角标。
+- **导出 HTML**：`/api/session/export?format=html` 自包含快照下载（与分享页同一渲染器）；
+  右键菜单入口。
+- **重试菜单**：重试按钮升级三变体气泡——重新生成 / 更简短 / 更详细（对齐 claude.ai retry）。
+- **Artifact 版本切换器**：同名同语言版本链 `◀ vN/T ▶` 与下拉联动。
+- **输入草稿按会话保留**：`myclaude.draft.<sid>`，切换会话保存旧键/恢复新键/无草稿清空，
+  杜绝把 A 会话的半句话发进 B；发送后清空。
+- **搜索命中跳转**：搜索结果点击后恢复会话并滚动到命中消息，橙色闪烁 2.6s 定位。
+- **图片灯箱**：消息内图片点击全屏放大（Esc/点击关闭）。
+- **侧栏时间分组视图**：按项目 ⇄ 按时间（置顶/今天/昨天/近7天/近30天/更早）切换，偏好持久化。
+- **回复截断续跑**：agent 透传 `finish_reason=length` → `truncated` 事件 → 「继续生成」一键续写。
+- **AI 自动会话命名**：新会话首回合结束后用当前模型生成 16 字内标题（8s 超时、一会话一次、
+  手动命名优先）；`session_title` 事件 + resume 返回 title，顶栏/侧栏同步。
+- **错误一键重试**：回合内出现 provider 错误 → done 后给「重试」卡片。
+
+### Fixed
+- 顶栏上下文百分比把 token 数当比例，显示「11926700%」——按 contextUsed/contextLimit
+  归一并 cap 100%。
+- providers/openai.js `complete()` 引用未定义 `maxTokens`（任何调用直接 ReferenceError）——
+  补解构参数并透传。
+- 非流式请求的首字节看门狗定时器从不清理：每次 `complete()` 留一个 90s 悬挂定时器，
+  拖住测试 runner 与 GUI 进程退出——headers 到达即清理 + `unref`。
+- markdown.js 在 `"type": "module"` 包内被 require 拿到空命名空间——share 渲染器改用
+  vm 提供 CJS 壳执行该 UMD 文件。
+
+### Tests
+- test/share.test.js（6）：快照复用 token、撤销、超大截断、只读页渲染、工具消息排除。
+- test/gui-share-feedback.test.js（4）：分享全链路 HTTP、反馈写读取消、HTML 导出 404。
+- test/provider-complete.test.js（2）：maxTokens 透传 + config 回落（进程干净退出）。
+- 技能执行注入基目录（claude-src 同款 `Base directory for this skill:`）+ 项目根钉死 +
+  测试隔离 MYCLAUDE_HOME（test/skills.test.js）。
+
 ### Fixed（检查器三块「没实现」区）
 - 备用模型池是摆设：GUI 保存 fallbacks 发到 /api/config 后被服务端静默丢弃，
   怎么加都显示「暂无」。现 /api/config 接受并持久化 fallbacks（冒烟实测读写闭环）。
