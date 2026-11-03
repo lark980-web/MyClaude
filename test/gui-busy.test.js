@@ -7,6 +7,7 @@
  * report. Both are pinned here against the real server with a hanging backend.
  */
 import test from "node:test";
+import { after } from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { mkdtempSync } from "node:fs";
@@ -30,6 +31,12 @@ function hangingBackend() {
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// fetch 客户端（undici 池）的空闲 socket 在应用层够不到，会拖住进程自然退出；
+// 断言完成后显式收尾（disconnect-abort 同款）。
+after(() => {
+  setTimeout(() => process.exit(0), 100).unref?.();
+});
 
 test("a second send on a running session is refused, and stop still works", async () => {
   const backend = hangingBackend();

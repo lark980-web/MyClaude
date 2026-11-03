@@ -4,6 +4,7 @@
  * A tiny OpenAI-compatible SSE backend stands in for the real provider.
  */
 import test from "node:test";
+import { after } from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { mkdtempSync, writeFileSync, rmSync, mkdirSync } from "node:fs";
@@ -90,6 +91,12 @@ async function readSse(res) {
     .filter((l) => l.startsWith("data:"))
     .map((l) => JSON.parse(l.slice(5).trim()));
 }
+
+// fetch 客户端（undici 池）的空闲 socket 在应用层够不到，会拖住进程自然退出；
+// 断言完成后显式收尾（disconnect-abort 同款）。
+after(() => {
+  setTimeout(() => process.exit(0), 100).unref?.();
+});
 
 test("GUI serves the page with attachment and vision controls", async () => {
   const ctx = await start();

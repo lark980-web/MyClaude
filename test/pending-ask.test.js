@@ -7,11 +7,18 @@
  * resume response and the answer can arrive from the new page.
  */
 import test from "node:test";
+import { after } from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+
+// fetch 客户端（undici 池）的空闲 socket 在应用层够不到，会拖住进程自然退出；
+// 断言完成后显式收尾（disconnect-abort 同款）。
+after(() => {
+  setTimeout(() => process.exit(0), 100).unref?.();
+});
 
 test("pending question survives a refresh and can be answered from the new page", async () => {
   process.env.MYCLAUDE_HOME = mkdtempSync(join(tmpdir(), "myclaude-pask-"));

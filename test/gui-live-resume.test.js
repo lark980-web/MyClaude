@@ -12,6 +12,7 @@
  *  - resuming never deletes an agent that is currently running
  */
 import test from "node:test";
+import { after } from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { mkdtempSync } from "node:fs";
@@ -75,6 +76,12 @@ async function readSse(res) {
   return text.split("\n").filter((l) => l.startsWith("data:"))
     .map((l) => JSON.parse(l.slice(5).trim()));
 }
+
+// fetch 客户端（undici 池）的空闲 socket 在应用层够不到，会拖住进程自然退出；
+// 断言完成后显式收尾（disconnect-abort 同款）。
+after(() => {
+  setTimeout(() => process.exit(0), 100).unref?.();
+});
 
 test("resuming during an in-flight run keeps the live agent alive", async () => {
   const ctx = await start();

@@ -7,6 +7,7 @@
  * one-click continue.
  */
 import test from "node:test";
+import { after } from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { mkdtempSync } from "node:fs";
@@ -34,6 +35,12 @@ async function mockBackend() {
   await new Promise((r) => server.listen(0, "127.0.0.1", r));
   return { server, url: `http://127.0.0.1:${server.address().port}/v1` };
 }
+
+// fetch 客户端（undici 池）的空闲 socket 在应用层够不到，会拖住进程自然退出；
+// 断言完成后显式收尾（disconnect-abort 同款）。
+after(() => {
+  setTimeout(() => process.exit(0), 100).unref?.();
+});
 
 test("a run stopped by the turn cap emits a max_turns event", async () => {
   const backend = await mockBackend();

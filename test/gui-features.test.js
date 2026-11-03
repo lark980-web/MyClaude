@@ -6,6 +6,7 @@
  * user's real ~/.myclaude/config.json or session history.
  */
 import test from "node:test";
+import { after } from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { mkdtempSync, writeFileSync, mkdirSync, rmSync, existsSync } from "node:fs";
@@ -24,10 +25,19 @@ async function mockBackend() {
     let data = "";
     req.on("data", (c) => (data += c));
     req.on("end", () => {
-      state.bodies.push(JSON.parse(data || "{}"));
+      const parsed = JSON.parse(data || "{}");
+      state.bodies.push(parsed);
       if (state.hang) {
         // Never answer: lets the client abort mid-flight.
         res.writeHead(200, { "Content-Type": "text/event-stream" });
+        return;
+      }
+      // 非流式请求（body 无 stream:true）是回合外的内部调用——AI 自动会话
+      // 命名（emitAutoTitle）。它不能消费 script 里排给下一回合的回复：
+      // 回固定标题，script 原样保留。
+      if (parsed.stream !== true) {
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ choices: [{ message: { role: "assistant", content: "测试标题" }, finish_reason: "stop" }] }));
         return;
       }
       const next = state.script.shift() || { text: "done" };
@@ -96,6 +106,12 @@ async function readSse(res) {
 
 const chatBody = (message, extra = {}) =>
   JSON.stringify({ message, ...extra });
+
+// fetch 客户端（undici 池）的空闲 socket 在应用层够不到，会拖住进程自然退出；
+// 断言完成后显式收尾（disconnect-abort 同款）。
+after(() => {
+  setTimeout(() => process.exit(0), 100).unref?.();
+});
 
 test("two session keys keep independent conversation histories", async () => {
   const ctx = await start();
