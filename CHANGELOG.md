@@ -8,6 +8,13 @@
 
 ## [Unreleased]
 
+### Fixed（检查器三块「没实现」区）
+- 备用模型池是摆设：GUI 保存 fallbacks 发到 /api/config 后被服务端静默丢弃，
+  怎么加都显示「暂无」。现 /api/config 接受并持久化 fallbacks（冒烟实测读写闭环）。
+- MCP 服务器只能手编 config.json：新增 POST /api/mcp（add/remove/disable/enable）
+  + GUI「+ 添加」弹窗（stdio 命令/参数 或 HTTP/SSE URL 双形态）+ 空态 CTA。
+- 任务区空列表是正常态（无后台任务时），文案已改为解释性说明。
+
 ### Design（追问美工卡片）
 - 追问建议从「一句话药丸」升级为设计卡片：编号标记（等宽 01/02/03）+ 短标题 + 完整说明
   三层结构；hover 抬升 2px + 陶土橙描边 + 阴影 + 箭头右移；focus-visible 环；720px 塌单列。

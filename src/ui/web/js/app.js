@@ -3008,8 +3008,44 @@
 
 
   /** MCP 服务器状态：连接情况与各自暴露的工具数。 */
+  function openAddMcpModal() {
+    openModal("添加 MCP 服务器", function (body) {
+      var nameI = el("input"); nameI.placeholder = "标识名，如 filesystem";
+      var typeS = el("select");
+      [["stdio", "本地命令（stdio）"], ["url", "远程地址（HTTP/SSE）"]].forEach(function (o) { var op = el("option"); op.value = o[0]; op.textContent = o[1]; typeS.appendChild(op); });
+      var cmdI = el("input"); cmdI.placeholder = "命令，如 npx";
+      var argsI = el("input"); argsI.placeholder = "参数（空格分隔），如 -y @modelcontextprotocol/server-filesystem";
+      var urlI = el("input"); urlI.placeholder = "https://example.com/mcp"; urlI.style.display = "none";
+      cmdI.style.display = ""; argsI.style.display = "";
+      typeS.addEventListener("change", function () { var stdio = typeS.value === "stdio"; cmdI.style.display = stdio ? "" : "none"; argsI.style.display = stdio ? "" : "none"; urlI.style.display = stdio ? "none" : ""; });
+      body.appendChild(field("名称", nameI));
+      body.appendChild(field("类型", typeS));
+      body.appendChild(field("命令", cmdI));
+      body.appendChild(field("参数", argsI));
+      body.appendChild(field("URL", urlI));
+      body._collect = function () {
+        var name = nameI.value.trim(); if (!name) { toast("请填写名称", "warn"); return null; }
+        if (typeS.value === "stdio") {
+          if (!cmdI.value.trim()) { toast("请填写命令", "warn"); return null; }
+          return { action: "add", name: name, command: cmdI.value.trim(), args: argsI.value.trim() ? argsI.value.trim().split(/\s+/) : [] };
+        }
+        if (!urlI.value.trim()) { toast("请填写 URL", "warn"); return null; }
+        return { action: "add", name: name, url: urlI.value.trim() };
+      };
+    }, [{ label: "保存", cls: "primary", fn: function () {
+      var mb = $("modal-body");
+      var payload = mb && mb._collect && mb._collect();
+      if (!payload) { return; }
+      postJSON("/api/mcp", payload).then(function () { closeModal(); toast("MCP 服务器已添加，下一回合生效", "ok"); renderInspector(); }).catch(function (e) { toast("添加失败：" + e.message, "err"); });
+    } }]);
+  }
+
   function renderMcpSection(root) {
     var s = section("MCP 服务器");
+    var addBtn = el("button", "model-action-btn", "+ 添加");
+    addBtn.type = "button";
+    addBtn.addEventListener("click", openAddMcpModal);
+    if (s.head) { s.head.appendChild(addBtn); } else { s.body.insertBefore(addBtn, s.body.firstChild); }
     var host = el("div", "mcp-list");
     s.body.appendChild(host);
     root.appendChild(s.sec);
@@ -3017,7 +3053,12 @@
       var list = j.servers || [];
       clear(host);
       if (!list.length) {
-        host.appendChild(el("div", "empty-note", "未配置 MCP 服务器。可在 ~/.myclaude/config.json 的 mcpServers 中添加 command（stdio）或 url（HTTP/SSE）。"));
+        var em = el("div", "empty-note", "还没有 MCP 服务器。");
+      var cta = el("button", "model-action-btn", "+ 添加 MCP 服务器");
+      cta.type = "button";
+      cta.addEventListener("click", openAddMcpModal);
+      em.appendChild(cta);
+      host.appendChild(em);
         return;
       }
       list.forEach(function (sv) {

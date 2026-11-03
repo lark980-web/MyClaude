@@ -1091,6 +1091,34 @@ async function searchWorkspaceFiles(query = "", limit = 40) {
         return;
       }
 
+      if (path === "/api/mcp" && req.method === "POST") {
+        const body = await readJson(req);
+        const action = String(body.action || "add");
+        const name = String(body.name || "").trim().replace(/[^\w.-]/g, "_");
+        if (!name) { sendJson(res, 400, { ok: false, error: "name required" }); return; }
+        config.mcpServers = config.mcpServers || {};
+        if (action === "remove") {
+          delete config.mcpServers[name];
+        } else if (action === "disable" || action === "enable") {
+          const sp = config.mcpServers[name];
+          if (!sp) { sendJson(res, 404, { ok: false, error: "not found" }); return; }
+          sp.disabled = action === "disable";
+        } else {
+          const spec = { };
+          if (body.url) { spec.url = String(body.url); if (body.headers) spec.headers = body.headers; }
+          else if (body.command) {
+            spec.command = String(body.command);
+            if (Array.isArray(body.args)) spec.args = body.args.map(String);
+            if (body.env) spec.env = body.env;
+          } else { sendJson(res, 400, { ok: false, error: "command or url required" }); return; }
+          if (body.disabled) spec.disabled = true;
+          config.mcpServers[name] = spec;
+        }
+        saveConfig({ mcpServers: config.mcpServers });
+        sendJson(res, 200, { ok: true, mcpServers: config.mcpServers, note: "新配置在下一回合或重连后生效" });
+        return;
+      }
+
       if (path === "/api/mcp") {
         // Any live agent owns the shared manager, so search across tabs.
         let servers = [];
