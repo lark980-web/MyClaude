@@ -117,16 +117,24 @@ export function deleteSharesForSession(sessionId) {
 /* -------------------------------------------------------------- 渲染层 --- */
 
 /** 引入浏览器同款 markdown 渲染器（UMD 文件；包是 "type": "module"，
- * require 只会拿到空命名空间，所以用 vm 提供一个 CJS 壳来执行它）。 */
-import { readFileSync as _readFileSync } from "node:fs";
+ * require 只会拿到空命名空间，所以用 vm 提供一个 CJS 壳来执行它）。
+ * 源码运行时从磁盘读；编译成单文件 exe 后磁盘没有这个文件，改用
+ * assets.js 的嵌入副本（build:embed 在编译前写入 EMBEDDED 块）。 */
 import vm from "node:vm";
 import { fileURLToPath } from "node:url";
 import { dirname as _dirname, join as _join } from "node:path";
+import { loadGuiAssets } from "./ui/assets.js";
 
 const MD = (function loadMarkdown() {
   const file = _join(_dirname(fileURLToPath(import.meta.url)), "ui", "web", "js", "markdown.js");
+  let source = null;
+  try { source = readFileSync(file, "utf8"); } catch {}
+  if (!source) {
+    try { source = loadGuiAssets().markdown; } catch {}
+  }
+  if (!source) { return { render: (s) => String(s == null ? "" : s) }; }
   const sandboxModule = { exports: {} };
-  vm.runInNewContext(_readFileSync(file, "utf8"), {
+  vm.runInNewContext(source, {
     module: sandboxModule,
     window: undefined,
     require: undefined,
