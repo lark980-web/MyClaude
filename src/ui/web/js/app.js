@@ -3132,6 +3132,31 @@
       s.body.appendChild(field);
     }
     root.appendChild(s.sec);
+
+    // 消息目录：长对话里按用户提问快速跳转（点击滚动+闪烁定位）
+    var tocSec = section("消息目录");
+    var userMsgs = Array.prototype.slice.call((logRoot() || {}).querySelectorAll ? logRoot().querySelectorAll(".msg-user") : []);
+    if (!userMsgs.length) {
+      tocSec.body.appendChild(el("div", "empty-note", "开始对话后，这里列出你的每一次提问，点击即可跳转。"));
+    } else {
+      var list = el("div", "toc-list");
+      userMsgs.forEach(function (node, idx) {
+        var text = ((node.textContent || "").replace(/\s+/g, " ").trim()).slice(0, 60) || ("提问 " + (idx + 1));
+        var row = el("button", "toc-row");
+        row.type = "button";
+        row.appendChild(el("span", "toc-idx", String(idx + 1).padStart(2, "0")));
+        row.appendChild(el("span", "toc-text", text));
+        row.title = text;
+        row.addEventListener("click", function () {
+          node.scrollIntoView({ behavior: "smooth", block: "start" });
+          node.classList.add("msg-flash");
+          setTimeout(function () { node.classList.remove("msg-flash"); }, 2600);
+        });
+        list.appendChild(row);
+      });
+      tocSec.body.appendChild(list);
+    }
+    root.appendChild(tocSec.sec);
   }
 
   /** 备用模型探活结果，键为 model。null 表示尚未检测。 */
@@ -5674,20 +5699,34 @@
     try { localStorage.setItem(LS_MOTION, S.motion ? "on" : "off"); } catch (e) { }
   }
 
+  var themeMedia = window.matchMedia ? window.matchMedia("(prefers-color-scheme: dark)") : null;
+
+  function systemTheme() { return themeMedia && themeMedia.matches ? "dark" : "light"; }
+
   function applyTheme(theme) {
-    S.theme = theme;
-    document.documentElement.setAttribute("data-theme", theme);
-    try { localStorage.setItem(LS_THEME, theme); } catch (e) { }
+    S.theme = theme === "auto" ? "auto" : (theme === "light" ? "light" : "dark");
+    var effective = S.theme === "auto" ? systemTheme() : S.theme;
+    document.documentElement.setAttribute("data-theme", effective);
+    try { localStorage.setItem(LS_THEME, S.theme); } catch (e) { }
     var label = $("theme-label");
-    if (label) { label.textContent = theme === "dark" ? "浅色模式" : "深色模式"; }
+    if (label) { label.textContent = S.theme === "auto" ? "跟随系统" : (S.theme === "dark" ? "浅色模式" : "深色模式"); }
     var ti = $("theme-icon");
-    if (ti && ti.firstChild) { ti.firstChild.setAttribute("href", theme === "dark" ? "#i-sun" : "#i-moon"); }
+    if (ti && ti.firstChild) { ti.firstChild.setAttribute("href", effective === "dark" ? "#i-sun" : "#i-moon"); }
     var tb = $("btn-theme");
-    if (tb) { tb.title = theme === "dark" ? "切换到浅色" : "切换到深色"; }
+    if (tb) { tb.title = S.theme === "auto" ? "当前跟随系统（点击切换深色）" : (effective === "dark" ? "切换到浅色" : "切换到深色 / 跟随系统"); }
   }
 
+  /** 深 → 浅 → 跟随系统 三态循环（claude.ai 的主题行为）。 */
   function toggleTheme() {
-    applyTheme(S.theme === "dark" ? "light" : "dark");
+    var next = S.theme === "dark" ? "light" : (S.theme === "light" ? "auto" : "dark");
+    applyTheme(next);
+    toast(next === "auto" ? "主题：跟随系统" : (next === "dark" ? "主题：深色" : "主题：浅色"), "info");
+  }
+
+  if (themeMedia) {
+    var onSystemThemeChange = function () { if (S.theme === "auto") { applyTheme("auto"); } };
+    if (themeMedia.addEventListener) { themeMedia.addEventListener("change", onSystemThemeChange); }
+    else if (themeMedia.addListener) { themeMedia.addListener(onSystemThemeChange); }
   }
 
   /* ================================================================ 绑定 === */
@@ -8600,6 +8639,22 @@ function switchInspectorTab(tab) {
       });
     }
 
+    // 在新窗口打开：可预览类型用 blob URL 直开（沙箱外完整体验），其余开代码文本
+    var btnPopArt = $("btn-art-popout");
+    if (btnPopArt) {
+      btnPopArt.addEventListener("click", function () {
+        var active = S.artifacts.filter(function (a) { return a.id === S.activeArtifactId; })[0];
+        if (!active) { return; }
+        var l = String(active.lang || "").toLowerCase();
+        var mime = (l === "html" || l === "htm" || /^\s*<!doctype html/i.test(active.code)) ? "text/html"
+          : (l === "svg" || /^\s*<svg/i.test(active.code)) ? "image/svg+xml" : "text/plain";
+        var blob = new Blob([active.code], { type: mime + ";charset=utf-8" });
+        var url = URL.createObjectURL(blob);
+        window.open(url, "_blank");
+        setTimeout(function () { URL.revokeObjectURL(url); }, 60000);
+      });
+    }
+
     // 划词「引用并追问」浮动按钮
     var quotePop = $("quote-pop");
     var selectedQuoteText = "";
@@ -9938,11 +9993,11 @@ function switchInspectorTab(tab) {
   function boot() {
     var params = new URLSearchParams(location.search);
     var savedTheme = params.get("theme");
-    if (savedTheme !== "light" && savedTheme !== "dark") {
+    if (savedTheme !== "light" && savedTheme !== "dark" && savedTheme !== "auto") {
       savedTheme = null;
       try { savedTheme = localStorage.getItem(LS_THEME); } catch (e) { }
     }
-    if (savedTheme !== "light" && savedTheme !== "dark") {
+    if (savedTheme !== "light" && savedTheme !== "dark" && savedTheme !== "auto") {
       savedTheme = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
     }
     applyTheme(savedTheme);
