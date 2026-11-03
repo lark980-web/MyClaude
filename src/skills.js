@@ -1,15 +1,14 @@
 /**
- * Skills: reusable capabilities the model can pick up on its own.
+ * 技能：模型可自行取用的可复用能力。
  *
- * Unlike a command, which the user invokes by name, a skill is advertised to
- * the model through its description and used when the model judges it
- * relevant. Claude Code stores one directory per skill containing SKILL.md,
- * and that layout is mirrored here so skill files stay portable.
+ * 命令由用户按名调用，技能则靠 description 被广告给模型、由模型自行判断
+ * 是否适用。Claude Code 的布局是「一个技能一个目录，内含 SKILL.md」，
+ * 这里照搬，技能文件因此可跨工具移植。
  *
- *   .myclaude/skills/review/SKILL.md          -> project skill "review"
- *   ~/.myclaude/skills/commit/SKILL.md        -> user skill "commit"
+ *   .myclaude/skills/review/SKILL.md          -> 项目级技能 "review"
+ *   ~/.myclaude/skills/commit/SKILL.md        -> 用户级技能 "commit"
  *
- * Project skills override user skills of the same name.
+ * 同名时项目级覆盖用户级。
  */
 import { readdirSync, readFileSync, existsSync, statSync } from "node:fs";
 import { join, resolve, basename } from "node:path";
@@ -17,26 +16,26 @@ import { CONFIG_DIR } from "./config.js";
 import { splitFrontMatter } from "./commands.js";
 import { pluginComponentPaths } from "./plugins.js";
 
-/** The only file name Claude recognises as a skill definition. */
+/** Claude 只认这一个文件名作为技能定义（claude-src 多处硬编码 "SKILL.md"）。 */
 const SKILL_FILE = "SKILL.md";
 
-/** Directories scanned for skills, lowest precedence first. */
+/** 技能搜索目录，按优先级从低到高排列（后扫描的覆盖先扫描的）。 */
 export function skillDirs(cwd = process.cwd()) {
   const dirs = [];
   const home = join(CONFIG_DIR, "skills");
+  // 用户级：~/.myclaude/skills/<名>/SKILL.md，优先级最低
   if (existsSync(home)) { dirs.push({ dir: home, scope: "user" }); }
-  // Walk up so a monorepo root can provide skills too.
-  let cur = resolve(cwd);
-  for (let depth = 0; depth < 6 && cur; depth++) {
-    const candidate = join(cur, ".myclaude", "skills");
-    if (existsSync(candidate)) { dirs.push({ dir: candidate, scope: "project" }); }
-    if (existsSync(join(cur, ".git"))) { break; }
-    const parent = resolve(cur, "..");
-    if (!parent || parent === cur) { break; }
-    cur = parent;
+  // 项目级只认「项目根」一处：claude-src 的 chunk-j79ttfks.js 用
+  // projectSettings 的 skills 路径 + 各附加目录拼 .claude/skills，
+  // 并不存在逐级向上爬父目录的搜索。
+  // 这里等价做法是定位 git 根（非仓库时退回 cwd），只在那一层找技能：
+  // 无节制地向上爬会把 ~/.myclaude/skills 误判成 project 技能。
+  const root = projectRootOf(cwd);
+  const candidate = join(root, ".myclaude", "skills");
+  if (existsSync(candidate) && resolve(candidate) !== resolve(home)) {
+    dirs.push({ dir: candidate, scope: "project" });
   }
-  // Plugins may ship skills; they come after the direct ones so a project
-  // skill of the same name wins.
+  // 插件也可能带技能；放在直读目录之后，让同名项目技能优先
   try {
     for (const dir of pluginComponentPaths(cwd).skills) { dirs.push({ dir, scope: "plugin" }); }
   } catch {
@@ -46,7 +45,25 @@ export function skillDirs(cwd = process.cwd()) {
 }
 
 /**
- * Load every skill visible from cwd.
+ * 定位项目根：从 cwd 向上找到最近的 `.git`，找不到就用 cwd 本身。
+ *
+ * 只用于把「项目级技能目录」钉在一个确定的位置，与 claude-src 里
+ * projectSettings 给出单一 skills 路径的语义一致；它不会在每一层父目录
+ * 都去找技能。
+ */
+function projectRootOf(cwd) {
+  let cur = resolve(cwd);
+  for (let depth = 0; depth < 6; depth++) {
+    if (existsSync(join(cur, ".git"))) { return cur; }
+    const parent = resolve(cur, "..");
+    if (!parent || parent === cur) { break; }
+    cur = parent;
+  }
+  return resolve(cwd);
+}
+
+/**
+ * 加载 cwd 可见的全部技能。
  *
  * @returns {Array<{name: string, description: string, body: string, file: string,
  *   scope: string, allowedTools: string}>}
@@ -57,8 +74,8 @@ export function loadSkills(cwd = process.cwd()) {
     let entries = [];
     try { entries = readdirSync(dir, { withFileTypes: true }); } catch { continue; }
     for (const entry of entries) {
-      // A skill is a directory; loose SKILL.md files are ignored so the
-      // layout matches Claude and cannot be mistaken for stray notes.
+      // 技能必须是目录；散落的 SKILL.md 一律忽略 —— 既对齐 Claude 的布局，
+      // 也避免把随手放的笔记误当成技能。
       if (!entry.isDirectory()) { continue; }
       const skillDir = join(dir, entry.name);
       const file = join(skillDir, SKILL_FILE);
@@ -70,7 +87,7 @@ export function loadSkills(cwd = process.cwd()) {
       const { front, body } = splitFrontMatter(text);
       const name = String(front.name || entry.name).toLowerCase();
       if (!name) { continue; }
-      // Later (project) scopes overwrite earlier (user) ones.
+      // 后扫描的项目级覆盖先扫描的用户级同名技能
       out.set(name, {
         name,
         description: front.description || firstLine(body) || "(no description)",
@@ -84,7 +101,7 @@ export function loadSkills(cwd = process.cwd()) {
   return [...out.values()].sort((a, b) => a.name.localeCompare(b.name));
 }
 
-/** First meaningful line of a body, used when frontmatter omits a description. */
+/** 正文首行，frontmatter 没写 description 时兜底用。 */
 function firstLine(text) {
   const line = String(text || "")
     .split("\n")
@@ -93,30 +110,29 @@ function firstLine(text) {
   return line ? line.slice(0, 100) : "";
 }
 
-/** Find one skill by name (case-insensitive), or null. */
+/** 按名查找单个技能（大小写不敏感），找不到返回 null。 */
 export function findSkill(name, cwd = process.cwd()) {
   const key = String(name || "").toLowerCase();
   return loadSkills(cwd).find((s) => s.name === key) || null;
 }
 
 /**
- * One-line catalogue for the system prompt.
+ * 供 system prompt 用的一行清单。
  *
- * The model only needs the name and description to decide whether a skill
- * applies; the body is loaded on demand so a large skill library does not
- * bloat every request.
+ * 模型只需要 name 和 description 就能判断某个技能是否适用；正文按需加载，
+ * 这样技能库再大也不会撑爆每次请求。
+ * 对齐 claude-src 的 1369_unnamed.js：alwaysOn = 一行清单，onInvoke = 完整正文。
  */
 export function skillCatalogue(cwd = process.cwd()) {
   return loadSkills(cwd).map((s) => ({ name: s.name, description: s.description }));
 }
 
 /**
- * Sub-agent definition files: the .myclaude/agents counterpart of skills.
+ * 子代理定义文件：技能在 .myclaude/agents 下的对应物。
  *
- * Each agent is a markdown file with optional frontmatter (name, description)
- * and a body that becomes the operating instructions of that sub-agent type.
- * Files instead of a registry, so users can keep definitions in version
- * control alongside the project.
+ * 每个代理是一个 markdown 文件，可选 frontmatter（name、description），正文
+ * 即该类型子代理的操作指令。用文件而非注册表，用户才能把定义和项目一起
+ * 放进版本库。
  *
  * @param {string} cwd
  * @returns {Array<{name: string, description: string, body: string, file: string}>}

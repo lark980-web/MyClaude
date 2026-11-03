@@ -1,9 +1,16 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { loadSkills, findSkill, skillCatalogue, skillDirs } from "../src/skills.js";
+// skillDirs() 除了项目目录还会扫用户级 ~/.myclaude/skills，若不隔离，
+// 用户真实装着的技能会混进这些断言（本机装了 reverse-engineer-anything
+// 就曾让 4 个用例集体失败）。用临时 MYCLAUDE_HOME 顶掉真实配置目录。
+// ESM 的 import 会提升，所以 skills.js 必须在环境变量就位后再动态载入。
+const HOME = mkdtempSync(join(tmpdir(), "myclaude-skills-home-"));
+process.env.MYCLAUDE_HOME = HOME;
+const { loadSkills, findSkill, skillCatalogue, skillDirs } = await import("../src/skills.js");
 
 /**
  * Build a fake workspace: <root>/.myclaude/skills/<name>/SKILL.md
