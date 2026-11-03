@@ -2785,6 +2785,8 @@
             // 重新打字或去找上一条消息。
             if (_turnHadError && S.lastUserText) { addRetryCard(); }
             _turnHadError = false;
+            // AI 自动命名是回合外异步完成的：晚 3 秒刷新一次侧栏拿标题
+            setTimeout(function () { refreshSessions(); }, 3000);
             setBusy(false);
           }
   }

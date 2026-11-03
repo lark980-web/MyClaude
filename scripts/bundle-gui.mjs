@@ -59,8 +59,20 @@ const source = readFileSync(ASSETS, "utf8");
 
 // Replace the whole `const EMBEDDED = {...};` declaration, whatever preceded it.
 // Matching the declaration (not a comment) keeps this script idempotent.
-const start = source.indexOf("const EMBEDDED = {");
+let start = source.indexOf("const EMBEDDED = {");
 if (start < 0) throw new Error("assets.js has no EMBEDDED declaration to fill");
+// 连同声明上方旧生成的注释头一起替换——否则每次构建都会在 EMBEDDED 前
+// 堆一层注释（现库版本已堆了 4 层）。
+const BANNER = "Embedded copies of src/ui/web/*";
+for (;;) {
+  const cStart = source.lastIndexOf("/**", start);
+  if (cStart < 0) { break; }
+  const cEnd = source.indexOf("*/", cStart);
+  if (cEnd < 0 || cEnd > start) { break; }
+  if (!source.slice(cStart, cEnd).includes(BANNER)) { break; }
+  start = cStart;
+  break;
+}
 const end = source.indexOf("\n};", start);
 if (end < 0) throw new Error("assets.js EMBEDDED declaration is not terminated");
 
