@@ -357,7 +357,10 @@
     if (g) { g.textContent = greetingText(); }
   }
 
-  function logRoot() { return $("log"); }
+  function logRoot() { return _logRedirect || $("log"); }
+
+  /* 渐进重放期间把渲染临时导入离屏容器，整批再插回真实 #log（见 replayTranscript） */
+  var _logRedirect = null;
 
   function collectTurnNodesAfter(userWrap) {
     var nodes = [];
@@ -4302,10 +4305,18 @@
    * Stored messages keep the tool call names and arguments, so tool cards can
    * be restored with their real identity instead of a generic label. Diffs are
    * re-parsed from the raw text so Edit/GitDiff cards render as diffs again.
+   *
+   * 渐进渲染：几百条消息的会话曾把主线程卡住 20-30 秒（服务端 resume 只要
+   * 0.2s，时间全花在 markdown/工具卡/diff 的同步 DOM 渲染）。现在首屏只渲染
+   * 最后 REPLAY_CHUNK 条（起点对齐到 user 消息，保证 tool_calls 配对完整），
+   * 更早的由顶部「加载更早」按钮分批 prepend。
    */
+  var REPLAY_CHUNK = 60;
+  var REPLAY_BATCH = 80;
+
   function replayTranscript(messages) {
     S.replayingHistory = true;
-    var root = logRoot();
+    var root = $("log");
     msgSeqCounter = 0;
     S.artifacts = [];
     S.activeArtifactId = null;
@@ -4315,46 +4326,19 @@
       if (n.parentNode === root) { root.removeChild(n); }
     });
 
-    var had = false;
-    // tool_call_id -> { name, arguments } from the assistant turn that made it.
-    var callIndex = {};
-    (messages || []).forEach(function (m) {
-      if (m.role === "assistant" && Array.isArray(m.tool_calls)) {
-        m.tool_calls.forEach(function (tc) {
-          var fn = tc.function || {};
-          var args = {};
-          try { args = JSON.parse(fn.arguments || "{}"); } catch (e) { args = {}; }
-          callIndex[tc.id] = { name: fn.name || "Tool", args: args };
-        });
-      }
-    });
+    var msgs = Array.isArray(messages) ? messages : [];
+    S._replayMsgs = msgs;
+    var start = 0;
+    if (msgs.length > REPLAY_CHUNK) {
+      start = msgs.length - REPLAY_CHUNK;
+      // 起点对齐到 user 消息：assistant(tool_calls)+tool 配对不会从中间断开
+      while (start > 0 && msgs[start] && msgs[start].role !== "user") { start--; }
+    }
+    S._replayStart = start;
+    renderReplayRange(start, msgs.length);
+    if (start > 0) { addLoadEarlierCard(); }
 
-    (messages || []).forEach(function (m) {
-      if (m.role === "user") {
-        var text = typeof m.content === "string" ? m.content : "";
-        var imgs = 0;
-        if (Array.isArray(m.content)) {
-          m.content.forEach(function (p) {
-            if (p && p.type === "text") { text += (text ? "\n" : "") + p.text; }
-            if (p && p.type === "image_url") { imgs = imgs + 1; }
-          });
-        }
-        if (text.trim() || imgs) {
-          addUserMessage(text + (imgs ? "  [" + imgs + " 张图片]" : ""), []);
-          had = true;
-        }
-      } else if (m.role === "assistant" && m.content) {
-        var h = addAssistantMessage();
-        renderAssistant(h, String(m.content), false);
-        enhanceCodeblocksWithArtifacts(h.body);
-        addCopyActions(h);
-        had = true;
-      } else if (m.role === "tool") {
-        restoredToolCard(callIndex[m.tool_call_id], String(m.content || ""));
-        had = true;
-      }
-    });
-
+    var had = root.querySelector(".msg, .tool, .tool-group");
     if (!had) { restoreWelcome(); }
     syncPinnedDomNodes();
     renderTopMeta();
@@ -4362,6 +4346,96 @@
     S.replayingHistory = false;
     // 恢复该会话已保存的 👍/👎 反馈（digest 对上了才点亮）
     loadFeedbackForCurrentSession();
+  }
+
+  /** 渲染 [from, to) 区间的历史消息，prepend 到当前内容之前。 */
+  function renderReplayRange(from, to) {
+    var msgs = S._replayMsgs || [];
+    var root = $("log");
+    // 锚点 = 第一个真实内容节点（.notice 的「加载更早」卡保持在最顶上）
+    var anchor = root.querySelector(".msg, .tool, .tool-group, .ask, .thought");
+    var callIndex = {};
+    for (var i = from; i < to; i++) {
+      var m = msgs[i];
+      if (m && m.role === "assistant" && Array.isArray(m.tool_calls)) {
+        m.tool_calls.forEach(function (tc) {
+          var fn = tc.function || {};
+          var args = {};
+          try { args = JSON.parse(fn.arguments || "{}"); } catch (e) { args = {}; }
+          callIndex[tc.id] = { name: fn.name || "Tool", args: args };
+        });
+      }
+    }
+    // 离屏容器：addUserMessage 等都往 logRoot() 追加，重定向后整批搬运
+    _logRedirect = document.createElement("div");
+    try {
+      for (var j = from; j < to; j++) {
+        var msg = msgs[j];
+        if (!msg) { continue; }
+        if (msg.role === "user") {
+          var text = typeof msg.content === "string" ? msg.content : "";
+          var imgs = 0;
+          if (Array.isArray(msg.content)) {
+            msg.content.forEach(function (p) {
+              if (p && p.type === "text") { text += (text ? "\n" : "") + p.text; }
+              if (p && p.type === "image_url") { imgs = imgs + 1; }
+            });
+          }
+          if (text.trim() || imgs) {
+            addUserMessage(text + (imgs ? "  [" + imgs + " 张图片]" : ""), []);
+          }
+        } else if (msg.role === "assistant" && msg.content) {
+          var h = addAssistantMessage();
+          renderAssistant(h, String(msg.content), false);
+          enhanceCodeblocksWithArtifacts(h.body);
+          addCopyActions(h);
+        } else if (msg.role === "tool") {
+          restoredToolCard(callIndex[msg.tool_call_id], String(msg.content || ""));
+        }
+      }
+    } finally {
+      var batch = _logRedirect;
+      _logRedirect = null;
+    }
+    var frag = document.createDocumentFragment();
+    while (batch.firstChild) { frag.appendChild(batch.firstChild); }
+    root.insertBefore(frag, anchor);
+  }
+
+  /** 「加载更早的消息」卡片（渐进重放的分页按钮）。 */
+  function addLoadEarlierCard() {
+    var root = $("log");
+    var old = root.querySelector(".replay-earlier");
+    if (old && old.parentNode) { old.parentNode.removeChild(old); }
+    var total = (S._replayMsgs || []).length;
+    var start = S._replayStart || 0;
+    if (start <= 0) { return; }
+    var wrap = el("div", "notice replay-earlier");
+    var msg = el("span", null, "已加载最近 " + (total - start) + " 条（共 " + total + " 条）。");
+    var btn = el("button", "btn continue-btn", "加载更早 " + Math.min(REPLAY_BATCH, start) + " 条");
+    btn.type = "button";
+    btn.addEventListener("click", function () { loadEarlierReplay(); });
+    wrap.appendChild(msg);
+    wrap.appendChild(btn);
+    root.insertBefore(wrap, root.firstChild);
+  }
+
+  /** 向前加载一批更早的消息，保持滚动位置不跳。 */
+  function loadEarlierReplay() {
+    var msgs = S._replayMsgs || [];
+    var stream = $("stream");
+    var prevHeight = stream ? stream.scrollHeight : 0;
+    var start = S._replayStart || 0;
+    if (start <= 0) { return; }
+    var from = Math.max(0, start - REPLAY_BATCH);
+    while (from > 0 && msgs[from] && msgs[from].role !== "user") { from--; }
+    S._replayStart = from;
+    renderReplayRange(from, start);
+    addLoadEarlierCard();
+    if (stream) {
+      var delta = stream.scrollHeight - prevHeight;
+      if (delta > 0) { stream.scrollTop += delta; }
+    }
   }
 
   /** Rebuild one tool card from stored text, re-parsing diffs where possible. */
