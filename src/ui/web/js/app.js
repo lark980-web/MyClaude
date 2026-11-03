@@ -4828,9 +4828,150 @@
       renderProvidersTab(body, c);
     } else if (currentConfigTab === "fallbacks") {
       renderFallbacksTab(body, c);
+    } else if (currentConfigTab === "general") {
+      renderGeneralTab(body, c);
     } else {
       renderParamsTab(body, c);
     }
+  }
+
+  /** 通用与外观页签：主题 / 提示音 / 桌面通知 / 显示名 / 数据管理。 */
+  function renderGeneralTab(body, c) {
+    var wrap = el("div", "cfg-general-pane");
+    var intro = el("div", "cfg-pane-intro");
+    intro.innerHTML = "<div class='cfg-pane-title'>通用与外观</div><div class='cfg-pane-desc'>主题、提示音、桌面通知与显示名。立即生效，本地保存。</div>";
+    wrap.appendChild(intro);
+
+    var card = el("div", "cfg-form-card");
+    var grid = el("div", "cfg-general-grid");
+
+    function toggleRow(label, desc, value, onChange, labels) {
+      var row = el("div", "cfg-general-row");
+      var info = el("div", "cfg-general-info");
+      info.appendChild(el("div", "cfg-general-label", label));
+      info.appendChild(el("div", "cfg-general-desc", desc));
+      var btn = el("button", "btn " + (value ? "primary" : "ghost"), value ? (labels && labels[0] || "开") : (labels && labels[1] || "关"));
+      btn.type = "button";
+      btn.addEventListener("click", function () {
+        var next = !btn.classList.contains("primary");
+        btn.classList.toggle("primary", next);
+        btn.classList.toggle("ghost", !next);
+        btn.textContent = next ? (labels && labels[0] || "开") : (labels && labels[1] || "关");
+        onChange(next);
+      });
+      row.appendChild(info);
+      row.appendChild(btn);
+      return row;
+    }
+
+    // 主题三态
+    var themeRow = el("div", "cfg-general-row");
+    var themeInfo = el("div", "cfg-general-info");
+    themeInfo.appendChild(el("div", "cfg-general-label", "主题"));
+    themeInfo.appendChild(el("div", "cfg-general-desc", "深色 / 浅色 / 跟随系统（侧栏按钮同样可切）"));
+    var themeSel = el("select", "cfg-general-select");
+    [["dark", "深色"], ["light", "浅色"], ["auto", "跟随系统"]].forEach(function (pair) {
+      var opt = document.createElement("option");
+      opt.value = pair[0];
+      opt.textContent = pair[1];
+      if ((S.theme || "dark") === pair[0]) { opt.selected = true; }
+      themeSel.appendChild(opt);
+    });
+    themeSel.addEventListener("change", function () { applyTheme(themeSel.value); });
+    themeRow.appendChild(themeInfo);
+    themeRow.appendChild(themeSel);
+    grid.appendChild(themeRow);
+
+    grid.appendChild(toggleRow("提示音", "回合完成与等待确认时播放合成音", soundEnabled(), function (on) { setSoundPref(on); if (on) { playChime("done"); } }));
+    grid.appendChild(toggleRow("桌面通知", "切到其他标签页时通知回合完成/待确认", notifyEnabled(), function (on) {
+      setNotifyPref(on);
+      if (on) { askNotifyPermission(function (granted) { if (!granted) { toast("浏览器拒绝了通知权限", "warn"); } }); }
+    }));
+
+    // 显示名（问候语用）
+    var nameRow = el("div", "cfg-general-row");
+    var nameInfo = el("div", "cfg-general-info");
+    nameInfo.appendChild(el("div", "cfg-general-label", "显示名"));
+    nameInfo.appendChild(el("div", "cfg-general-desc", "问候语里称呼你的名字"));
+    var nameInp = el("input", "cfg-general-input");
+    nameInp.type = "text";
+    nameInp.maxLength = 24;
+    nameInp.placeholder = "Danny";
+    try { nameInp.value = localStorage.getItem(LS_NAME) || ""; } catch (e) {}
+    nameInp.addEventListener("change", function () {
+      try { localStorage.setItem(LS_NAME, nameInp.value.trim()); } catch (e) {}
+      renderProfile();
+      var g = $("greeting");
+      if (g) { g.textContent = greetingText(); }
+      toast("显示名已更新", "ok");
+    });
+    nameRow.appendChild(nameInfo);
+    nameRow.appendChild(nameInp);
+    grid.appendChild(nameRow);
+
+    card.appendChild(grid);
+    wrap.appendChild(card);
+
+    // 数据管理：清理已分享快照 / 反馈数据
+    var dataCard = el("div", "cfg-form-card");
+    var dataHead = el("div", "cfg-form-head");
+    dataHead.innerHTML = "<div class='cfg-fhead-left'><span class='pcard-icon'>🗂</span> <div><strong>数据管理</strong><span class='cfg-fhead-sub'>分享快照与消息反馈存储在 ~/.myclaude/，可随时清理</span></div></div>";
+    dataCard.appendChild(dataHead);
+    var dataBar = el("div", "cfg-general-grid");
+    var sharesInfo = el("div", "cfg-general-row");
+    var sharesInfoBox = el("div", "cfg-general-info");
+    sharesInfoBox.appendChild(el("div", "cfg-general-label", "分享快照"));
+    sharesInfoBox.appendChild(el("div", "cfg-general-desc", "已创建 " + ((S.sharedIds || []).length) + " 个只读分享链接"));
+    var shareBtn = el("button", "btn ghost", "查看 / 撤销分享");
+    shareBtn.type = "button";
+    shareBtn.addEventListener("click", function () { openShareManager(); });
+    sharesInfo.appendChild(sharesInfoBox);
+    sharesInfo.appendChild(shareBtn);
+    dataBar.appendChild(sharesInfo);
+    dataCard.appendChild(dataBar);
+    wrap.appendChild(dataCard);
+
+    body.appendChild(wrap);
+  }
+
+  /** 分享管理：列出全部快照，支持逐个打开与撤销。 */
+  function openShareManager() {
+    getJSON("/api/shares").then(function (j) {
+      var shares = j.shares || [];
+      openModal("分享管理（" + shares.length + "）", function (body) {
+        if (!shares.length) {
+          body.appendChild(el("div", "empty-note", "还没有分享快照。右键侧栏会话 → 「分享 · 复制只读链接」即可创建。"));
+          return;
+        }
+        shares.forEach(function (sh) {
+          var row = el("div", "share-row");
+          var info = el("div", "share-info");
+          info.appendChild(el("div", "share-title", sh.title || sh.sessionId));
+          info.appendChild(el("div", "share-url", location.origin + "/share/" + sh.token));
+          row.appendChild(info);
+          var open = el("button", "mini-btn", "打开");
+          open.type = "button";
+          open.addEventListener("click", function () { window.open("/share/" + sh.token, "_blank"); });
+          row.appendChild(open);
+          var copy = el("button", "mini-btn", "复制链接");
+          copy.type = "button";
+          copy.addEventListener("click", function () { copyText(location.origin + "/share/" + sh.token); toast("已复制", "ok"); });
+          row.appendChild(copy);
+          var rev = el("button", "mini-btn share-revoke", "撤销");
+          rev.type = "button";
+          rev.addEventListener("click", function () {
+            delJSON("/api/share", { id: sh.sessionId }).then(function () {
+              toast("已撤销分享", "ok");
+              refreshSessions();
+              var m = $("modal");
+              if (m && !m.hidden) { closeModal(); openShareManager(); }
+            });
+          });
+          row.appendChild(rev);
+          body.appendChild(row);
+        });
+      }, [{ label: "关闭", fn: closeModal }]);
+    });
   }
 
   function renderProvidersTab(body, c) {

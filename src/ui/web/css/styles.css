@@ -650,6 +650,29 @@ svg { flex: none; }
 .toc-idx { font-size: 10.5px; color: var(--fg-4); font-variant-numeric: tabular-nums; flex-shrink: 0; }
 .toc-text { font-size: 12.5px; color: var(--fg-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
+/* ---- 设置中心「通用与外观」页签 ---- */
+.cfg-general-grid { display: flex; flex-direction: column; gap: 4px; }
+.cfg-general-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 9px 4px; border-bottom: 1px dashed color-mix(in srgb, var(--border) 55%, transparent); }
+.cfg-general-row:last-child { border-bottom: 0; }
+.cfg-general-info { min-width: 0; }
+.cfg-general-label { font-size: 13.5px; color: var(--fg); font-weight: 550; }
+.cfg-general-desc { font-size: 11.5px; color: var(--fg-4); margin-top: 1px; }
+.cfg-general-select, .cfg-general-input {
+  height: 30px; padding: 0 10px; border-radius: 8px;
+  border: 1px solid var(--border); background: var(--bg);
+  color: var(--fg); font-size: 12.5px; flex-shrink: 0; min-width: 120px;
+}
+.cfg-general-row .btn { flex-shrink: 0; min-width: 64px; }
+
+/* ---- 分享管理 ---- */
+.share-row { display: flex; align-items: center; gap: 10px; padding: 9px 4px; border-bottom: 1px dashed color-mix(in srgb, var(--border) 55%, transparent); }
+.share-row:last-child { border-bottom: 0; }
+.share-info { min-width: 0; flex: 1; }
+.share-title { font-size: 13px; color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.share-url { font-size: 11px; color: var(--fg-4); font-family: ui-monospace, monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.share-row .mini-btn { flex-shrink: 0; }
+.share-revoke { color: var(--crit); }
+
 /* 正在生成的星标 */
 .live {
   max-width: var(--read-w);
