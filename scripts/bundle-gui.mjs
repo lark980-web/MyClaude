@@ -55,25 +55,40 @@ const body = Object.entries(FILES)
   })
   .join("\n");
 
-const source = readFileSync(ASSETS, "utf8");
+const raw = readFileSync(ASSETS, "utf8");
+
+// 历史堆积清理：EMBEDDED 前的 banner 注释曾被逐轮追加到上百层，且存在
+// 两代形态（3 行旧版 / 4 行新版）。行级状态机：`/**` 起始的注释若在
+// 闭合前含有 banner 文本，整块删除（残渣孤立 `*/` 一并吞掉）。
+let source = raw;
+{
+  const lines = raw.split(/\r?\n/);
+  const out = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i] === "/**") {
+      // 看这个注释块是否是 banner（闭合 ` */` 前含 banner 文本）
+      let j = i + 1;
+      let isBanner = false;
+      for (; j < lines.length; j++) {
+        if (lines[j].includes("Embedded copies of src/ui/web/*")) { isBanner = true; }
+        if (lines[j] === " */" || lines[j] === "*/") { break; }
+      }
+      if (isBanner) {
+        i = j; // 连同闭合行一起跳过
+        continue;
+      }
+    }
+    out.push(lines[i]);
+  }
+  source = out.join("\n");
+}
 
 // Replace the whole `const EMBEDDED = {...};` declaration, whatever preceded it.
 // Matching the declaration (not a comment) keeps this script idempotent.
-let start = source.indexOf("const EMBEDDED = {");
-if (start < 0) throw new Error("assets.js has no EMBEDDED declaration to fill");
-// 连同声明上方旧生成的注释头一起替换——否则每次构建都会在 EMBEDDED 前
-// 堆一层注释（现库版本已堆了 4 层）。
-const BANNER = "Embedded copies of src/ui/web/*";
-for (;;) {
-  const cStart = source.lastIndexOf("/**", start);
-  if (cStart < 0) { break; }
-  const cEnd = source.indexOf("*/", cStart);
-  if (cEnd < 0 || cEnd > start) { break; }
-  if (!source.slice(cStart, cEnd).includes(BANNER)) { break; }
-  start = cStart;
-  break;
-}
-const end = source.indexOf("\n};", start);
+const declAt = source.indexOf("const EMBEDDED = {");
+if (declAt < 0) throw new Error("assets.js has no EMBEDDED declaration to fill");
+const start = declAt;
+const end = source.indexOf("\n};", declAt);
 if (end < 0) throw new Error("assets.js EMBEDDED declaration is not terminated");
 
 const block =
