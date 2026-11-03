@@ -1235,7 +1235,136 @@
       foot.appendChild(bell);
       foot.appendChild(el("span", "shortcut-sound-note", "回合完成与等待确认时播放（点按可试听）"));
       body.appendChild(foot);
+
+      var foot2 = el("div", "shortcut-sound");
+      var ntf = el("button", "btn ghost" + (notifyEnabled() ? "" : " off"), notifyEnabled() ? "🔔 桌面通知：开" : "🔕 桌面通知：关");
+      ntf.type = "button";
+      ntf.addEventListener("click", function () {
+        var next = !notifyEnabled();
+        setNotifyPref(next);
+        if (next) { askNotifyPermission(function (granted) {
+          ntf.textContent = granted ? "🔔 桌面通知：开" : "🔕 桌面通知：关（浏览器未授权）";
+          ntf.classList.toggle("off", !granted);
+          if (!granted) { toast("浏览器拒绝了通知权限，请在地址栏权限图标里允许", "warn"); }
+        }); }
+        else { ntf.textContent = "🔕 桌面通知：关"; ntf.classList.add("off"); }
+      });
+      foot2.appendChild(ntf);
+      foot2.appendChild(el("span", "shortcut-sound-note", "切到其他标签页时，回复完成/等待确认会发系统通知"));
+      body.appendChild(foot2);
     }, [{ label: "关闭", fn: closeModal }]);
+  }
+
+  /* ---- 桌面通知（对齐 claude.ai 的 tab 隐藏时通知）----
+   * 只在 document.hidden 时打扰；回到页面即清除未读并把标题复原。 */
+  var LS_NOTIFY = "myclaude.notify";
+  var notifyPref = "off";
+  var unreadCount = 0;
+  var baseTitle = document.title;
+  try { notifyPref = localStorage.getItem(LS_NOTIFY) === "on" ? "on" : "off"; } catch (e) {}
+
+  function notifyEnabled() { return notifyPref === "on"; }
+
+  function setNotifyPref(on) {
+    notifyPref = on ? "on" : "off";
+    try { localStorage.setItem(LS_NOTIFY, notifyPref); } catch (e) {}
+  }
+
+  function askNotifyPermission(cb) {
+    if (!("Notification" in window)) { toast("此浏览器不支持桌面通知", "warn"); if (cb) { cb(false); } return; }
+    if (Notification.permission === "granted") { if (cb) { cb(true); } return; }
+    if (Notification.permission === "denied") { if (cb) { cb(false); } return; }
+    Notification.requestPermission().then(function (p) { if (cb) { cb(p === "granted"); } }).catch(function () { if (cb) { cb(false); } });
+  }
+
+  function maybeNotify(title, body) {
+    if (!notifyEnabled() || !document.hidden) { return; }
+    unreadCount++;
+    document.title = "(" + unreadCount + ") " + baseTitle;
+    try {
+      if ("Notification" in window && Notification.permission === "granted") {
+        var n = new Notification(title, { body: body, tag: "myclaude", silent: soundEnabled() });
+        n.onclick = function () { try { window.focus(); n.close(); } catch (e) {} };
+        setTimeout(function () { try { n.close(); } catch (e) {} }, 8000);
+      }
+    } catch (e) {}
+  }
+
+  document.addEventListener("visibilitychange", function () {
+    if (!document.hidden) { unreadCount = 0; document.title = baseTitle; }
+  });
+
+  /* ---- 输入草稿按会话保留（对齐 claude.ai 的 composer 草稿）----
+   * 切会话/刷新不丢正在写的内容；发送后清空。 */
+  var LS_DRAFT_PREFIX = "myclaude.draft.";
+  var draftTimer = null;
+
+  function draftKey() { return LS_DRAFT_PREFIX + (S.sessionKey || "draft"); }
+
+  function saveDraftNow(text) {
+    try {
+      if (text) { localStorage.setItem(draftKey(), text); }
+      else { localStorage.removeItem(draftKey()); }
+    } catch (e) {}
+  }
+
+  function saveDraftSoon(text) {
+    clearTimeout(draftTimer);
+    draftTimer = setTimeout(function () { saveDraftNow(text); }, 400);
+  }
+
+  function restoreDraft() {
+    var ta = $("in");
+    if (!ta) { return; }
+    var saved = "";
+    try { saved = localStorage.getItem(draftKey()) || ""; } catch (e) {}
+    // 无条件覆盖：目标会话没有草稿就清空输入框，避免把上一个会话的
+    // 半句话发到错误的对话里（claude.ai 的 per-conversation draft 语义）。
+    ta.value = saved;
+    autoGrow(ta);
+  }
+
+  function clearDraft() { saveDraftNow(""); }
+
+  /* ---- 图片灯箱（对齐 claude.ai 的消息图片点击放大）---- */
+  function openLightbox(src, alt) {
+    var old = $("lightbox");
+    if (old && old.parentNode) { old.parentNode.removeChild(old); }
+    var ov = el("div", "lightbox-veil");
+    ov.id = "lightbox";
+    var img = document.createElement("img");
+    img.className = "lightbox-img";
+    img.src = src;
+    img.alt = alt || "";
+    ov.appendChild(img);
+    ov.appendChild(el("span", "lightbox-hint", "点击任意处或按 Esc 关闭"));
+    ov.addEventListener("click", function () { if (ov.parentNode) { ov.parentNode.removeChild(ov); } });
+    document.body.appendChild(ov);
+  }
+
+  /* ---- 搜索命中跳转：恢复会话后滚动到命中的那条消息 ---- */
+  function jumpToSnippet(snippet) {
+    var core = String(snippet || "").replace(/[…\s]+/g, " ").trim().slice(0, 48);
+    if (!core) { return; }
+    var tries = 0;
+    var timer = setInterval(function () {
+      tries++;
+      var root = logRoot();
+      var nodes = root ? Array.prototype.slice.call(root.querySelectorAll(".msg-user, .msg-asst")) : [];
+      var hit = null;
+      for (var i = 0; i < nodes.length; i++) {
+        var norm = (nodes[i].textContent || "").replace(/\s+/g, " ");
+        if (norm.indexOf(core) >= 0) { hit = nodes[i]; break; }
+      }
+      if (hit) {
+        clearInterval(timer);
+        hit.scrollIntoView({ behavior: "smooth", block: "center" });
+        hit.classList.add("msg-flash");
+        setTimeout(function () { hit.classList.remove("msg-flash"); }, 2600);
+      } else if (tries > 20) {
+        clearInterval(timer);
+      }
+    }, 200);
   }
 
   /* ---- 消息置顶与聊天区顶部置顶栏 (Pin Messages to Top of Chat Area) ---- */
@@ -2540,8 +2669,8 @@
       scrollStream();
       return;
     }
-    if (ev.type === "confirm") { playChime("ask"); showConfirm(ev); return; }
-    if (ev.type === "question") { playChime("ask"); showQuestion(ev); return; }
+    if (ev.type === "confirm") { playChime("ask"); maybeNotify("需要你的确认", "MyClaude 正在等待工具调用授权"); showConfirm(ev); return; }
+    if (ev.type === "question") { playChime("ask"); maybeNotify("有一个问题等你回答", "MyClaude 需要你的输入才能继续"); showQuestion(ev); return; }
     if (ev.type === "mode") { setMode(ev.permissionMode); return; }
     if (ev.type === "max_turns") { addMaxTurnsCard(ev.limit); return; }
     if (ev.type === "todos") {
@@ -2589,7 +2718,7 @@
       return;
     }
     if (ev.type === "compact") { addNotice("上下文已压缩（丢弃 " + (ev.dropped ?? "?") + " 条旧消息），长对话继续", "info"); }
-          if (ev.type === "done") { playChime("done"); setBusy(false); }
+          if (ev.type === "done") { playChime("done"); maybeNotify("回复已完成", "MyClaude 的新回复已生成，点击回到对话"); setBusy(false); }
   }
 
   function sendMessage() {
@@ -2607,6 +2736,7 @@
     }
 
     ta.value = ""; autoGrow(ta);
+    clearDraft();
     S.attachments = []; renderAttachments();
     S.lastUserText = text;
     if (S.history[S.history.length - 1] !== text) { S.history.push(text); }
@@ -3958,6 +4088,9 @@
     // turns a convenience into noise. Only an explicit click reports back.
     var quiet = opts && opts.quiet;
     if (S.busy) { toast("请等待当前回复结束", "warn"); return; }
+    // 切走前把正在写的草稿存回当前会话名下（此刻 draftKey 还指向旧会话）
+    var taNow = $("in");
+    if (taNow && taNow.value) { saveDraftNow(taNow.value); }
     postJSON("/api/session", { action: "resume", id: id, sessionKey: S.sessionKey || id }).then(function (j) {
       S.sessionKey = j.id;
       try { localStorage.setItem(LS_SESSION, j.id); } catch (e) { }
@@ -3965,6 +4098,7 @@
       if (j.stats) { S.stats = { messages: j.stats.messages || 0, turns: j.stats.turns || 0, tokens: j.stats.tokens || 0, inputTokens: j.stats.inputTokens || 0, outputTokens: j.stats.outputTokens || 0, contextLimit: j.stats.contextLimit || 0, contextUsed: j.stats.contextUsed || 0 }; }
       if (Array.isArray(j.todos)) { S.todos = j.todos; } // 待办列表随会话恢复
       replayTranscript(j.transcript || []);
+      restoreDraft(); // 草稿按会话保留：切回来接着写
       renderInspector();
       refreshSessions();
       refreshStats();
@@ -4173,6 +4307,8 @@
 
   function newChat() {
     if (S.busy) { return; }
+    var taNow = $("in");
+    if (taNow && taNow.value && S.sessionKey) { saveDraftNow(taNow.value); }
     postJSON("/api/reset", {}).then(function () {
       msgSeqCounter = 0;
       S.sessionKey = null;
@@ -4194,6 +4330,7 @@
       restoreWelcome();
       renderInspector();
       refreshSessions();
+      restoreDraft(); // 新对话也读「draft」键的未发送草稿
       var ta = $("in");
       if (ta) { ta.focus(); }
     }).catch(function (e) { toast("新建失败：" + e.message, "err"); });
@@ -5416,6 +5553,7 @@
         autoGrow(ta);
         updateSlashMenu(ta.value);
         updateAtMenu(ta);
+        saveDraftSoon(ta.value);
       });
       ta.addEventListener("keydown", function (e) {
         if (atOpen) {
@@ -5653,6 +5791,18 @@
       if (t && t.getAttribute && t.getAttribute("data-close")) { closeModal(); }
       if (t && t.getAttribute && t.getAttribute("data-proj-close")) { closeProjectModal(); }
     });
+
+    // 消息内图片点击放大（灯箱）
+    var logBox = $("log");
+    if (logBox) {
+      logBox.addEventListener("click", function (e) {
+        var img = e.target && e.target.closest ? e.target.closest(".md img") : null;
+        if (img && img.src) {
+          e.preventDefault();
+          openLightbox(img.src, img.alt);
+        }
+      });
+    }
 
     document.addEventListener("keydown", function (e) {
       var tag = (e.target && e.target.tagName) || "";
@@ -9029,6 +9179,7 @@ function switchInspectorTab(tab) {
             item.addEventListener("click", function () {
               closeModal();
               resumeSession(r.sessionId);
+              jumpToSnippet(r.snippet);
             });
             host.appendChild(item);
           });
