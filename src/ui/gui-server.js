@@ -567,13 +567,19 @@ function buildFileIndex() {
     for (const e of entries) {
       if (skipDirs.has(e.name)) continue;
       const full = join(dir, e.name);
-      if (e.isDirectory()) { walkSync(full, depth + 1); continue; }
+      const relAny = relative(root, full).replace(/\\/g, "/");
+      if (e.isDirectory()) {
+        // 目录也进索引（rel 带尾斜杠）：@ 菜单支持「进目录继续找」，
+        // 与 Claude Code 的 @ 目录浏览行为一致。
+        if (results.length < 400) { results.push({ name: e.name, rel: relAny + "/", path: full, size: 0, isDir: true }); }
+        walkSync(full, depth + 1);
+        continue;
+      }
       const ext = extname(e.name).toLowerCase();
       if (BINARY_EXT.has(ext)) continue;
-      const rel = relative(root, full).replace(/\\/g, "/");
       let size = 0;
       try { size = statSync(full).size; } catch {}
-      results.push({ name: e.name, rel, path: full, size });
+      results.push({ name: e.name, rel: relAny, path: full, size });
     }
   }
   walkSync(resolve(cwd), 0);

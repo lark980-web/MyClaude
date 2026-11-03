@@ -7773,10 +7773,11 @@
     host.hidden = false;
     clear(host);
     atMatches.slice(0, 10).forEach(function (f, i) {
+      var isDir = f.isDir || /\/$/.test(f.rel || "");
       var row = el("button", "slash-item" + (i === atIndex ? " sel" : ""));
       row.type = "button";
       row.appendChild(el("span", "slash-k", "@" + f.rel));
-      row.appendChild(el("span", "slash-d", (f.isProjectUpload ? "[Projects 上传] " : "") + bytes(f.size)));
+      row.appendChild(el("span", "slash-d", (f.isProjectUpload ? "[Projects 上传] " : "") + (isDir ? "目录 · 回车进入" : bytes(f.size))));
       row.addEventListener("mousedown", function (e) {
         e.preventDefault();
         atIndex = i;
@@ -7795,6 +7796,21 @@
   function atAccept() {
     var item = atMatches[atIndex];
     if (!item) { closeAtMenu(); return; }
+    // 目录行：不关菜单，把 @ 查询替换成「rel/」继续往深处浏览
+    // （对齐 Claude Code 的 @ 目录行为）。
+    if (item.isDir || /\/$/.test(item.rel || "")) {
+      var taDir = $("in");
+      if (taDir && atStartPos >= 0) {
+        var caretDir = typeof taDir.selectionStart === "number" ? taDir.selectionStart : taDir.value.length;
+        // 保留 @ 前缀：@src/ 继续触发补全，光标落在斜杠后
+        taDir.value = taDir.value.slice(0, atStartPos) + "@" + (item.rel || "") + taDir.value.slice(caretDir);
+        var nextPos = atStartPos + 1 + (item.rel || "").length;
+        taDir.setSelectionRange(nextPos, nextPos);
+        autoGrow(taDir);
+      }
+      fetchAtFiles(String(item.rel || ""));
+      return;
+    }
     var ta = $("in");
     if (ta && atStartPos >= 0) {
       var caret = typeof ta.selectionStart === "number" ? ta.selectionStart : ta.value.length;
