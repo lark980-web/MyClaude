@@ -8843,6 +8843,18 @@ function switchInspectorTab(tab) {
         }
       });
     }
+    // 快捷重构 chips（对齐 claude.ai 代码视图的 Add comments 等快捷操作）：
+    // 点击把指令填进迭代输入框并直接提交
+    var chipHost = $("artifact-quick-chips");
+    if (chipHost) {
+      Array.prototype.forEach.call(chipHost.querySelectorAll(".art-chip"), function (chip) {
+        chip.addEventListener("click", function () {
+          if (!S.activeArtifactId) { toast("先在画布里打开一个 Artifact", "warn"); return; }
+          if (inpRefineArt) { inpRefineArt.value = chip.getAttribute("data-chip") || ""; }
+          submitArtifactRefine();
+        });
+      });
+    }
     var btnCopyArt = $("btn-art-copy");
     if (btnCopyArt) {
       btnCopyArt.addEventListener("click", function () {

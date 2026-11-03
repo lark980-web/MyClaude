@@ -673,6 +673,17 @@ svg { flex: none; }
 .share-row .mini-btn { flex-shrink: 0; }
 .share-revoke { color: var(--crit); }
 
+/* ---- Artifact 快捷重构 chips ---- */
+.artifact-quick-chips { display: flex; gap: 6px; flex-wrap: wrap; padding: 8px 2px 0; }
+.art-chip {
+  height: 32px; padding: 0 12px; border-radius: 16px;
+  border: 1px solid var(--border); background: transparent;
+  color: var(--fg-3); font-size: 12px;
+  transition: all var(--t) var(--ease);
+}
+.art-chip:hover { border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); color: var(--fg); background: var(--hover); }
+.art-chip:active { transform: scale(0.96); }
+
 /* 正在生成的星标 */
 .live {
   max-width: var(--read-w);

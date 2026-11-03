@@ -8,8 +8,13 @@ import { createServer } from "node:http";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { loadCommands, findCommand, expandCommand, commandDirs } from "../src/commands.js";
-import { startGui } from "../src/ui/gui-server.js";
+// MYCLAUDE_HOME 必须在加载任何会读 CONFIG_DIR 的模块之前就位：
+// commands.js 与 gui-server 都静态引用 config.js（CONFIG_DIR 在模块初始化时
+// 定死），而 ESM 静态 import 会提升。不隔离的话，本机常驻 GUI 的单实例锁
+// 会让这两个 HTTP 用例直接撞锁失败（"MyClaude GUI 已在运行"）。
+process.env.MYCLAUDE_HOME = mkdtempSync(join(tmpdir(), "myclaude-cmd-home-"));
+const { loadCommands, findCommand, expandCommand, commandDirs } = await import("../src/commands.js");
+const { startGui } = await import("../src/ui/gui-server.js");
 
 function projectWithCommands(files) {
   const root = mkdtempSync(join(tmpdir(), "mc-cmd-"));
