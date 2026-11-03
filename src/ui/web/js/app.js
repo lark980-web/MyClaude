@@ -2256,6 +2256,9 @@
     handle.raw = b.raw || "";
     handle.wrap._raw = handle.raw;
     handle.wrap._citations = b.citations || [];
+    // 分支换了，旧追问卡的建议不再成立
+    var oldF = handle.wrap.querySelector(".followup-row");
+    if (oldF && oldF.parentNode) { oldF.parentNode.removeChild(oldF); }
     flushAssistant(handle, handle.raw, false);
     addCopyActions(handle);
     toast("已切换至回复版本 " + (targetIdx + 1) + " / " + branches.length, "info");
@@ -2328,34 +2331,44 @@
     }
 
     decorateCitationsInMessage(handle);
+    // 追问卡不再在这里渲染：多步任务里每个工具段收束都会走 addCopyActions，
+    // 把中间小结当成完整回答 → 任务进行中连续冒出多组追问卡（用户实测反馈）。
+    // 现在只在回合真正结束（done 事件）时由 renderFollowupForLastAnswer 渲染一次。
+  }
 
-    var oldFollowup = handle.wrap && handle.wrap.querySelector(".followup-row");
-    if (oldFollowup && oldFollowup.parentNode) {
-      oldFollowup.parentNode.removeChild(oldFollowup);
-    }
-    if (handle.wrap && (handle.raw || "").trim().length > 20) {
-      var fRow = el("div", "followup-row");
-      fRow.appendChild(el("span", "followup-label", "继续追问："));
-      buildFollowupPrompts(handle.raw, handle.body).forEach(function (item, idx) {
-        var card = el("button", "followup-card");
-        card.type = "button";
-        var top = el("span", "fc-top");
-        top.appendChild(el("span", "fc-num", (idx + 1 < 10 ? "0" : "") + (idx + 1)));
-        top.appendChild(el("span", "fc-arrow", "\u2192"));
-        card.appendChild(top);
-        card.appendChild(el("span", "fc-title", item.t));
-        card.appendChild(el("span", "fc-desc", item.d));
-        card.addEventListener("click", function () {
-          var ta = $("in");
-          if (!ta) { return; }
-          ta.value = item.d;
-          autoGrow(ta);
-          if (!S.busy) { sendMessage(); } else { ta.focus(); }
-        });
-        fRow.appendChild(card);
+  /** 回合结束（done）后，给最后一条 AI 回复渲染一组「继续追问」卡。 */
+  function renderFollowupForLastAnswer() {
+    var root = logRoot();
+    if (!root) { return; }
+    var asst = root.querySelectorAll(".msg-asst");
+    var wrap = asst[asst.length - 1];
+    if (!wrap) { return; }
+    var old = wrap.querySelector(".followup-row");
+    if (old && old.parentNode) { old.parentNode.removeChild(old); }
+    var raw = String(wrap._raw != null ? wrap._raw : wrap.textContent || "").trim();
+    if (raw.length <= 20) { return; }
+    var bodyEl = wrap.querySelector(".md");
+    var fRow = el("div", "followup-row");
+    fRow.appendChild(el("span", "followup-label", "继续追问："));
+    buildFollowupPrompts(raw, bodyEl).forEach(function (item, idx) {
+      var card = el("button", "followup-card");
+      card.type = "button";
+      var top = el("span", "fc-top");
+      top.appendChild(el("span", "fc-num", (idx + 1 < 10 ? "0" : "") + (idx + 1)));
+      top.appendChild(el("span", "fc-arrow", "\u2192"));
+      card.appendChild(top);
+      card.appendChild(el("span", "fc-title", item.t));
+      card.appendChild(el("span", "fc-desc", item.d));
+      card.addEventListener("click", function () {
+        var ta = $("in");
+        if (!ta) { return; }
+        ta.value = item.d;
+        autoGrow(ta);
+        if (!S.busy) { sendMessage(); } else { ta.focus(); }
       });
-      handle.wrap.appendChild(fRow);
-    }
+      fRow.appendChild(card);
+    });
+    wrap.appendChild(fRow);
   }
 
   /**
@@ -2785,6 +2798,8 @@
             // 重新打字或去找上一条消息。
             if (_turnHadError && S.lastUserText) { addRetryCard(); }
             _turnHadError = false;
+            // 追问卡只在这里出现一次：整回合收束后，最后一条 AI 回复上
+            renderFollowupForLastAnswer();
             // AI 自动命名是回合外异步完成的：晚 3 秒刷新一次侧栏拿标题
             setTimeout(function () { refreshSessions(); }, 3000);
             setBusy(false);

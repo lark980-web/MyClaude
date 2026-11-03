@@ -417,6 +417,9 @@ const makeTurnUi = (res, key) => {
         : (firstUser.content || []).filter((p) => p && p.type === "text").map((p) => p.text).join(" ")).slice(0, 400);
       if (!uText) { return; }
       const provider = createProvider(config);
+      // 8s 兜底：signal 掐底层 socket，race timer 提前结算（unref 不拖退出，
+      // 但结算后必须 clearTimeout——否则回调在 Promise 作用域外触发 r → 崩进程）。
+      let titleTimer = null;
       const out = await Promise.race([
         provider.complete({
           messages: [{
@@ -424,18 +427,14 @@ const makeTurnUi = (res, key) => {
             content: "为下面的对话生成一个不超过16字的中文标题，概括用户的核心意图。只输出标题本身：不要引号、句号、前缀或任何解释。\n\n用户: " + uText + "\n\n助手: " + String(firstAsst.content).slice(0, 400),
           }],
           maxTokens: 512,
-          // 硬保底：signal 直接掐断底层 socket。曾靠外层 8s race，但那是新
-          // provider 实例（无 abort 记录、完整 90s 超时），socket 挂死 90s
-          // 拖住了测试的 backend.close 与 GUI 的快速关停。
           signal: AbortSignal.timeout(8000),
         }),
-        (() => {
-          // unref：这只是 abort 兜底，不该拖住进程退出
-          const t = setTimeout(() => r(null), 8000);
-          if (typeof t.unref === "function") { t.unref(); }
-          return t;
-        })(),
+        new Promise((resolveRace) => {
+          titleTimer = setTimeout(() => resolveRace(null), 8000);
+          if (typeof titleTimer.unref === "function") { titleTimer.unref(); }
+        }),
       ]);
+      if (titleTimer) { clearTimeout(titleTimer); titleTimer = null; }
       const raw = out && out.text ? String(out.text).trim() : "";
       const title = raw.replace(/^["'「『]+|["'」』。.]+$/g, "").replace(/\s+/g, " ").slice(0, 40);
       if (!title) { return; }
