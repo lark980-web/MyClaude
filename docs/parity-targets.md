@@ -3,7 +3,29 @@
 > 本文件是「逐项对比→实现→测试」循环的工作清单。完成的划掉并更新
 > replica/features.csv。对照基准：claude-src 2.1.276 + 已安装 CLI 2.1.302。
 
-## 已完成
+## 已完成（2026-11-04 凌晨循环 —— GUI 对齐 claude.ai 三轮，0.19.0）
+
+- [x] 键盘快捷键面板（? / Ctrl+/）+ Ctrl+Shift+O 新对话
+- [x] 提示音（WebAudio 合成：done/ask/err 三音色，可开关试听）
+- [x] 桌面通知（hidden 时通知+标题未读计数+权限流）
+- [x] 消息反馈 👍/👎（feedback.json sidecar，digest 恢复）
+- [x] 分享对话只读快照（/share/<token>，一会话一 token，撤销，侧栏角标，分享管理器）
+- [x] 导出 HTML 自包含快照（与分享页同渲染器）
+- [x] 重试菜单三变体（重新生成/更简短/更详细）
+- [x] 回复截断「继续生成」（finish_reason=length → truncated 事件）
+- [x] 错误后「重试」卡片
+- [x] AI 自动会话命名（首回合后 16 字内标题，session_title 事件）
+- [x] Artifact 版本切换器（◀ vN/T ▶）+ 新窗口打开 + 快捷重构 chips
+- [x] 输入草稿按会话保留/恢复/清空
+- [x] 搜索命中跳转（滚动+闪烁定位）
+- [x] 图片灯箱
+- [x] 侧栏时间分组视图（今天/昨天/近7天…与项目视图切换）
+- [x] 主题三态（深/浅/跟随系统）
+- [x] 设置中心「通用与外观」页签
+- [x] @ 菜单目录浏览（进入目录继续找）
+- [x] 会话恢复渐进渲染（641 条 30s→0.5s 首屏）
+
+## 已完成（历史）
 
 - [x] /review —— ca93a72（TUI customPrompt 通道 + GUI runCommand 组提示词）
 - [x] /output-style —— a748fe6 + 862c319 + 14a0663（内置三风格 + 自定义 md +
