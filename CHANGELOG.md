@@ -55,6 +55,14 @@
 - **错误一键重试**：回合内出现 provider 错误 → done 后给「重试」卡片。
 
 ### Fixed
+- **providers 传输层弃用 fetch，改 node:http 独占连接**：undici 全局池在
+  「headers 已到、body 未读就 abort」时留 half-open 连接，下一回合复用即
+  90s 无响应——停止/断连后的下一回合曾稳定复现。agent:false 每请求独占
+  连接用完即关，整类死连接问题根治；保留 TTFB 短超时 + abort 后 10s
+  怀疑窗（3s 快速失败交 router 重试）。实测 RC2 断连中止 90s→1.5s。
+- **AI 自动命名不再拖回合收束**：fire-and-forget（不 await）；标题请求带
+  `AbortSignal.timeout(8s)` 硬保底——曾因新 provider 实例无 abort 记录、
+  完整 90s 超时打到慢端点，把 done/busy 释放/关停拖住 90s。
 - 顶栏上下文百分比把 token 数当比例，显示「11926700%」——按 contextUsed/contextLimit
   归一并 cap 100%。
 - providers/openai.js `complete()` 引用未定义 `maxTokens`（任何调用直接 ReferenceError）——
@@ -63,6 +71,9 @@
   拖住测试 runner 与 GUI 进程退出——headers 到达即清理 + `unref`。
 - markdown.js 在 `"type": "module"` 包内被 require 拿到空命名空间——share 渲染器改用
   vm 提供 CJS 壳执行该 UMD 文件。
+- test/commands.test.js 静态 import 在 env 设置前求值（CONFIG_DIR 定死真实 home）
+  → 常驻 GUI 单实例锁撞锁；test/disconnect-abort、effort-wiring 的 undici 客户端池
+  idle socket 拖住进程自然退出（after() 显式收尾 + stop() closeAllConnections 兜底）。
 
 ### Tests
 - test/share.test.js（6）：快照复用 token、撤销、超大截断、只读页渲染、工具消息排除。
