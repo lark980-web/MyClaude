@@ -11,6 +11,9 @@ function normalizeBase(baseUrl) {
   return baseUrl.replace(/\/+$/, "");
 }
 
+import http from "node:http";
+import https from "node:https";
+
 export class OpenAIProvider {
   constructor(config) {
     this.config = config;
@@ -24,58 +27,131 @@ export class OpenAIProvider {
     // the gateway took the request and its upstream died. Watched per read in
     // streamChat(); 0 disables the watchdog.
     this.streamIdleMs = Number(config.streamIdleTimeoutMs ?? 120_000);
+    // 上一次 caller abort 的时间戳：abort 后短窗内的请求用短超时，
+    // 防止复用 half-open 死连接时挂满整个超时（见 request() 注释）。
+    this.lastAbortAt = 0;
   }
 
   /**
-   * Fetch with a time-to-first-byte timeout.
+   * Request with a time-to-first-byte timeout, over node:http.
    *
    * The timer covers the wait for the response headers only: after that the
    * request is handed back as a stream, and a long generation must not be cut
    * off just for being long. Silence DURING the stream is watched separately
-   * in streamChat(), because a gateway here has been seen to take the request,
-   * send headers, and then never send a body. Two consequences of that shape:
-   * the old design stalled the agent forever, and the stop button could not
-   * reach the stream either - which is why the caller-abort listener below
-   * deliberately stays attached for the whole life of the body.
+   * in streamChat().
+   *
+   * 为什么不用 fetch：undici 的全局连接池在「headers 已到、body 未读完就
+   * abort」时会留下 half-open 连接（对端已关、client 未察觉），下一个请求
+   * 复用它就是 90s 无响应——停止/断连后的下一回合曾稳定复现。这里
+   * agent:false 每请求独占连接、用完即关，socket 生命周期完全可见，
+   * 整类死连接问题不复存在；每次请求多一次 TCP 握手，对 agent 的请求
+   * 频率（每回合个位数）完全无感。
    */
   async request(url, init, { stream = false } = {}) {
     const caller = init.signal;
-    if (!this.timeoutMs || this.timeoutMs <= 0) {
-      return fetch(url, init);
-    }
-    const controller = new AbortController();
-    let timer = setTimeout(() => controller.abort(new Error("provider timeout")), this.timeoutMs);
-    // unref：请求在途时也不该拖住进程退出（曾经每次 complete() 都留一个
-    // 90s 悬挂定时器，测试 runner 与 GUI 关停都被迫等它）。
-    if (typeof timer.unref === "function") timer.unref();
-    const onAbort = () => controller.abort(caller?.reason ?? new Error("aborted"));
-    if (caller) {
-      if (caller.aborted) onAbort();
-      else caller.addEventListener("abort", onAbort, { once: true });
-    }
-    const clear = () => {
-      if (timer) { clearTimeout(timer); timer = null; }
-    };
-    try {
-      const res = await fetch(url, { ...init, signal: controller.signal });
-      // Headers arrived: stop policing the whole request. Both branches need
-      // this — a non-stream JSON response also resolves at headers, and the
-      // timer used to dangle for the full timeout after every complete().
-      clear();
-      return res;
-    } catch (e) {
-      clear();
-      if (controller.signal.aborted && e?.name === "AbortError") {
-        const reason = controller.signal.reason;
-        if (caller?.aborted) throw Object.assign(new Error("aborted"), { name: "AbortError" });
-        throw new ProviderError(`request timed out after ${Math.round(this.timeoutMs / 1000)}s`, { status: 408 });
+    const u = new URL(url);
+    const mod = u.protocol === "https:" ? https : http;
+    // abort 后短窗内用短超时（保守：刚 abort 完的首字节通常不该久等）
+    const recentAbort = this.lastAbortAt && (Date.now() - this.lastAbortAt < 10_000);
+    const timeoutMs = this.timeoutMs > 0
+      ? (recentAbort ? Math.min(this.timeoutMs, 3_000) : this.timeoutMs)
+      : 0;
+
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      let timer = null;
+      const clearTimer = () => { if (timer) { clearTimeout(timer); timer = null; } };
+      const settle = (ok, value) => {
+        if (settled) { return; }
+        settled = true;
+        clearTimer();
+        if (ok) { resolve(value); } else { reject(value); }
+      };
+
+      const req = mod.request(u, {
+        method: init.method || "GET",
+        headers: init.headers || {},
+        agent: false, // 永不池化——见方法注释
+      }, (res) => {
+        // 响应头到达：TTFB 计时到此为止，长生成不受影响
+        clearTimer();
+        const status = res.statusCode || 0;
+
+        if (stream && status >= 200 && status < 300) {
+          const rs = new ReadableStream({
+            start(controller) {
+              res.on("data", (c) => {
+                try { controller.enqueue(new Uint8Array(c)); } catch {}
+              });
+              res.on("end", () => { try { controller.close(); } catch {} });
+              res.on("error", (e) => { try { controller.error(e); } catch {} });
+            },
+            cancel() {
+              try { res.destroy(); } catch {}
+            },
+          });
+          settle(true, {
+            ok: true,
+            status,
+            headers: res.headers,
+            text: async () => "",
+            json: async () => ({}),
+            body: rs,
+          });
+          return;
+        }
+
+        // 错误响应或非流式：整包缓冲（错误体很小；JSON 响应本来就要整包）
+        const chunks = [];
+        res.on("data", (c) => chunks.push(c));
+        res.on("error", (e) => settle(false, e));
+        res.on("end", () => {
+          const buf = Buffer.concat(chunks).toString("utf8");
+          settle(true, {
+            ok: status >= 200 && status < 300,
+            status,
+            headers: res.headers,
+            text: () => Promise.resolve(buf),
+            json: () => Promise.resolve(JSON.parse(buf || "null")),
+            body: null,
+          });
+        });
+      });
+
+      if (timeoutMs > 0) {
+        timer = setTimeout(() => {
+          const err = new ProviderError(`request timed out after ${Math.round(timeoutMs / 1000)}s`, { status: 408 });
+          req.destroy(err);
+        }, timeoutMs);
+        // unref：请求在途时也不该拖住进程退出
+        if (typeof timer.unref === "function") timer.unref();
       }
-      throw e;
-    }
-    // No finally-removal of the caller-abort listener: the body keeps streaming
-    // after this method returns, and abort must keep forwarding for the whole
-    // life of that stream. The listener is {once:true} on the caller's signal,
-    // which lives for a single turn, so there is nothing to clean up.
+
+      const onCallerAbort = () => {
+        // 记录 caller 主动 abort：下一个请求进入死连接怀疑窗口（短超时）
+        this.lastAbortAt = Date.now();
+        const err = new Error("aborted");
+        err.name = "AbortError";
+        req.destroy(err);
+      };
+      if (caller) {
+        if (caller.aborted) { onCallerAbort(); }
+        else caller.addEventListener("abort", onCallerAbort, { once: true });
+      }
+
+      req.on("error", (e) => {
+        if (e && e.name === "AbortError") {
+          if (caller && caller.aborted) { settle(false, e); return; }
+          settle(false, new ProviderError(`request timed out after ${Math.round((timeoutMs || 0) / 1000)}s`, { status: 408 }));
+          return;
+        }
+        settle(false, e);
+      });
+
+      if (init.body != null) { req.end(init.body); } else { req.end(); }
+    });
+    // caller-abort 监听不清理：方法返回后 body 还在流，abort 必须继续转发；
+    // 监听器 {once:true} 挂在单回合的 caller signal 上，无泄漏。
   }
 
   headers() {
@@ -220,7 +296,14 @@ export class OpenAIProvider {
     }
     } catch (e) {
       if (idle) { clearTimeout(idle); idle = null; }
-      if (e && e.name === "AbortError") throw e;
+      if (e && e.name === "AbortError") {
+        // 主动取消 body：只 reject read 不销毁底层 socket 时，连接会带着
+        // 半开状态回到 keep-alive 池，下一回合复用它就撞上 90s 无响应
+        // （disconnect-abort 的第二个回合曾这样挂满超时）。cancel 触发
+        // 连接销毁，下一个请求拿到的必然是新鲜连接。
+        try { await reader.cancel(); } catch {}
+        throw e;
+      }
       // 流被掐断（网关/上游 socket 死亡）。分两种：
       //  - 还没吐过任何内容：重试是安全的，标 502 交给 router 换候选；
       //  - 已经向调用方输出过：重试会重复输出，标 noRetry 把决定权交回用户。

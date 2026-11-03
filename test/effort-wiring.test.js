@@ -8,6 +8,7 @@
  * same config, which is what makes it one setting with two entry points.
  */
 import test from "node:test";
+import { after } from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { mkdtempSync } from "node:fs";
@@ -17,6 +18,12 @@ import { join } from "node:path";
 process.env.MYCLAUDE_HOME = mkdtempSync(join(tmpdir(), "myclaude-effort-"));
 const { OpenAIProvider } = await import("../src/providers/openai.js");
 const { startGui } = await import("../src/ui/gui-server.js");
+
+// fetch 客户端（undici 池）的空闲 socket 在应用层够不到，会拖住进程自然退出；
+// 断言完成后显式收尾（与 disconnect-abort 的 after 同款）。
+after(() => {
+  setTimeout(() => process.exit(0), 100).unref?.();
+});
 
 /** Provider backend that records request bodies and answers once. */
 function captureBackend() {

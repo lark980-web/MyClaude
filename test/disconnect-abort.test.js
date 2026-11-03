@@ -12,6 +12,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
+import { after } from "node:test";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -60,9 +61,24 @@ async function start() {
   return { server, address, state, backend };
 }
 
+after(() => {
+  // fetch 客户端（undici 池）的空闲 socket 在应用层够不到，会拖住进程自然退出；
+  // 断言早已全部完成，这里显式收尾（与 --test-force-exit 等价，但只作用于本文件）。
+  setTimeout(() => process.exit(0), 100).unref?.();
+});
+
 async function stop(ctx) {
-  await new Promise((r) => ctx.server.close(r));
-  await new Promise((r) => ctx.backend.close(r));
+  // fetch 客户端（undici 池）的 keep-alive socket 会拖住 server.close：
+  // 先强制断光连接，再带兜底超时关闭（与 gui-live-resume 的 stop 同款）。
+  ctx.server.closeAllConnections?.();
+  ctx.backend.closeAllConnections?.();
+  await Promise.race([
+    Promise.all([
+      new Promise((r) => ctx.server.close(r)),
+      new Promise((r) => ctx.backend.close(r)),
+    ]),
+    new Promise((r) => setTimeout(r, 2000)),
+  ]);
 }
 
 test("client disconnect aborts the run and frees the session (RC2)", async () => {

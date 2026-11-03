@@ -424,14 +424,23 @@ const makeTurnUi = (res, key) => {
             content: "为下面的对话生成一个不超过16字的中文标题，概括用户的核心意图。只输出标题本身：不要引号、句号、前缀或任何解释。\n\n用户: " + uText + "\n\n助手: " + String(firstAsst.content).slice(0, 400),
           }],
           maxTokens: 512,
+          // 硬保底：signal 直接掐断底层 socket。曾靠外层 8s race，但那是新
+          // provider 实例（无 abort 记录、完整 90s 超时），socket 挂死 90s
+          // 拖住了测试的 backend.close 与 GUI 的快速关停。
+          signal: AbortSignal.timeout(8000),
         }),
-        new Promise((r) => setTimeout(() => r(null), 8000)),
+        (() => {
+          // unref：这只是 abort 兜底，不该拖住进程退出
+          const t = setTimeout(() => r(null), 8000);
+          if (typeof t.unref === "function") { t.unref(); }
+          return t;
+        })(),
       ]);
       const raw = out && out.text ? String(out.text).trim() : "";
       const title = raw.replace(/^["'「『]+|["'」』。.]+$/g, "").replace(/\s+/g, " ").slice(0, 40);
       if (!title) { return; }
       setSessionTitle(id, title);
-      sse(res, { type: "session_title", title });
+      if (!res.writableEnded) { sse(res, { type: "session_title", title }); }
     } catch {}
   }
 
@@ -2073,10 +2082,11 @@ running.add(key);
           }
         }
         sse(res, { type: "session", id: saver.id, file: saver.file ?? null });
-        // AI 自动命名（对齐 claude.ai 的自动会话标题）：新会话第一回合结束后，
-        // 用当前模型生成一个 16 字内标题。放在 session 事件之后，前端把标题
-        // 绑定到刚采纳的会话 id；8 秒超时兜底，失败静默。
-        await emitAutoTitle(res, agent, saver);
+        // AI 自动命名（对齐 claude.ai 的自动会话标题）。**不 await**：标题请求
+        // 一旦打到慢/挂死的端点，曾把回合收束（done、busy 释放、断连清理）
+        // 拖住最长 8 秒——disconnect 测试因此挂到 90s。标题晚点没关系，
+        // 前端 done 后会延迟 refreshSessions 兜底。
+        emitAutoTitle(res, agent, saver);
         sse(res, { type: "done" });
         turnFinished = true;
         console.log("[" + key + "] 完成 — " + agent.messages.length + " 消息 / " + agent.turnCount + " 回合 / 输入 " + (agent.totalInputTokens || 0) + " / 输出 " + (agent.totalOutputTokens || 0) + " tokens");
