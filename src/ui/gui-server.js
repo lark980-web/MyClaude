@@ -35,7 +35,7 @@ import { MODELS, PROVIDER_PRESETS, findModel, supportsVision, contextWindowOf } 
 
 import { VERSION } from "../version.js";
 import { HOOK_EVENTS, TOOL_EVENTS } from "../hooks.js";
-import { createShare, getShare, findShareToken, deleteSharesForSession, renderSharePage } from "../share.js";
+import { createShare, getShare, findShareToken, deleteSharesForSession, listShares, renderSharePage } from "../share.js";
 const MAX_FILE_BYTES = 1024 * 1024;
 
 /** Paths the file browser must never expose. */
@@ -1999,6 +1999,10 @@ running.add(key);
         if (runResult && runResult.maxTurnsReached) {
           sse(res, { type: "max_turns", limit: config.maxTurns });
         }
+        // finish_reason=length：回复被 max_tokens 截断，前端给「继续生成」。
+        if (runResult && runResult.finishReason === "length") {
+          sse(res, { type: "truncated" });
+        }
         try { saver.save({ force: true }); } catch {}
         sse(res, { type: "todos", todos: getTodos(key) });
         sse(res, { type: "stats", ...statsOf(agent) });
@@ -2270,6 +2274,12 @@ if (path === "/api/session" && req.method === "POST") {
         if (!id) { sendJson(res, 400, { ok: false, error: "id required" }); return; }
         const token = findShareToken(id);
         sendJson(res, 200, { ok: true, token, url: token ? `/share/${token}` : null });
+        return;
+      }
+
+      /* 全量分享索引：侧栏给「已分享」会话打标记用，一次拿全避免逐会话查询 */
+      if (path === "/api/shares" && req.method === "GET") {
+        sendJson(res, 200, { ok: true, shares: listShares() });
         return;
       }
 

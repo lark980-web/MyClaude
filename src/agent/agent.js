@@ -606,7 +606,10 @@ export class Agent {
           }
         }
         this.stopHookUsed = false;
-        return { text, done: true, turns: this.turnCount };
+        // finish_reason=length 说明回复被 max_tokens 截断：GUI 侧用它
+        // 弹「继续生成」按钮，终端侧只在一行提示里带过。
+        this.lastFinishReason = result.finishReason || null;
+        return { text, done: true, turns: this.turnCount, finishReason: this.lastFinishReason };
       }
 
       this.messages.push({

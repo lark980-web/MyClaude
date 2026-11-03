@@ -49,6 +49,8 @@
     pinnedMessages: [],
     pinnedExpanded: false,
     feedback: {},
+    chatView: "project",
+    sharedIds: [],
     project: { activeProjectId: "proj-default", projects: [], name: "当前项目", instructions: "", files: [], knowledge: [], totalTokens: 0, limitTokens: 128000, capacityPct: 0 }
   };
 
@@ -65,6 +67,7 @@
   var LS_STYLE = "myclaude.style";
   var LS_ARCHIVE_POLICY = "myclaude.archive.policy";
   var LS_WEB_SEARCH = "myclaude.websearch";
+  var LS_CHAT_VIEW = "myclaude.chatview";
 
   /* ================================================================ 工具 === */
 
@@ -956,6 +959,28 @@
     wrap.appendChild(btn);
     var hint = el("span", "empty-note", " 或 /auto on 开启自主续跑");
     wrap.appendChild(hint);
+    logRoot().appendChild(wrap);
+    wrap.scrollIntoView({ block: "nearest" });
+  }
+
+  /** 回复被 max_tokens 截断（finish_reason=length）→ 一键续写。 */
+  function addTruncatedCard() {
+    var wrap = el("div", "notice notice-info");
+    var msg = el("span", null, "回复因长度限制被截断。");
+    var btn = el("button", "btn continue-btn", "继续生成");
+    btn.type = "button";
+    btn.title = "让模型从上次中断的地方接着输出";
+    btn.addEventListener("click", function () {
+      if (S.busy) { return; }
+      btn.disabled = true;
+      wrap.remove();
+      runTurn({
+        message: "继续。从上次被截断的地方无缝接着输出，不要重复已有内容。",
+        sessionKey: S.sessionKey
+      });
+    });
+    wrap.appendChild(msg);
+    wrap.appendChild(btn);
     logRoot().appendChild(wrap);
     wrap.scrollIntoView({ block: "nearest" });
   }
@@ -2673,6 +2698,7 @@
     if (ev.type === "question") { playChime("ask"); maybeNotify("有一个问题等你回答", "MyClaude 需要你的输入才能继续"); showQuestion(ev); return; }
     if (ev.type === "mode") { setMode(ev.permissionMode); return; }
     if (ev.type === "max_turns") { addMaxTurnsCard(ev.limit); return; }
+    if (ev.type === "truncated") { addTruncatedCard(); return; }
     if (ev.type === "todos") {
       S.todos = ev.todos || [];
       renderInspector();
@@ -2975,7 +3001,10 @@
   function renderUsage() {
     var host = $("usage");
     if (!host) { return; }
-    var used = S.stats.contextUsed || 0;
+    // contextUsed/contextLimit 都是 token 数（statsOf 已统一单位），比例要现算；
+    // 直接把 token 数当比例乘 100 曾显示出「11926700%」这种荒诞数字。
+    var limit = S.stats.contextLimit || 0;
+    var used = limit > 0 ? Math.min(1, (S.stats.contextUsed || 0) / limit) : 0;
     var ring = host.querySelector(".usage-ring");
     if (ring) {
       var deg = Math.round(used * 360);
@@ -2985,7 +3014,7 @@
     }
     var label = host.querySelector(".usage-pct");
     if (label) { label.textContent = Math.round(used * 100) + "%"; }
-    host.title = "上下文：" + (S.stats.tokens || 0) + " / " + (S.stats.contextLimit || 0) +
+    host.title = "上下文：" + (S.stats.contextUsed || 0) + " / " + (S.stats.contextLimit || 0) +
       " tokens" + (S.stats.inputTokens ? "（输入 " + S.stats.inputTokens + " / 输出 " + S.stats.outputTokens + "）" : "");
   }
 
@@ -3733,6 +3762,15 @@
 
     b.appendChild(el("span", "chat-meta", metaTime));
 
+    // 「已分享」角标：这个会话存在只读快照链接
+    if ((S.sharedIds || []).indexOf(s.id) >= 0) {
+      var sh = el("span", "chat-shared-tag");
+      sh.appendChild(icon("i-share", 11));
+      sh.appendChild(el("span", null, "分享"));
+      sh.title = "此会话已创建只读分享链接（右键可复制链接或取消分享）";
+      b.appendChild(sh);
+    }
+
     if (pendingDelete === s.id) {
       var yes = el("button", "chat-del-yes", "删除");
       yes.type = "button";
@@ -3784,11 +3822,43 @@
    * automatically moving old or low-activity sessions into the collapsible
    * '已归档' group at the bottom of the sidebar.
    */
+  /** 侧栏视图：按项目分组（默认）或按时间分组（今天/昨天/近7天…，对齐 claude.ai）。 */
+  function setChatView(v) {
+    S.chatView = v === "time" ? "time" : "project";
+    try { localStorage.setItem(LS_CHAT_VIEW, S.chatView); } catch (e) {}
+    renderChatList();
+  }
+
+  function timeBucketOf(s) {
+    var t = Date.parse(s.updatedAt || s.savedAt || 0) || 0;
+    if (!t) { return "更早"; }
+    var now = new Date();
+    var startToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    if (t >= startToday) { return "今天"; }
+    if (t >= startToday - 86400000) { return "昨天"; }
+    if (t >= startToday - 7 * 86400000) { return "近 7 天"; }
+    if (t >= startToday - 30 * 86400000) { return "近 30 天"; }
+    return "更早";
+  }
+
+  var TIME_BUCKET_ORDER = ["置顶", "今天", "昨天", "近 7 天", "近 30 天", "更早"];
+
   function renderChatList() {
     var list = $("chat-list");
     if (!list) { return; }
     clear(list);
     renderArchivePolicyButton();
+
+    // 视图切换（项目 ⇄ 时间）
+    var viewSeg = el("div", "chat-view-seg");
+    [["project", "按项目"], ["time", "按时间"]].forEach(function (pair) {
+      var vb = el("button", "chat-view-btn" + ((S.chatView || "project") === pair[0] ? " active" : ""), pair[1]);
+      vb.type = "button";
+      vb.title = pair[0] === "project" ? "按工作目录分组（适合多项目并行）" : "按时间分组：今天/昨天/近 7 天…（claude.ai 风格）";
+      vb.addEventListener("click", function () { setChatView(pair[0]); });
+      viewSeg.appendChild(vb);
+    });
+    list.appendChild(viewSeg);
 
     if (!S.sessions.length) {
       list.appendChild(el("div", "rail-empty", "暂无历史对话"));
@@ -3832,49 +3902,83 @@
       badge.title = "活跃会话 " + activeCount + " 条 · 已归档 " + archivedEntries.length + " 条";
     }
 
-    // Most recently touched active project first.
-    var keys = Object.keys(activeGroups).sort(function (a, b) {
-      return newestAt(activeGroups[b]) - newestAt(activeGroups[a]);
-    });
-
-    if (!keys.length && archivedEntries.length) {
-      list.appendChild(el("div", "rail-empty", "近期无活跃对话（" + archivedEntries.length + " 条旧会话已自动归档）"));
-    }
-
-    keys.forEach(function (key) {
-      var items = activeGroups[key];
-      var open = expandedGroups[key] === true;
-      var wrap = el("div", "chat-group");
-
-      var head = el("button", "chat-group-head");
-      head.type = "button";
-      head.title = key;
-      head.appendChild(el("span", "chat-group-arrow", open ? "\u25BE" : "\u25B8"));
-      head.appendChild(el("span", "chat-group-name", projectName(key)));
-      head.appendChild(el("span", "chat-group-n", String(items.length)));
-      head.addEventListener("click", function () {
-        expandedGroups[key] = !open;
-        renderChatList();
-      });
-      wrap.appendChild(head);
-
+    var buildGroupBlock = function (name, items, opts) {
+      opts = opts || {};
+      var wrap = el("div", "chat-group" + (opts.cls ? " " + opts.cls : ""));
+      var gkey = opts.groupKey || name;
+      // 时间分组默认展开（claude.ai 风格）；项目分组维持旧行为：
+      // 默认收起只显示 GROUP_LIMIT 条，点头部展开全部。
+      var open = opts.defaultOpen ? expandedGroups[gkey] !== false : expandedGroups[gkey] === true;
+      if (items.length) {
+        var head = el("button", "chat-group-head");
+        head.type = "button";
+        head.title = opts.title || name;
+        head.appendChild(el("span", "chat-group-arrow", open ? "\u25BE" : "\u25B8"));
+        head.appendChild(el("span", "chat-group-name", name));
+        head.appendChild(el("span", "chat-group-n", String(items.length)));
+        head.addEventListener("click", function () {
+          expandedGroups[gkey] = !open;
+          renderChatList();
+        });
+        wrap.appendChild(head);
+      }
       var shown = open ? items : items.slice(0, GROUP_LIMIT);
-      shown.forEach(function (s) {
-        wrap.appendChild(buildSessionRow(s, { archived: false }));
-      });
-
+      shown.forEach(function (s) { wrap.appendChild(buildSessionRow(s, { archived: false })); });
       if (!open && items.length > GROUP_LIMIT) {
         var more = el("button", "chat-group-more", "再显示 " + (items.length - GROUP_LIMIT) + " 条");
         more.type = "button";
         more.addEventListener("click", function () {
-          expandedGroups[key] = true;
+          expandedGroups[gkey] = true;
           renderChatList();
         });
         wrap.appendChild(more);
       }
+      return wrap;
+    };
 
-      list.appendChild(wrap);
-    });
+    if ((S.chatView || "project") === "time") {
+      // 时间分组视图：置顶单独一组，其余按 今天/昨天/近7天/近30天/更早
+      var actives = [];
+      Object.keys(activeGroups).forEach(function (key) { actives = actives.concat(activeGroups[key]); });
+      actives.sort(function (a, b) {
+        var ua = Date.parse(a.updatedAt || a.savedAt || 0) || 0;
+        var ub = Date.parse(b.updatedAt || b.savedAt || 0) || 0;
+        return ub - ua;
+      });
+      var buckets = {};
+      actives.forEach(function (s) {
+        var bucket = s.pinned ? "置顶" : timeBucketOf(s);
+        if (!buckets[bucket]) { buckets[bucket] = []; }
+        buckets[bucket].push(s);
+      });
+      TIME_BUCKET_ORDER.forEach(function (name) {
+        if (buckets[name] && buckets[name].length) {
+          list.appendChild(buildGroupBlock(name, buckets[name], {
+            groupKey: "time:" + name,
+            defaultOpen: true,
+            cls: name === "置顶" ? "pinned-group" : "",
+            title: name === "置顶" ? "置顶的会话" : name + "活跃的会话"
+          }));
+        }
+      });
+    } else {
+      // Most recently touched active project first.
+      var keys = Object.keys(activeGroups).sort(function (a, b) {
+        return newestAt(activeGroups[b]) - newestAt(activeGroups[a]);
+      });
+
+      if (!keys.length && archivedEntries.length) {
+        list.appendChild(el("div", "rail-empty", "近期无活跃对话（" + archivedEntries.length + " 条旧会话已自动归档）"));
+      }
+
+      keys.forEach(function (key) {
+        list.appendChild(buildGroupBlock(projectName(key), activeGroups[key], {
+          groupKey: key,
+          title: key,
+          defaultOpen: false
+        }));
+      });
+    }
 
     // 底部「已归档」分组：收纳按时间戳/活跃度自动归档或手动归档的旧会话
     archivedEntries.sort(function (a, b) {
@@ -4076,8 +4180,12 @@
   }
 
   function refreshSessions() {
-    return getJSON("/api/sessions").then(function (j) {
-      S.sessions = j.sessions || [];
+    return Promise.all([
+      getJSON("/api/sessions"),
+      getJSON("/api/shares").catch(function () { return { shares: [] }; })
+    ]).then(function (rs) {
+      S.sessions = rs[0].sessions || [];
+      S.sharedIds = (rs[1].shares || []).map(function (x) { return x.sessionId; });
       renderChatList();
     }).catch(function () {});
   }
@@ -8179,6 +8287,8 @@ function switchInspectorTab(tab) {
       if (savedStyle) { S.style = savedStyle; }
       var savedArchive = localStorage.getItem(LS_ARCHIVE_POLICY);
       if (savedArchive) { S.archivePolicy = savedArchive; }
+      var savedChatView = localStorage.getItem(LS_CHAT_VIEW);
+      if (savedChatView) { S.chatView = savedChatView === "time" ? "time" : "project"; }
     } catch (e) {}
   // S.thinking mirrors config.effort; it is set once the config loads
   // (syncThinkingFromConfig) instead of from localStorage.
