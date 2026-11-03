@@ -546,6 +546,58 @@ svg { flex: none; }
 .mini-btn:hover { background: var(--hover); color: var(--fg-2); }
 .mini-btn:active { transform: scale(0.92); }
 
+/* ---- 消息反馈 👍/👎（对齐 claude.ai 的 message feedback） ---- */
+.mini-btn.fb-btn-up.active, .msg-asst.fb-up .fb-btn-up { color: var(--ok, #3f9d58); background: color-mix(in srgb, var(--ok, #3f9d58) 14%, transparent); }
+.mini-btn.fb-btn-down.active, .msg-asst.fb-down .fb-btn-down { color: var(--crit, #c4554d); background: color-mix(in srgb, var(--crit, #c4554d) 13%, transparent); }
+.msg-asst.fb-up .fb-btn-up, .msg-asst.fb-down .fb-btn-down { opacity: 1; }
+
+/* ---- 重试菜单（重新生成 / 更简短 / 更详细） ---- */
+.mini-menu {
+  position: fixed;
+  z-index: 220;
+  min-width: 218px;
+  padding: 6px;
+  background: var(--bg-2, var(--bg));
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 14px 40px rgba(0,0,0,.22);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  animation: mini-menu-in 140ms var(--ease);
+}
+@keyframes mini-menu-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+.mini-menu-item { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; padding: 7px 10px; border-radius: 8px; text-align: left; }
+.mini-menu-item:hover { background: var(--hover); }
+.mini-menu-label { font-size: 13px; color: var(--fg); font-weight: 550; }
+.mini-menu-desc { font-size: 11.5px; color: var(--fg-4); }
+
+/* ---- 快捷键面板 ---- */
+.shortcut-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 26px; }
+@media (max-width: 720px) { .shortcut-grid { grid-template-columns: 1fr; } }
+.shortcut-col { min-width: 0; }
+.shortcut-head { font-size: 12px; font-weight: 650; color: var(--fg-3); letter-spacing: .06em; margin: 12px 0 6px; text-transform: uppercase; }
+.shortcut-row { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 5px 0; border-bottom: 1px dashed color-mix(in srgb, var(--border) 60%, transparent); }
+.shortcut-row:last-child { border-bottom: 0; }
+.shortcut-keys { display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0; }
+.shortcut-keys kbd {
+  display: inline-block; min-width: 20px; text-align: center;
+  padding: 2px 6px; font-size: 11.5px; font-family: inherit;
+  background: var(--hover); border: 1px solid var(--border);
+  border-bottom-width: 2px; border-radius: 6px; color: var(--fg-2);
+}
+.shortcut-plus { color: var(--fg-4); font-size: 11px; }
+.shortcut-desc { font-size: 13px; color: var(--fg-2); text-align: right; }
+.shortcut-sound { display: flex; align-items: center; gap: 10px; margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border); }
+.shortcut-sound-note { font-size: 12px; color: var(--fg-4); }
+.shortcut-sound .btn.off { opacity: .75; }
+
+/* ---- Artifact 版本切换器（◀ vN/T ▶） ---- */
+.artifact-meta { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.art-ver-btn { flex-shrink: 0; }
+.art-ver-btn:disabled { opacity: .35; cursor: default; }
+.art-ver-indicator { font-size: 11.5px; color: var(--fg-4); white-space: nowrap; padding-right: 4px; font-variant-numeric: tabular-nums; }
+
 /* 正在生成的星标 */
 .live {
   max-width: var(--read-w);

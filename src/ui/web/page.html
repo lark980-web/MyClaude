@@ -83,6 +83,10 @@
     <symbol id="i-volume" viewBox="0 0 20 20"><path d="M4 8.2h2.8L10.5 5v10l-3.7-3.2H4a1 1 0 01-1-1V9.2a1 1 0 011-1z" fill="none" stroke="currentColor" stroke-width="1.45" stroke-linejoin="round"/><path d="M13.2 7.5a3.5 3.5 0 010 5M15.2 5.5a6.2 6.2 0 010 9" fill="none" stroke="currentColor" stroke-width="1.45" stroke-linecap="round"/></symbol>
     <symbol id="i-diff" viewBox="0 0 20 20"><path d="M6 4.5v6M3 7.5h6M3.5 14.5h5M13.5 5.5v9M11 12l2.5 2.5L16 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></symbol>
     <symbol id="i-save" viewBox="0 0 20 20"><path d="M4.5 3.5h8.8l3.2 3.2v9.3a1 1 0 01-1 1h-11a1 1 0 01-1-1v-11.5a1 1 0 011-1z" fill="none" stroke="currentColor" stroke-width="1.45" stroke-linejoin="round"/><path d="M7 3.5v4h5.5v-4M6.8 17v-5h6.4v5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></symbol>
+    <symbol id="i-thumb-up" viewBox="0 0 20 20"><path d="M6.2 9l3-5.4a1.6 1.6 0 013 .8V8.4h3.1a1.6 1.6 0 011.6 1.9l-.9 4.6a1.6 1.6 0 01-1.6 1.3H6.2" fill="none" stroke="currentColor" stroke-width="1.45" stroke-linecap="round" stroke-linejoin="round"/><path d="M6.2 8.6v8H4.4a1 1 0 01-1-1v-6a1 1 0 011-1h1.8z" fill="none" stroke="currentColor" stroke-width="1.45" stroke-linejoin="round"/></symbol>
+    <symbol id="i-thumb-down" viewBox="0 0 20 20"><path d="M13.8 11l-3 5.4a1.6 1.6 0 01-3-.8V11.6H4.7a1.6 1.6 0 01-1.6-1.9l.9-4.6A1.6 1.6 0 015.6 3.8h8.2" fill="none" stroke="currentColor" stroke-width="1.45" stroke-linecap="round" stroke-linejoin="round"/><path d="M13.8 11.4v-8h1.8a1 1 0 011 1v6a1 1 0 01-1 1h-1.8z" fill="none" stroke="currentColor" stroke-width="1.45" stroke-linejoin="round"/></symbol>
+    <symbol id="i-share" viewBox="0 0 20 20"><circle cx="5" cy="10" r="2.2" fill="none" stroke="currentColor" stroke-width="1.45"/><circle cx="14.6" cy="4.6" r="2.2" fill="none" stroke="currentColor" stroke-width="1.45"/><circle cx="14.6" cy="15.4" r="2.2" fill="none" stroke="currentColor" stroke-width="1.45"/><path d="M7 9l5.6-3.3M7 11l5.6 3.3" fill="none" stroke="currentColor" stroke-width="1.45" stroke-linecap="round"/></symbol>
+    <symbol id="i-keyboard" viewBox="0 0 20 20"><rect x="2.5" y="5" width="15" height="10" rx="1.6" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M5.5 8h.01M8.5 8h.01M11.5 8h.01M14.5 8h.01M5.5 11h.01M8.5 11h.01M11.5 11h.01M14.5 11h.01M7 13.4h6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></symbol>
   </defs>
 </svg>
 
@@ -451,7 +455,14 @@
     <div class="artifact-pane" id="artifact-pane" hidden>
       <div class="artifact-bar" id="artifact-bar">
         <div class="artifact-meta">
+          <button class="icon-btn art-ver-btn" id="btn-art-ver-prev" title="上一版本（◀）" aria-label="上一版本" hidden>
+            <svg width="13" height="13" style="transform:rotate(90deg)"><use href="#i-chev"/></svg>
+          </button>
           <select class="artifact-select" id="artifact-select" title="切换当前对话中的 Artifact"></select>
+          <button class="icon-btn art-ver-btn" id="btn-art-ver-next" title="下一版本（▶）" aria-label="下一版本" hidden>
+            <svg width="13" height="13" style="transform:rotate(-90deg)"><use href="#i-chev"/></svg>
+          </button>
+          <span class="art-ver-indicator" id="art-ver-indicator" hidden></span>
         </div>
         <div class="artifact-actions">
           <div class="artifact-view-seg">

@@ -35,6 +35,7 @@ import { MODELS, PROVIDER_PRESETS, findModel, supportsVision, contextWindowOf } 
 
 import { VERSION } from "../version.js";
 import { HOOK_EVENTS, TOOL_EVENTS } from "../hooks.js";
+import { createShare, getShare, findShareToken, deleteSharesForSession, renderSharePage } from "../share.js";
 const MAX_FILE_BYTES = 1024 * 1024;
 
 /** Paths the file browser must never expose. */
@@ -2221,7 +2222,106 @@ if (path === "/api/session" && req.method === "POST") {
         const id = url.searchParams.get("id") || "";
         const data = loadSession(id);
         if (!data) { sendJson(res, 404, { ok: false, error: "session not found" }); return; }
+        if (url.searchParams.get("format") === "html") {
+          // 自包含 HTML 快照下载（与 /share/:token 同一渲染器，离线可读）。
+          const html = renderSharePage({
+            title: withTitle({ id, ...data }).title || id,
+            savedAt: data.updatedAt || data.savedAt,
+            cwd: data.cwd,
+            model: data.model,
+            messages: data.messages || [],
+          });
+          const safe = String(id).replace(/[^0-9A-Za-z_-]/g, "").slice(0, 40) || "session";
+          res.writeHead(200, {
+            "Content-Type": MIME[".html"],
+            "Content-Disposition": `attachment; filename="myclaude-${safe}.html"`,
+            "Cache-Control": "no-store",
+          });
+          res.end(html);
+          return;
+        }
         sendJson(res, 200, { ok: true, id, markdown: toMarkdown(data) });
+        return;
+      }
+
+      /* ---- 分享快照：一个会话一个只读链接，重复分享覆盖快照 ---- */
+      if (path === "/api/share" && req.method === "POST") {
+        const body = await readJson(req);
+        const id = String(body.id || "");
+        const data = loadSession(id);
+        if (!data) { sendJson(res, 404, { ok: false, error: "session not found" }); return; }
+        try {
+          const { token, updated } = createShare(id, {
+            title: withTitle({ id, ...data }).title || id,
+            savedAt: new Date().toISOString(),
+            cwd: data.cwd,
+            model: data.model,
+            messages: data.messages || [],
+          });
+          sendJson(res, 200, { ok: true, token, updated, url: `/share/${token}` });
+        } catch (e) {
+          sendJson(res, 500, { ok: false, error: String(e?.message || e) });
+        }
+        return;
+      }
+
+      if (path === "/api/share" && req.method === "GET") {
+        const id = String(url.searchParams.get("id") || "");
+        if (!id) { sendJson(res, 400, { ok: false, error: "id required" }); return; }
+        const token = findShareToken(id);
+        sendJson(res, 200, { ok: true, token, url: token ? `/share/${token}` : null });
+        return;
+      }
+
+      if (path === "/api/share" && req.method === "DELETE") {
+        const body = await readJson(req);
+        const id = String(body.id || "");
+        const removed = deleteSharesForSession(id);
+        sendJson(res, 200, { ok: true, removed });
+        return;
+      }
+
+      /* ---- 只读分享页（无 API 前缀，方便直接粘贴） ---- */
+      if (path.startsWith("/share/") && req.method === "GET") {
+        const token = path.slice("/share/".length);
+        const snap = getShare(token);
+        if (!snap) {
+          sendText(res, 404, `<!doctype html><meta charset="utf-8"><body style="font-family:sans-serif;padding:60px;text-align:center;color:#8a857c"><h2>快照不存在或已撤销</h2><p>分享链接可能已被创建者撤销。</p></body>`, MIME[".html"]);
+          return;
+        }
+        sendText(res, 200, renderSharePage({
+          title: snap.title,
+          savedAt: snap.savedAt,
+          cwd: snap.cwd,
+          model: snap.model,
+          messages: snap.messages,
+          token,
+        }), MIME[".html"]);
+        return;
+      }
+
+      /* ---- 消息反馈（👍/👎）：sidecar 存储，独立于会话文件 ----
+       * 会话文件由自动保存器整文件重写，把反馈写进去会和保存器赛跑；
+       * 单独一份 ~/.myclaude/feedback.json 以「会话id+消息摘要」为键。 */
+      if (path === "/api/feedback" && req.method === "POST") {
+        const body = await readJson(req);
+        const sid = String(body.sessionId || "");
+        const digest = String(body.digest || "");
+        const fb = body.fb === "up" || body.fb === "down" ? body.fb : null;
+        if (!sid || !digest) { sendJson(res, 400, { ok: false, error: "sessionId and digest required" }); return; }
+        const store = loadFeedbackStore();
+        if (!store[sid]) store[sid] = {};
+        if (fb) { store[sid][digest] = fb; } else { delete store[sid][digest]; }
+        saveFeedbackStore(store);
+        sendJson(res, 200, { ok: true, fb });
+        return;
+      }
+
+      if (path === "/api/feedback" && req.method === "GET") {
+        const sid = String(url.searchParams.get("sessionId") || "");
+        if (!sid) { sendJson(res, 400, { ok: false, error: "sessionId required" }); return; }
+        const store = loadFeedbackStore();
+        sendJson(res, 200, { ok: true, feedback: store[sid] || {} });
         return;
       }
 
@@ -2517,6 +2617,27 @@ if (path === "/api/session" && req.method === "POST") {
   return { server, address, port: boundPort };
 }
 
+/* ---- 消息反馈 sidecar：~/.myclaude/feedback.json ----
+ * 结构 { [sessionId]: { [digest]: "up"|"down" } }。digest 由前端对消息正文
+ * 计算稳定哈希——会话文件里的消息没有稳定 id，自动保存整文件重写也不影响。 */
+const FEEDBACK_FILE = join(dirname(SESSIONS_DIR), "feedback.json");
+
+function loadFeedbackStore() {
+  try {
+    const data = JSON.parse(readFileSync(FEEDBACK_FILE, "utf8"));
+    return data && typeof data === "object" ? data : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveFeedbackStore(store) {
+  try {
+    mkdirSync(dirname(FEEDBACK_FILE), { recursive: true });
+    writeFileSync(FEEDBACK_FILE, JSON.stringify(store, null, 2), "utf8");
+  } catch {}
+}
+
 /** Render a stored session as a Markdown document. */
 function toMarkdown(data) {
   const lines = [];
@@ -2550,8 +2671,7 @@ function toMarkdown(data) {
  * typed. Deriving a title from the raw text therefore produced a list full of
  * identical "[深度思考模式已开启…]" rows that said nothing about the chat.
  */
-function stripInjectedPrefixes(text) {
-  let s = String(text || "");
+function stripInjectedPrefixes(text) {  let s = String(text || "");
   // Every injected block is wrapped in [...]; drop leading ones only, so a
   // bracketed phrase the user typed later survives.
   for (;;) {
