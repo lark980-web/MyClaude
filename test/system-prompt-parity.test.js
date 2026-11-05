@@ -97,6 +97,14 @@ test("autonomy section mirrors the upstream autonomy_append gated段", () => {
     "Before ending your turn, check your last paragraph",
     "Do not stop because the context or session is long",
     "check that the evidence actually supports that specific action",
+    "## What to act on",
+    "Follow the spirit of the task, not only its literal scope",
+    "building a justification for why an action is probably fine",
+    "## How far to go",
+    "bias toward acting",
+    "Do the work, do not describe it",
+    "## When there is nothing to do",
+    "repeated \"nothing to do\" reports burn their attention",
   ]) assert.ok(AUTONOMY_SECTION.includes(k), "missing autonomy rule: " + k);
 });
 

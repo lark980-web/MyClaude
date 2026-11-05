@@ -57,6 +57,9 @@
 - [x] **verify 技能补齐表面 playbook**（复刻轮 J）：从产物找回被删的 examples/ 原文，
   改写为 CLI/HTTP/GUI/TUI/库 五类可执行 playbook，正文 8,593 → 10,412 字符；
   5 条新断言；全量 572/572；exe 重打。
+- [x] **自主段扩为循环工作口径**（复刻轮 K）：依据 loopAutonomousPreamble 两版，
+  AUTONOMY_SECTION 1,398 → 3,161 字符（What to act on / How far to go / When there is nothing to do），
+  8 条新断言；体检 0 error；全量 572/572；exe 重打。
 - [ ] 待办：剩余 skills、
   builtin-docs.md（89KB）、module-architecture.md、TUI 剩余 /statusline /vim /todo。
 
