@@ -8,11 +8,12 @@
 | 项 | 值 | 怎么核实 |
 |---|---|---|
 | HEAD | 见 `git log --oneline -1` | `git rev-parse --short HEAD` |
-| 测试 | 572+ 项，全绿 | `npm test` |
-| 提示词 | SYSTEM_PROMPT 13,147 字符 / AUTONOMY_SECTION 3,161 字符 | `npm run inspect:prompt` |
+| 测试 | **588** 项，全绿 | `npm test` |
+| 提示词 | SYSTEM_PROMPT 13,147 / AUTONOMY_SECTION 3,161 字符（autoRun 时实际 21,773） | `npm run inspect:prompt` |
 | 内置技能 | verify 正文 10,412 字符 | `node -e "import('./src/skills-builtin.js').then(m=>console.log(m.BUILTIN_SKILLS[0].body.length))"` |
 | exe | 构建时间见 `dist\myclaude.exe` | `git status` 与源文件 mtime 比对 |
 | 服务 | `--gui --no-open` 在 7788 | `Get-NetTCPConnection -LocalPort 7788` |
+| 端到端 | 真发一条消息能答（实测「2+3」→「5」） | 浏览器里发一句话 |
 
 **每次改动后必须做的三件事**：`npm test` → `node scripts/inspect-prompt.mjs` → `node scripts/build-exe.mjs`。
 exe 不重打，双击启动的还是旧代码。
@@ -71,3 +72,22 @@ git log --oneline -6          # 看最近做了什么
 ```
 
 然后读 `docs/iteration-backlog.md` 的最后一节（最新轮次在最上面），按其中未打勾项继续。
+## 7. 五道验证闸门（收尾时全绿）
+
+| 闸门 | 命令 | 通过标准 |
+|---|---|---|
+| 单元/集成测试 | `npm test` | 588/588 |
+| 产物完整性 | `node scripts/verify-features.mjs` | 输出「功能完整性 ✓」 |
+| 提示词体检 | `npm run inspect:prompt` | 0 error（七类检查） |
+| 构建产物闸门 | `npm run test:smoke` | 46 条命令 0 崩溃（`/exit` 无输出属预期） |
+| 端到端 | 浏览器发一句话 | 有回复、无错误条、busy 释放 |
+
+**注意**：`npm test` 的 glob 是 `test/*.test.js`，`*.smoke.js` 需要单独跑 —— 那条曾经写了却从没执行过。
+
+## 8. 这一系列改动留下的设计决定
+
+1. **提示词按上游六段结构**，但内容本地化：`TaskCreate`→`TodoWrite`、`CLAUDE.md`→`MYCLAUDE.md`、不冒用 `You are Claude Code` 身份。
+2. **自主段只在 `autoRun` 时注入** —— 普通交互里说「不必确认」会与用户的即时确认预期冲突。
+3. **不做的三件事**：`/vim`（上游已移除）、`/sandbox`（有意用命令分级替代）、`isReadOnly`/工具 schema 还原（产物不可得）。
+4. **token 估算 CJK 感知**，三处共用一份口径；前端保留同公式副本并有测试锁死一致性。
+5. **所有去重按真实路径**，不按字面路径 —— Windows 大小写不敏感，`A.md` 与 `a.md` 是同一文件。
