@@ -26,6 +26,23 @@
   不冒用上游身份、本地命名与插值正确。
 - 全量 **546/546**、`verify-features` ✓、exe 已重打并确认关键子句已编入二进制。
 
+### Added（verify 技能补齐「表面 playbook」）
+- 上轮移植 verify 时被迫删掉了上游的 `examples/` 链接；本轮从产物
+  `02-modules/files/` 里找回原文（`cli-c9q7tcbv.md`、`server-nk452php.md` 等），
+  改写为与本项目表面一致、可执行的 playbook，正文 8,593 → **10,412 字符**。
+- 五类表面各自的 handle 与证据口径：
+  **CLI**（直接调用，证据是 stdout/stderr/**退出码**；`unknown flag` 多为陈旧构建、
+  无输出说明没进分支、无 flag 路径变化是回归）；
+  **HTTP**（后台启动 + 轮询就绪而不是猜时间；抓 **status + headers + body**，
+  只看 body 会漏掉状态码与响应头；全 200 说明没进改动分支，不能判 PASS）；
+  **GUI**（headless 驱动 + 截图 + 读 console，界面正常但交互抛错是常见组合）；
+  **TUI**（需要 pty，普通管道会让正常的 app 看起来坏了；显式设窗口尺寸，
+  **先轮询就绪标记再抓屏**，固定 sleep 要么浪费时间要么截到半渲染）；
+  **库**（import 包边界而非内部模块，后者是你自己写的单元测试）。
+- 上游的语言相关示例（Go build、jq 等）按本项目栈改写，未照搬。
+- `test/builtin-skills.test.js` 增加 5 条 playbook 断言；全量 **572/572**、
+  `inspect:prompt` 0 error、exe 已重打并确认 playbook 已编入二进制。
+
 ### Added（系统提示词体检脚本，让这类问题自动暴露）
 - 新增 `scripts/inspect-prompt.mjs` + `npm run inspect:prompt`：**不看源码，只看真实
   组装出来的提示词**。上一轮的重复内存 BUG 活了很久，正是因为没有任何检查去看

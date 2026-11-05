@@ -54,6 +54,9 @@
 - [x] **提示词体检常设化**（复刻轮 I）：`scripts/inspect-prompt.mjs` + `npm run inspect:prompt`，
   七类检查（内存重复/段落重复/必需段缺失/自主段一致性/技能段一致/空段/体量），
   支持 --json/--dump、有 error 退出码 1。5 项测试含「人造坏提示词反证有效性」。全量 572/572。
+- [x] **verify 技能补齐表面 playbook**（复刻轮 J）：从产物找回被删的 examples/ 原文，
+  改写为 CLI/HTTP/GUI/TUI/库 五类可执行 playbook，正文 8,593 → 10,412 字符；
+  5 条新断言；全量 572/572；exe 重打。
 - [ ] 待办：剩余 skills、
   builtin-docs.md（89KB）、module-architecture.md、TUI 剩余 /statusline /vim /todo。
 

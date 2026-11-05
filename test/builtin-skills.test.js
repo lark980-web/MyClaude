@@ -28,6 +28,14 @@ test("builtin verify keeps the runtime-observation discipline", () => {
   // 上游路径必须本地化
   assert.ok(!body.includes(".claude/skills"), ".claude/skills must be localized");
   assert.ok(body.includes(".myclaude/skills"), ".myclaude/skills referenced");
+  // 表面 playbook：verify 只说「去驱动表面」不够，每种表面要给出可执行的驱动方式。
+  for (const k of [
+    "## Surface playbooks",
+    "the evidence is stdout, stderr **and the exit code**",
+    "status, headers and body",
+    "poll for a ready marker before capturing the pane",
+    "import the package boundary, not the internal module",
+  ]) assert.ok(body.includes(k), "missing playbook: " + k);
   for (const phantom of ["run-skill-generator", "SendUserFile", "gh pr diff"]) {
     assert.ok(!body.includes(phantom), "upstream-only reference: " + phantom);
   }
