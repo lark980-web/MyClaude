@@ -4400,9 +4400,23 @@
       else if (j.pending && j.pending.confirm) { showConfirm(j.pending.confirm); toast("该会话有一个待授权的工具调用，已重新显示", "info"); }
             if (!quiet) { toast("已恢复 " + j.messages + " 条消息", "ok"); }
     }).catch(function (e) {
-      // A silent failure here is the "my conversation disappeared" report:
-      // the user has to know the restore did not happen.
-      addNotice("恢复会话失败：" + e.message, "err");
+      var msg = String((e && e.message) || e);
+      // 会话文件被删掉/清理后，启动时的自动恢复必然 404。这不是错误，是把
+      // 用户上一次的会话弄丢了那种场景 —— 但对他而言只是「没有上次」，
+      // 甩一条红色 HTTP 404 只会让人以为程序坏了。清掉记住的 id，安静开新对话。
+      if (quiet && /HTTP 404/.test(msg)) {
+        try { localStorage.removeItem(LS_SESSION); } catch (e2) { }
+        S.titleOverride = null;
+        return;
+      }
+      // 显式点击恢复失败时仍要出声，但要说清是哪个会话没恢复。
+      if (/HTTP 404/.test(msg)) {
+        try { localStorage.removeItem(LS_SESSION); } catch (e3) { }
+        addNotice("该会话已不存在，已开始新对话", "info");
+        return;
+      }
+      // 其它失败（网络、文件损坏）必须让用户知道恢复没有发生。
+      addNotice((quiet ? "上次的会话没能恢复：" : "恢复会话失败：") + msg, "err");
     });
   }
 

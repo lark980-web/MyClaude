@@ -75,6 +75,10 @@
   （与 `apiKeyHelper` 同类，证据 `chunk-a8gj4nyv.js`），而 `StatusLineCommandInput` 的字段
   在产物中**只被引用、从未定义**；本项目 TUI 也没有状态栏组件。按 MYCLAUDE.md
   「提取不出来要如实说明，不要用『我认为』填空」，需先定契约再实现。
+- [x] **会话消失时的 404 提示**（复刻轮 N）：静默恢复遇 404 改为清 id + 安静开新对话，
+  显式点击改为 info 文案；真浏览器验证无红条、无 HTTP 404 字样；3 项测试；全量 582/582。
+- [x] **备用模型空池禁用态**：实测已符合预期（测活 disabled + 说明 title + 添加可用），
+  属其他会话已完成，本次仅核实未改动。
 - [ ] 待办：剩余 skills、
   builtin-docs.md（89KB）、module-architecture.md、TUI 剩余 /statusline /vim /todo。
 
