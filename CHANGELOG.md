@@ -43,7 +43,11 @@
   `.myclaude/skills`，于是从 Temp 之类目录出发时，用户家目录的 `~/.myclaude/skills`
   被误判成 project 技能 —— 同一个技能被加载两次、作用域错误。改为「只认项目根一处」
   （git 根，非仓库则退回 cwd）。
-- **防复发**：全部改动已 `git add` 暂存（不提交、不推送，未包含大文件），
+- **已固化提交**：b0f108a - 按 Claude Code 2.1.302 逆向产物对齐提示词、技能与权限模式
+  （未推送，未包含 2.8GB apk 与 exe）。工作树此后可安全 git checkout 回退。
+  遗留观察：仓库根目录有另一进程在 01:34:10 写下的 _p*.txt / _rea_probe*.txt 探测草稿
+  （内容为对 claude-src 模块的逆向取样），均为未跟踪文件，未纳入提交，也未删除。
+- **原暂存但未提交的风险已解除**：此前九轮改动只在工作树，覆盖后只能靠测试契约重建。
   内容已进 `.git/objects`，工作树再被覆盖可用 `git checkout -- <path>` 取回。
 - 验证：全量 **564/564**、`npm run test:smoke` 45 命令 0 崩溃、exe 重打（01:45:25，650 模块）、
   `_emptyBodyRetries`/`_finalizeUsed` 已确认编入二进制。

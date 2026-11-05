@@ -46,7 +46,7 @@
   test/skills.test.js / main.js，13 个测试失败、构建报 createProvider 导出缺失。
   已全部恢复，并顺带修掉回退版 `skillDirs` 逐级上爬导致用户技能被误判为 project 的真 BUG。
   防复发：全部改动已 `git add` 暂存。
-- [ ] **待办（重要）**：这批改动仍未 commit，工作区随时可能再被并发会话覆盖；
+- [x] **已提交固化**：b0f108a（未推送、不含 apk/exe）。此前覆盖后只能靠测试契约重建，现已可从 git 直接回退。另一进程在 01:34:10 留下的 _p*.txt / _rea_probe*.txt 未跟踪草稿，未纳入提交、未删除。
   建议尽快 `git commit` 固化（不含 2.8GB apk）。
 - [ ] 待办：剩余 skills、
   builtin-docs.md（89KB）、module-architecture.md、TUI 剩余 /statusline /vim /todo。
