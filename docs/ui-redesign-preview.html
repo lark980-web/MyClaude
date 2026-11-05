@@ -1,0 +1,405 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MyClaude UI 重设计 · 静态预览</title>
+<style>
+:root {
+  color-scheme: light;
+
+  /* 纸面层次 */
+  --bg: #faf9f5;
+  --rail: #f4f2ec;
+  --panel: #ffffff;
+  --panel-2: #f0eee6;
+  --panel-3: #e8e5da;
+  --bubble: #efece3;
+  --hover: #1f1e1d0b;
+  --active: #1f1e1d14;
+
+  /* 文字 */
+  --fg: #1f1e1d;
+  --fg-2: #3d3c39;
+  --fg-3: #6f6d66;
+  --fg-4: #9d9a91;
+
+  /* 线 */
+  --line: #1f1e1d17;
+  --line-strong: #1f1e1d26;
+
+  /* 强调色：陶土橙 */
+  --accent: #c96442;
+  --accent-hover: #b4573a;
+  --accent-fg: #ffffff;
+  --accent-soft: #c9644217;
+  --accent-ring: #c9644240;
+
+  /* 主按钮（深墨） */
+  --ink: #1f1e1d;
+  --ink-fg: #faf9f5;
+
+  --good: #4d8a4a;
+  --warn: #b7791f;
+  --crit: #c2412d;
+  --info: #3b6fb0;
+  --ok: #4d8a4a; /* 语义别名：多处 .ok 状态直接引用，此前未定义导致声明失效 */
+
+  /* 别名词：早期重构留下的旧名，页面与脚本里仍有引用 */
+  --border: var(--line-strong);
+  --bg-2: var(--panel);
+  --acc: var(--accent);
+  --accent-translucent: color-mix(in srgb, var(--accent) 15%, transparent);
+
+  /* 阴影：内联写死暖色 rgba 时，深色主题下几乎不可见 */
+  --shadow-lift: 0 8px 22px -10px rgb(31 30 29 / 0.16);
+  --shadow-raise: 0 6px 26px -4px rgb(31 30 29 / 0.12);
+
+  /* 代码 */
+  --code-bg: #f5f3ec;
+  --code-head: #efece3;
+  --code-inline: #a8432a;
+  --tok-k: #8b4bb0;
+  --tok-s: #3f7a3a;
+  --tok-n: #b0661a;
+  --tok-f: #2f64a8;
+
+  --avatar-bg: #3d3c39;
+  --avatar-fg: #faf9f5;
+
+  --r-sm: 6px;
+  --r-md: 10px;
+  --r-lg: 14px;
+  --r-xl: 20px;
+  --r-full: 999px;
+
+  --rail-w: 260px;
+  --insp-w: 320px;
+  --read-w: 768px;
+  --top-h: 52px;
+
+  --sans: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC", sans-serif;
+  --serif: "Source Serif 4", "Iowan Old Style", Georgia, Cambria, "Times New Roman", "Noto Serif SC", "Songti SC", serif;
+  --mono: "JetBrains Mono", "SF Mono", "Cascadia Code", ui-monospace, Menlo, Consolas, monospace;
+
+  --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --spring: cubic-bezier(0.34, 1.4, 0.64, 1);
+  --t: 160ms;
+
+  --shadow-sm: 0 1px 2px #1f1e1d0d;
+  --shadow: 0 4px 20px -2px rgba(31, 30, 29, 0.08), 0 1px 3px rgba(31, 30, 29, 0.04);
+  --shadow-lg: 0 18px 50px -12px rgba(31, 30, 29, 0.2), 0 2px 8px rgba(31, 30, 29, 0.06);
+}
+* { box-sizing: border-box; }
+body { margin: 0; padding: 34px 38px 56px; background: var(--bg); color: var(--fg); font: 14px/1.55 var(--sans); }
+h1 { font: 600 26px/1.2 var(--serif); margin: 6px 0 6px; }
+.kicker { font: 600 10px/1 var(--mono); letter-spacing: .18em; color: var(--accent); }
+.sub { color: var(--fg-3); font-size: 13px; margin: 0 0 26px; }
+.cols { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1.25fr); gap: 18px; align-items: start; }
+.panel { border: 1px solid var(--line); border-radius: 8px; background: var(--panel); padding: 18px 20px 20px; margin-bottom: 18px; }
+.panel-head { display: flex; align-items: center; gap: 9px; font-size: 12px; font-weight: 600; color: var(--fg-2); padding-bottom: 12px; margin-bottom: 16px; border-bottom: 1px solid var(--line); }
+.panel-head .n { font: 600 10px/1 var(--mono); letter-spacing: .1em; color: var(--fg-4); border: 1px solid var(--line); border-radius: 3px; padding: 3px 5px; background: var(--panel-2); }
+.caption { font-size: 11.5px; color: var(--fg-4); margin: 14px 0 0; line-height: 1.6; }
+code { font: 11px var(--mono); background: var(--panel-2); padding: 1px 4px; border-radius: 3px; }
+.topbar-mock { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 7px; background: var(--bg); }
+.icon-mock { width: 28px; height: 28px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--fg-3); font-size: 14px; }
+.mock-note { font-size: 11.5px; color: var(--crit); }
+.mock-spacer { flex: 1; }
+.mock-badge { font-size: 11px; color: var(--fg-3); border: 1px solid var(--line); border-radius: 999px; padding: 5px 10px; background: var(--panel); }
+.composer-mock { margin-top: 10px; border: 1px solid var(--line-strong); border-radius: 12px; background: var(--panel); padding: 12px 14px; }
+.composer-input { font-size: 13px; color: var(--fg-4); padding: 4px 0 14px; }
+.model-btn-mock { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--fg-2); border: 1px solid var(--line); border-radius: 999px; padding: 5px 10px; background: var(--panel-2); }
+.dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); }
+.pane-mock { display: flex; flex-direction: column; height: 330px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); overflow: hidden; }
+.bar-mock { display: flex; align-items: center; gap: 8px; padding: 8px 14px; border-bottom: 1px solid var(--line); background: var(--panel); font-size: 11.5px; color: var(--fg-3); }
+.bar-mock .seg { margin-left: auto; border: 1px solid var(--line-strong); border-radius: 6px; padding: 4px 8px; background: var(--panel-2); color: var(--fg); }
+.pane-mock .artifact-stage { margin: 10px; }
+
+/* 继续追问 —— 三列结构卡：编号是建筑性细节，不是装饰 */
+.followup-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin: 18px 0 2px;
+  animation: rise 220ms var(--ease-out) both;
+}
+@media (max-width: 720px) {
+  .followup-row { grid-template-columns: 1fr; }
+}
+.followup-head {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 2px;
+  user-select: none;
+}
+.followup-head-label {
+  flex-shrink: 0;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--fg-3);
+}
+.followup-head-en {
+  flex-shrink: 0;
+  font: 500 10px/1 var(--mono);
+  letter-spacing: 0.14em;
+  color: var(--fg-4);
+}
+.followup-head-rule { flex: 1; height: 1px; background: var(--line); }
+.followup-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 98px;
+  padding: 13px 14px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--fg-2);
+  text-align: left;
+  cursor: pointer;
+  box-shadow: 0 1px 2px rgba(25,28,33,.04), 0 0 0 1px rgba(25,28,33,.02);
+  transition: transform 140ms var(--ease), border-color var(--t) var(--ease), box-shadow var(--t) var(--ease);
+}
+.followup-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--line-strong);
+  box-shadow: 0 0 0 1px rgba(25,28,33,.05), 0 2px 4px -1px rgba(25,28,33,.07), 0 8px 16px -6px rgba(25,28,33,.10);
+}
+.followup-card:active { transform: translateY(0) scale(0.995); }
+.followup-card:focus-visible { outline: 2px solid var(--accent-ring); outline-offset: 2px; }
+/* L 形角标：hover 才浮现，给卡片一个结构锚点而不是又一层圆角 */
+.followup-card::before {
+  content: "";
+  position: absolute;
+  left: -1px; top: -1px;
+  width: 10px; height: 10px;
+  border-left: 1px solid var(--line-strong);
+  border-top: 1px solid var(--line-strong);
+  opacity: 0;
+  transition: opacity var(--t) var(--ease);
+  pointer-events: none;
+}
+.followup-card:hover::before { opacity: 1; }
+.fc-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 9px;
+}
+.fc-num {
+  font: 500 10px/1 var(--mono);
+  letter-spacing: 0.12em;
+  color: var(--fg-4);
+  padding: 3px 5px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  background: var(--panel-2);
+}
+.fc-arrow {
+  font: 400 13px/1 var(--mono);
+  color: var(--fg-4);
+  transition: transform var(--t) var(--ease), color var(--t) var(--ease);
+}
+.followup-card:hover .fc-arrow { color: var(--accent); transform: translateX(2px); }
+.fc-rule { height: 1px; background: var(--line); margin-bottom: 9px; }
+.fc-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fg);
+  line-height: 1.4;
+  margin-bottom: 4px;
+}
+.fc-desc {
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: var(--fg-3);
+  overflow-wrap: anywhere;
+}
+
+
+/* 画布：细线框架 + 极低对角纹理，结构靠边框而非阴影 */
+.artifact-stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  margin: 10px;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  background:
+    repeating-linear-gradient(135deg, transparent 0 11px, rgba(24,24,27,.025) 11px 12px),
+    var(--bg);
+}
+.artifact-iframe {
+  width: 100%;
+  height: 100%;
+  flex: 1;
+  border: 0;
+  background: #ffffff;
+}
+.artifact-md-preview {
+  padding: 20px 24px;
+  overflow-y: auto;
+}
+.artifact-code-view {
+  margin: 0;
+  padding: 18px 20px;
+  font: 12.5px/1.75 var(--mono);
+  color: var(--fg);
+  background: transparent;
+  flex: 1;
+  overflow: auto;
+  white-space: pre;
+  tab-size: 2;
+}
+
+/* 变更清单：状态色是唯一强调，其余保持中性 */
+.chg-view { flex: 1; padding: 18px 20px 24px; overflow: auto; }
+.chg-view-head {
+  display: flex; align-items: center; gap: 10px;
+  padding-bottom: 12px; margin-bottom: 4px;
+  border-bottom: 1px solid var(--line);
+}
+.chg-view-title { font: 600 13px/1 var(--sans); color: var(--fg); letter-spacing: .02em; }
+.chg-view-count { font: 500 10.5px/1 var(--mono); color: var(--fg-4); }
+.chg-view-legend { display: inline-flex; gap: 10px; margin-left: auto; }
+.chg-view-legend-item { display: inline-flex; align-items: center; gap: 4px; }
+.chg-view-legend-num { font: 500 10px/1 var(--mono); color: var(--fg-4); }
+.chg-view-list { display: flex; flex-direction: column; }
+.chg-view-row {
+  display: grid;
+  grid-template-columns: 26px 34px minmax(0, 1fr) auto;
+  align-items: center; gap: 10px;
+  padding: 9px 2px;
+  border-bottom: 1px solid var(--line);
+}
+.chg-view-row:last-child { border-bottom: 0; }
+.chg-view-idx { font: 500 10px/1 var(--mono); color: var(--fg-4); letter-spacing: .1em; }
+.chg-view-badge {
+  justify-self: start; min-width: 26px; padding: 3px 6px;
+  border-radius: 3px; text-align: center;
+  font: 600 10px/1 var(--mono); letter-spacing: .06em;
+}
+.chg-view-badge.st-modified { color: var(--warn); background: color-mix(in srgb, var(--warn) 12%, transparent); }
+.chg-view-badge.st-untracked { color: var(--fg-3); background: color-mix(in srgb, var(--fg-3) 10%, transparent); }
+.chg-view-badge.st-added { color: var(--ok); background: color-mix(in srgb, var(--ok) 12%, transparent); }
+.chg-view-badge.st-deleted { color: var(--crit); background: color-mix(in srgb, var(--crit) 12%, transparent); }
+.chg-view-path { font: 12.5px/1.4 var(--mono); color: var(--fg); overflow-wrap: anywhere; }
+.chg-view-note { font-size: 11px; color: var(--fg-4); white-space: nowrap; }
+@media (max-width: 900px) {
+  .chg-view-row { grid-template-columns: 22px 30px minmax(0, 1fr); }
+  .chg-view-note { grid-column: 3; white-space: normal; }
+}
+
+
+@media (max-width: 900px) { .cols { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+  <div class="kicker">MYCLAUDE · UI REDESIGN PREVIEW</div>
+  <h1>三处调整</h1>
+  <p class="sub">静态预览 · 直接引用项目真实的 CSS 令牌与本次新增规则，不启动 MyClaude。</p>
+
+  <div class="cols">
+    <div class="panel">
+      <div class="panel-head"><span class="n">01</span> 顶栏：去掉重复的模型选择器</div>
+      <div class="topbar-mock">
+        <button class="icon-mock">☰</button><button class="icon-mock">＋</button>
+        <span class="mock-note">← 药丸已移除</span><span class="mock-spacer"></span>
+        <span class="mock-badge">模型与供应商配置</span>
+      </div>
+      <div class="composer-mock">
+        <div class="composer-input">今天想让 MyClaude 帮你做什么？</div>
+        <button class="model-btn-mock"><span class="dot"></span> loomy/DeepSeek-V4.1 ▾</button>
+      </div>
+      <p class="caption">两者原本打开的是同一个 <code>#model-menu</code>。保留输入框旁这一处，菜单锚点统一回 <code>#btn-model</code>，顶栏不再有两份状态。</p>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head"><span class="n">02</span> 追问卡：编号 / 分层阴影 / 细框架</div>
+      <div class="followup-row">
+        <div class="followup-head">
+          <span class="followup-head-label">继续追问</span>
+          <span class="followup-head-en">FOLLOW-UPS</span>
+          <span class="followup-head-rule"></span>
+        </div>
+        <button class="followup-card" type="button">
+  <span class="fc-top"><span class="fc-num">01</span><span class="fc-arrow">↗</span></span>
+  <span class="fc-rule"></span>
+  <span class="fc-title">视觉打磨</span>
+  <span class="fc-desc">再优化一下视觉细节和配色</span>
+</button>
+<button class="followup-card" type="button">
+  <span class="fc-top"><span class="fc-num">02</span><span class="fc-arrow">↗</span></span>
+  <span class="fc-rule"></span>
+  <span class="fc-title">响应式</span>
+  <span class="fc-desc">加上响应式布局和深浅色切换</span>
+</button>
+<button class="followup-card" type="button">
+  <span class="fc-top"><span class="fc-num">03</span><span class="fc-arrow">↗</span></span>
+  <span class="fc-rule"></span>
+  <span class="fc-title">集成落地</span>
+  <span class="fc-desc">讲讲怎么集成到现有项目</span>
+</button>
+      </div>
+      <p class="caption">01/02/03 做成低对比等宽角标（数字是结构不是装饰）；卡片去掉粗边框大圆角，改分层中性阴影 + hover 浮现的 L 形角标；标题与描述之间加细分隔线。</p>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head"><span class="n">03</span> 右侧画布：框架感 + 变更结构化</div>
+    <div class="pane-mock">
+      <div class="bar-mock"><span>v1 · TEXT 代码视图工件 ▾</span><span class="seg">代码</span></div>
+      <div class="artifact-stage">
+        <div class="chg-view">
+          <div class="chg-view-head">
+            <span class="chg-view-title">工作区变更</span>
+            <span class="chg-view-count">5 项</span>
+            <span class="chg-view-legend">
+              <span class="chg-view-legend-item"><span class="chg-view-badge st-modified">M</span><span class="chg-view-legend-num">4</span></span>
+              <span class="chg-view-legend-item"><span class="chg-view-badge st-untracked">??</span><span class="chg-view-legend-num">1</span></span>
+            </span>
+          </div>
+          <div class="chg-view-list"><div class="chg-view-row">
+  <span class="chg-view-idx">01</span>
+  <span class="chg-view-badge st-modified">M</span>
+  <span class="chg-view-path">CHANGELOG.md</span>
+  <span class="chg-view-note">← 并发会话（浏览器打开竞态修复）</span>
+</div>
+<div class="chg-view-row">
+  <span class="chg-view-idx">02</span>
+  <span class="chg-view-badge st-modified">M</span>
+  <span class="chg-view-path">src/ui/assets.js</span>
+  <span class="chg-view-note">← 本次（CSS 嵌入重建）</span>
+</div>
+<div class="chg-view-row">
+  <span class="chg-view-idx">03</span>
+  <span class="chg-view-badge st-modified">M</span>
+  <span class="chg-view-path">src/ui/gui-server.js</span>
+  <span class="chg-view-note">← 并发会话</span>
+</div>
+<div class="chg-view-row">
+  <span class="chg-view-idx">04</span>
+  <span class="chg-view-badge st-modified">M</span>
+  <span class="chg-view-path">src/ui/web/css/styles.css</span>
+  <span class="chg-view-note">← 本次（令牌定义 + 使用处对齐）</span>
+</div>
+<div class="chg-view-row">
+  <span class="chg-view-idx">05</span>
+  <span class="chg-view-badge st-untracked">??</span>
+  <span class="chg-view-path">.local/</span>
+  <span class="chg-view-note">← 临时/隔离目录，未跟踪</span>
+</div></div>
+        </div>
+      </div>
+    </div>
+    <p class="caption">画布改细线框架 + 极低对角纹理（结构靠边框而非阴影）。TEXT 工件若含 ≥2 行 git status 记录，自动结构化为「状态徽章 / 路径 / 说明」并给出汇总；切到「代码」视图仍是原文。纯散文不受影响。</p>
+  </div>
+</body>
+</html>

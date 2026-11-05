@@ -1,5 +1,5 @@
 import { createServer } from "node:http";
-import { spawnSync } from "node:child_process";
+import { spawnSync, exec } from "node:child_process";
 import { consoleUi } from "./console-ui.js";
 import { runWithAutoContinue } from "../agent/autorun.js";
 import { setAutonomous } from "../tools/extended.js";
@@ -8,7 +8,7 @@ import { readFile, readdir, stat } from "node:fs/promises";
 import { basename, dirname, extname, join, resolve, isAbsolute, relative } from "node:path";
 import { GoogleGenAI, Modality } from "@google/genai";
 import { WebSocketServer } from "ws";
-import { createProvider } from "../providers/openai.js";
+import { createProvider, PROVIDER_KINDS } from "../providers/index.js";
 import { createAgent } from "../agent/runtime.js";
 import { allRegisteredTools, registerTools, multiEditTool, todoWriteTool, webFetchTool } from "../tools/index.js";
 import { EXTENDED_TOOLS } from "../tools/extended.js";
@@ -30,6 +30,10 @@ import {
 } from "../session.js";
 import { loadGuiAssets } from "./assets.js";
 import { loadCommands, findCommand, expandCommand } from "../commands.js";
+import { loadSkills, loadAgents } from "../skills.js";
+import { loadPlugins } from "../plugins.js";
+import { loadMemory, memoryFilePath, appendMemory } from "../agent/permissions.js";
+import { inspectProject, renderProjectMemory } from "../project-memory.js";
 import { normalizeMode, PERMISSION_MODES } from "../agent/modes.js";
 import { vendorFromUrl, endpointLabel } from "../vendors.js";
 import { MODELS, PROVIDER_PRESETS, findModel, supportsVision, contextWindowOf } from "../models.js";
@@ -85,6 +89,29 @@ function readJson(req) {
   });
 }
 
+/**
+ * Open a URL in the default browser and resolve once the hand-off is real.
+ *
+ * exec() alone only queues the shell command. Exiting right after it raced
+ * the child process on Windows: the console proudly printed "已为你打开浏览器"
+ * while no browser ever appeared (reproduced in 2 of 3 double-clicks). Awaiting
+ * the callback means the shell has already exited, so the URL genuinely
+ * reached the OS before we quit.
+ */
+function openInBrowser(url, { timeoutMs = 8000 } = {}) {
+  const cmd =
+    process.platform === "win32" ? 'start "" "' + url + '"'
+      : process.platform === "darwin" ? 'open "' + url + '"'
+        : 'xdg-open "' + url + '"';
+  return new Promise((resolve) => {
+    let settled = false;
+    const done = (ok) => { if (!settled) { settled = true; resolve(ok); } };
+    try {
+      exec(cmd, { timeout: timeoutMs, windowsHide: true }, (err) => done(!err));
+    } catch { done(false); }
+  });
+}
+
 export async function startGui({ config: initialConfig, port = 7788, open = true, cwd = process.cwd() } = {}) {
   // Single instance per data dir: two GUIs writing one session store fork
   // and clobber each other's history — observed live as "my task vanished
@@ -107,21 +134,30 @@ export async function startGui({ config: initialConfig, port = 7788, open = true
   }
   if (runningElsewhere) {
     const existingUrl = `http://127.0.0.1:${runningElsewhere.port}`;
-    // 用户双击启动时（open=true）服务其实已经在跑：这不是错误，自动打开
-    // 已有实例的页面然后正常退出——「双击必达」而不是弹一句报错吓人。
+    // 用户双击启动时（open=true）服务其实已经在跑：这不是错误，把已有实例
+    // 的页面真正打开，然后正常退出——「双击必达」。openInBrowser 会等浏览器
+    // 真正接手才返回，所以下面这句提示不会撒谎。
     if (open) {
-      console.log(`MyClaude GUI 已在运行 → ${existingUrl}（已为你打开浏览器）`);
-      try {
-        const { exec } = await import("node:child_process");
-        const openCmd =
-          process.platform === "win32" ? `start "" "${existingUrl}"`
-            : process.platform === "darwin" ? `open "${existingUrl}"`
-              : `xdg-open "${existingUrl}"`;
-        exec(openCmd);
-      } catch { /* 打不开浏览器就只提示地址 */ }
+      const opened = await openInBrowser(existingUrl);
+      console.log(`MyClaude GUI 已在运行 → ${existingUrl}`);
+      console.log(opened
+        ? "已在浏览器中打开。"
+        : "没能自动打开浏览器，请手动把上面的地址粘贴到浏览器。");
       process.exit(0);
     }
-    throw new Error(`MyClaude GUI 已在运行（pid ${runningElsewhere.pid}，端口 ${runningElsewhere.port}）。两个实例会同时写同一份会话数据——请先关闭旧实例，或直接使用它的页面。`);
+    // 开发实例常常用 --port 3000 --no-open 撞上这道守卫。守卫按数据目录
+    // 拦截是对的（两个 GUI 会互相覆盖会话），但要给出可执行的下一步，
+    // 否则用户只看到一句报错，以为程序坏了。
+    throw new Error([
+      "MyClaude GUI 已在运行（pid " + runningElsewhere.pid + "，端口 " + runningElsewhere.port + "）。",
+      "两个实例共用同一份会话数据会互相覆盖，因此这里不会启动第二个实例。",
+      "",
+      "可任选其一：",
+      "  1) 直接用已有页面：http://127.0.0.1:" + runningElsewhere.port,
+      "  2) 停掉旧实例：taskkill /F /IM myclaude.exe",
+      "  3) 隔离数据目录后另起开发实例：把 MYCLAUDE_HOME 指向一个空目录",
+      "     （例如 D:/tmp/mc-dev），再运行 npm run dev；这样不会覆盖正式会话。",
+    ].join("\n"));
   }
   writeFileSync(lockPath, JSON.stringify({ pid: process.pid, port, at: Date.now() }));
   process.once("exit", () => { try { unlinkSync(lockPath); } catch {} });
@@ -721,6 +757,7 @@ async function searchWorkspaceFiles(query = "", limit = 40) {
           modelSupportsVision: supportsVision(config.model),
   effort: config.effort ?? null,
   autoRun: !!config.autoRun,
+  fastMode: !!config.fastMode,
           routing: agent ? agent.routingStatus?.() : null,
           tools: toolList(),
           ...statsOf(agent)
@@ -763,6 +800,27 @@ async function searchWorkspaceFiles(query = "", limit = 40) {
         config.autoRun = !!body.autoRun;
         saveConfig({ autoRun: config.autoRun });
         setAutonomous(config.autoRun);
+      }
+      if (body.provider !== undefined) {
+        // /api/config 之前从不写 config.provider：设置中心里选「Anthropic 官方」
+        // 只改了 baseUrl/model/apiKey，传输层仍走 OpenAI 协议，请求必失败。
+        // 现在允许显式切换线协议（anthropic 走 Messages API 适配器）。
+        const wanted = PROVIDER_KINDS.includes(String(body.provider)) ? String(body.provider) : null;
+        if (wanted) {
+          config.provider = wanted;
+          saveConfig({ provider: config.provider });
+          for (const a of sessions.values()) {
+            if (a.router) { try { a.router.provider = createProvider(config); } catch {} }
+          }
+          provider.model = config.model;
+        }
+      }
+      if (body.fastMode !== undefined) {
+        // /fast：buildRequestMessages() 读 config.fastMode；共享对象之外再显式
+        // 同步给活跃 agent，避免将来 config 被拷贝后失效。
+        config.fastMode = !!body.fastMode;
+        saveConfig({ fastMode: config.fastMode });
+        for (const a of sessions.values()) { if (a.config) { a.config.fastMode = config.fastMode; } }
       }
       if (body.effort !== undefined) {
         // /effort and the thinking toggle share this one setting.
@@ -1148,6 +1206,97 @@ async function searchWorkspaceFiles(query = "", limit = 40) {
         return;
       }
 
+      /* ---- 通用内建命令桥 ----
+       * TUI 有一批命令需要读本机文件 / 改 agent 状态，浏览器做不到。这个端点只放
+       * 白名单命令，返回纯文本给 GUI 显示；compact/rewind 额外返回 refresh 让前端重放。 */
+      if (path === "/api/command" && req.method === "POST") {
+        const body = await readJson(req);
+        const name = String(body.name || "").toLowerCase();
+        const arg = String(body.arg || "").trim();
+        const key = keyOf(body);
+        const agent = sessions.get(key);
+        const reply = (t, extra) => sendJson(res, 200, { ok: true, text: t, ...(extra || {}) });
+        try {
+          if (name === "memory") {
+            const sub = (arg.split(/\s+/)[0] || "").toLowerCase();
+            if (sub === "add") {
+              const note = arg.slice(sub.length).trim();
+              if (!note) { sendJson(res, 400, { ok: false, error: "用法：/memory add <内容>" }); return; }
+              reply("已记入 " + appendMemory(note, cwd)); return;
+            }
+            if (sub === "path") { reply(memoryFilePath(cwd)); return; }
+            const mem = loadMemory(cwd);
+            reply(mem ? String(mem) : "(no project memory) — 写入 " + memoryFilePath(cwd) + "，或 /memory add <内容>"); return;
+          }
+          if (name === "skills") {
+            const list = loadSkills(cwd);
+            reply(list.length ? "Skills（" + list.length + "）\n" + list.map((s) => "  /" + s.name + "  " + (s.description || "")).join("\n") : "(no skills) — 在 .myclaude/skills/ 或 ~/.myclaude/skills/ 放 SKILL.md"); return;
+          }
+          if (name === "plugin") {
+            const list = loadPlugins(cwd);
+            reply(list.length ? "Plugins（" + list.length + "）\n" + list.map((p) => "  " + p.name + "（" + p.scope + "）" + ((p.manifest && p.manifest.description) || "")).join("\n") : "(no plugins) — 在 .myclaude/plugins/ 放 plugin.json"); return;
+          }
+          if (name === "agents") {
+            const list = loadAgents(cwd);
+            reply(list.length ? "子代理（" + list.length + "）\n" + list.map((a) => "  " + a.name + (a.description ? " — " + a.description : "")).join("\n") : "(no agents) — 在 .myclaude/agents/<名>.md 放定义文件"); return;
+          }
+          if (name === "release-notes") {
+            const nf = join(cwd, "docs", "CHANGELOG.md");
+            reply(existsSync(nf) ? readFileSync(nf, "utf8") : "(no release notes) — docs/CHANGELOG.md 不存在"); return;
+          }
+          if (name === "add-dir") {
+            if (!arg) {
+              const dirs = config.additionalDirectories || [];
+              reply(dirs.length ? "额外工作目录：\n  " + dirs.join("\n  ") : "(no extra dirs) — 用法：/add-dir <路径>"); return;
+            }
+            const abs = resolve(arg);
+            if (!existsSync(abs) || !statSync(abs).isDirectory()) { sendJson(res, 400, { ok: false, error: "不是目录：" + abs }); return; }
+            config.additionalDirectories = config.additionalDirectories || [];
+            if (!config.additionalDirectories.includes(abs)) config.additionalDirectories.push(abs);
+            saveConfig({ additionalDirectories: config.additionalDirectories });
+            reply("已添加额外目录：" + abs); return;
+          }
+          if (name === "compact") {
+            if (!agent) { sendJson(res, 404, { ok: false, error: "当前没有活跃会话" }); return; }
+            const before = agent.messages.length;
+            const cr = await agent.maybeCompact();
+            const t = cr ? "已压缩：丢弃 " + cr.dropped + " 条消息（" + before + " → " + agent.messages.length + "）" + (cr.summarised ? "，模型摘要" : "，截断") : "无需压缩（" + before + " 条消息，未达阈值）";
+            try { saverFor(key, agent).save({ force: true }); } catch {}
+            reply(t, { refresh: true }); return;
+          }
+          if (name === "rewind") {
+            if (!agent) { sendJson(res, 404, { ok: false, error: "当前没有活跃会话" }); return; }
+            const rr = agent.rewind(undefined, { restoreFiles: arg !== "keep-files" });
+            if (!rr.rewound) { reply("没有可回退的回合", { refresh: false }); return; }
+            const files = rr.files || { restored: [], deleted: [], failed: [] };
+            let t = "已回退 " + rr.rewound + " 条消息";
+            if (files.restored.length || files.deleted.length) t += " · 恢复 " + files.restored.length + " 个文件、移除 " + files.deleted.length + " 个新建文件";
+            if (files.failed.length) t += " · " + files.failed.length + " 个文件恢复失败";
+            try { saverFor(key, agent).save({ force: true }); } catch {}
+            reply(t, { refresh: true }); return;
+          }
+          if (name === "fork" || name === "branch") {
+            // Claude Code 语义（964_chunk-0qdm07jf）：从当前会话分叉出新会话，
+            // 历史整份带走、原会话不动。branch 是 fork 的别名。
+            if (!agent || !agent.messages.length) { sendJson(res, 404, { ok: false, error: "当前没有活跃会话可分叉" }); return; }
+            const forkId = "fork-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 6);
+            saveSession(forkId, agent.messages.map((m) => JSON.parse(JSON.stringify(m))), { cwd, turnCount: agent.turnCount, model: config.model });
+            reply("已分叉为新会话 " + forkId + "（" + agent.messages.length + " 条消息），原会话不变", { forkedTo: forkId }); return;
+          }
+          if (name === "init") {
+            // 与 TUI /init 同源：从磁盘事实生成 MYCLAUDE.md，不问模型、可离线。
+            const target = join(cwd, "MYCLAUDE.md");
+            if (existsSync(target) && !/\bforce\b/.test(arg)) { reply("MYCLAUDE.md 已存在 —— 用 /init force 重新生成"); return; }
+            const info = inspectProject(cwd);
+            const bodyMd = renderProjectMemory(info);
+            writeFileSync(target, bodyMd, "utf8");
+            reply("已写入 " + target + "（" + bodyMd.split("\n").length + " 行）"); return;
+          }
+          sendJson(res, 400, { ok: false, error: "未知服务端命令：" + name }); return;
+        } catch (e) {
+          sendJson(res, 500, { ok: false, error: String((e && e.message) || e) }); return;
+        }
+      }
       /* ---- tools / tasks / fs / mcp ---- */
       if (path === "/api/tools") {
         sendJson(res, 200, { tools: toolList() });
@@ -2012,6 +2161,12 @@ async function searchWorkspaceFiles(query = "", limit = 40) {
           return;
         }
                 let turnFinished = false;
+        // 定时器必须在 try 之前声明：try 块内的 const 在 finally 里取不到，
+        // 旧写法 `typeof flushTimer !== "undefined"` 因此永远为假，
+        // 2.5s 的 flush 定时器每回合泄漏一个。
+        let flushTimer = null;
+        let progressTimer = null;
+        let runStartedAt = Date.now();
         // A closed browser tab (refresh or navigate) is a disconnect, not a
         // pause: nobody reads the SSE any more, so stop the run at once and
         // release the session. Leaving it hanging was what made a refresh
@@ -2043,7 +2198,20 @@ running.add(key);
         // process lost the WHOLE in-flight turn ("任务执行过的内容都遗失了").
         // Flush every 2.5s while the run is alive; the saver's own 1s throttle
         // coalesces these into cheap atomic writes.
-        const flushTimer = setInterval(() => { try { saver.save(); } catch {} }, 2500);
+        flushTimer = setInterval(() => { try { saver.save(); } catch {} }, 2500);
+        // 实时进度：执行中每秒推一次耗时与累计 token。stats 事件原本只在
+        // 回合结束时发一次，界面上的「正在执行…」条拿不到过程数据。
+        progressTimer = setInterval(() => {
+          if (res.writableEnded || res.destroyed) return;
+          sse(res, {
+            type: "progress",
+            elapsedMs: Date.now() - runStartedAt,
+            inputTokens: agent ? (agent.totalInputTokens || 0) : 0,
+            outputTokens: agent ? (agent.totalOutputTokens || 0) : 0,
+            turns: agent ? (agent.turnCount || 0) : 0,
+            messages: agent ? ((agent.messages && agent.messages.length) || 0) : 0,
+          });
+        }, 1000);
         let runResult = null;
 
 
@@ -2115,7 +2283,8 @@ running.add(key);
         res.end();
         } finally {
           // Free the slot no matter how the run ended: error, interrupt, done.
-          if (typeof flushTimer !== "undefined") { clearInterval(flushTimer); }
+          if (flushTimer) { clearInterval(flushTimer); flushTimer = null; }
+          if (progressTimer) { clearInterval(progressTimer); progressTimer = null; }
           running.delete(key);
         }
         return;
@@ -2699,13 +2868,9 @@ if (path === "/api/session" && req.method === "POST") {
   const boundPort = server.address().port;
   const address = `http://127.0.0.1:${boundPort}`;
   if (open) {
-    const cmd =
-      process.platform === "win32"
-        ? `start "" "${address}"`
-        : process.platform === "darwin"
-          ? `open "${address}"`
-          : `xdg-open "${address}"`;
-    import("node:child_process").then(({ exec }) => exec(cmd));
+    // 复用同一套「真的把地址交给系统」的逻辑：启动路径不阻塞，失败只丢日志。
+    // 服务器本身会让事件循环活着，所以这里的 exec 一定跑得完。
+    openInBrowser(address).catch(() => {});
   }
 
   return { server, address, port: boundPort };

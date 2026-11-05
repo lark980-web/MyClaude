@@ -725,6 +725,8 @@
     head.appendChild(el("span", "tool-dot"));
     head.appendChild(el("span", "tool-group-title", "已执行多项工具操作"));
     head.appendChild(el("span", "tool-group-meta", ""));
+    // 右侧实时读数：耗时 + 累计 token，任务结束后定格为执行记录。
+    head.appendChild(el("span", "tool-group-live", ""));
     var chev = el("span", "tool-group-chev");
     chev.appendChild(icon("i-chev", 14));
     head.appendChild(chev);
@@ -2349,14 +2351,19 @@
     if (raw.length <= 20) { return; }
     var bodyEl = wrap.querySelector(".md");
     var fRow = el("div", "followup-row");
-    fRow.appendChild(el("span", "followup-label", "继续追问："));
+    var fHead = el("div", "followup-head");
+    fHead.appendChild(el("span", "followup-head-label", "继续追问"));
+    fHead.appendChild(el("span", "followup-head-en", "FOLLOW-UPS"));
+    fHead.appendChild(el("span", "followup-head-rule"));
+    fRow.appendChild(fHead);
     buildFollowupPrompts(raw, bodyEl).forEach(function (item, idx) {
       var card = el("button", "followup-card");
       card.type = "button";
       var top = el("span", "fc-top");
       top.appendChild(el("span", "fc-num", (idx + 1 < 10 ? "0" : "") + (idx + 1)));
-      top.appendChild(el("span", "fc-arrow", "\u2192"));
+      top.appendChild(el("span", "fc-arrow", "\u2197"));
       card.appendChild(top);
+      card.appendChild(el("span", "fc-rule"));
       card.appendChild(el("span", "fc-title", item.t));
       card.appendChild(el("span", "fc-desc", item.d));
       card.addEventListener("click", function () {
@@ -2441,6 +2448,11 @@
     head.appendChild(tico);
     var label = el("span", "thought-label", "思考中");
     head.appendChild(label);
+    // 任务计时挂思考条上；label 会被「正在思考…/已思考 N 秒」反复改写，
+    // 独立 span 才不会被覆盖。
+    var timer = el("span", "thought-timer");
+    timer.title = "任务进行时间";
+    head.appendChild(timer);
     var tchev = el("span", "thought-chev");
     tchev.appendChild(icon("i-chev", 14));
     head.appendChild(tchev);
@@ -2451,7 +2463,7 @@
     box.appendChild(body);
     root.appendChild(box);
     scrollStream();
-    return { box: box, label: label, body: body };
+    return { box: box, label: label, body: body, timer: timer };
   }
 
   function openAttachmentPreviewModal(f) {
@@ -2529,14 +2541,44 @@
     });
   }
 
+  /* ---- 任务实时读数：耗时 + 累计 token ---- */
+  function fmtClockMs(ms) {
+    var s = Math.max(0, Math.floor((Number(ms) || 0) / 1000));
+    var m = Math.floor(s / 60), ss = s % 60;
+    return m + ":" + (ss < 10 ? "0" : "") + ss;
+  }
+  function fmtTok(n) {
+    n = Number(n) || 0;
+    return n >= 1000 ? (n / 1000).toFixed(1) + "k" : String(n);
+  }
+  /** 把同一份实时读数写到工具聚合条右侧徽标 + 思考条计时器。
+   * active=false 时定格（去掉脉冲），文本留在 DOM 里作为本轮记录。 */
+  function setLiveStat(elapsedMs, inTok, outTok, active) {
+    var total = (Number(inTok) || 0) + (Number(outTok) || 0);
+    var txt = fmtClockMs(elapsedMs) + " · " + fmtTok(total) + " tok";
+    var root = logRoot();
+    if (!root) return;
+    Array.prototype.forEach.call(root.querySelectorAll(".tool-group-live"), function (b) {
+      b.textContent = txt;
+      b.classList.toggle("is-running", !!active);
+      b.title = "任务耗时 " + fmtClockMs(elapsedMs) + " · 累计 " + total.toLocaleString() + " tokens（输入 " + (Number(inTok) || 0) + " / 输出 " + (Number(outTok) || 0) + "）";
+    });
+    Array.prototype.forEach.call(root.querySelectorAll(".thought-timer"), function (t) {
+      t.textContent = txt;
+      t.title = "任务耗时 " + fmtClockMs(elapsedMs) + " · 累计 " + total.toLocaleString() + " tokens";
+    });
+    var liveEl = $("live");
+    if (liveEl) { liveEl.title = "任务进行中 · " + fmtClockMs(elapsedMs) + " · " + fmtTok(total) + " tok"; }
+  }
+
   function setBusy(v) {
     S.busy = v;
     var send = $("send");
     var stop = $("btn-stop");
-    var stat = $("stat");
+
     if (send) { send.disabled = v; }
     if (stop) { stop.hidden = !v; }
-    if (stat) { stat.textContent = ""; }
+
     var live = $("live");
     if (!live) {
       live = el("div", "live");
@@ -2547,24 +2589,25 @@
       if (st && log) { log.parentNode.insertBefore(live, log.nextSibling); }
     }
     live.hidden = !v;
-    // 任务进行时间：busy 期间每秒刷新（Claude Code 计时 spinner 的等价物）
+    // 任务进行时间：显示在对话流当前回合的思考条上，不再挤在输入框右侧
     if (v) {
       S.busyStartedAt = Date.now();
       if (!S.busyTimer) {
         S.busyTimer = setInterval(function () {
-          var s = Math.floor((Date.now() - (S.busyStartedAt || Date.now())) / 1000);
-          var mm = Math.floor(s / 60), ss = s % 60;
-          var label = "任务进行中 · " + (mm > 0 ? mm + "m " : "") + (ss < 10 && mm > 0 ? "0" : "") + ss + "s";
-          var stat2 = $("stat");
-          if (stat2) { stat2.textContent = label; }
-          var liveEl = $("live");
-          if (liveEl) { liveEl.title = label; }
+          // 客户端每秒自转；服务端 progress 事件会用更准的 token 数覆盖同一处。
+          setLiveStat(Date.now() - (S.busyStartedAt || Date.now()),
+            (S.stats && S.stats.inputTokens) || 0, (S.stats && S.stats.outputTokens) || 0, true);
         }, 1000);
       }
     } else {
       if (S.busyTimer) { clearInterval(S.busyTimer); S.busyTimer = null; }
-      var stat3 = $("stat");
-      if (stat3) { stat3.textContent = ""; }
+      var root2 = logRoot();
+      var timers2 = root2 ? root2.querySelectorAll(".thought-timer") : [];
+      Array.prototype.forEach.call(timers2, function (t) { t.textContent = ""; });
+      // 工具聚合条徽标不清空：定格成这一轮的执行记录。
+      Array.prototype.forEach.call(root2 ? root2.querySelectorAll(".tool-group-live") : [], function (b) {
+        b.classList.remove("is-running");
+      });
     }
     var app = $("app");
     if (app) { app.classList.toggle("busy", !!v); }
@@ -2743,6 +2786,16 @@
       scrollStream();
       return;
     }
+    if (ev.type === "progress") {
+      // 服务端每秒推一次：比客户端自转更准的累计 token。
+      S.stats.inputTokens = ev.inputTokens || 0;
+      S.stats.outputTokens = ev.outputTokens || 0;
+      S.stats.tokens = (ev.inputTokens || 0) + (ev.outputTokens || 0);
+      S.stats.turns = ev.turns || 0;
+      S.stats.messages = ev.messages || 0;
+      setLiveStat(ev.elapsedMs, ev.inputTokens, ev.outputTokens, true);
+      return;
+    }
     if (ev.type === "stats") {
       S.stats = {
         messages: ev.messages != null ? ev.messages : S.stats.messages,
@@ -2792,6 +2845,9 @@
     }
     if (ev.type === "compact") { addNotice("上下文已压缩（丢弃 " + (ev.dropped ?? "?") + " 条旧消息），长对话继续", "info"); }
           if (ev.type === "done") {
+            // 定格实时读数：工具聚合条右侧保留本轮最终耗时 + token 作为记录。
+            setLiveStat(Date.now() - (S.busyStartedAt || Date.now()),
+              (S.stats && S.stats.inputTokens) || 0, (S.stats && S.stats.outputTokens) || 0, false);
             playChime("done");
             maybeNotify("回复已完成", "MyClaude 的新回复已生成，点击回到对话");
             // 本回合出现过错误（如 provider error）→ 给一键重试，免得用户
@@ -2940,6 +2996,20 @@
   }
 
   /* ================================================================ 面板 === */
+
+  // Shift+Tab 权限模式轮转。顺序必须与 src/agent/modes.js 的 MODE_CYCLE 一致：
+  //   ask -> acceptEdits -> plan -> bypassPermissions -> auto -> ask
+  // dontAsk 与 fullAccess 刻意不在环上（前者上游明确排除，后者是逃生门）。
+  var MODE_RING = ["ask", "acceptEdits", "plan", "bypassPermissions", "auto"];
+  function cyclePermissionMode() {
+    var cur = (S.config && S.config.permissionMode) || "ask";
+    var i = MODE_RING.indexOf(cur);
+    var next = i < 0 ? MODE_RING[0] : MODE_RING[(i + 1) % MODE_RING.length];
+    postJSON("/api/config", { permissionMode: next }).then(function () {
+      setMode(next);
+      toast("权限模式 → " + next, "ok");
+    }).catch(function (e) { addNotice("切换权限模式失败：" + e.message, "err"); });
+  }
 
   function setMode(mode) {
     if (S.config) { S.config.permissionMode = mode; }
@@ -3306,7 +3376,7 @@
     var btnProbe = el("button", "model-action-btn", fallbackProbing ? "测活中…" : "一键测活");
     btnProbe.type = "button";
     btnProbe.disabled = fallbackProbing || !pool.length;
-    btnProbe.title = "测试所有备用模型接口连通性与响应延迟";
+    btnProbe.title = !pool.length ? "暂无备用模型，请先点「+ 添加」配置容灾候选模型" : (fallbackProbing ? "正在检测备用模型接口连通性…" : "测试所有备用模型接口连通性与响应延迟");
     btnProbe.addEventListener("click", probeFallbacks);
     actBox.appendChild(btnProbe);
 
@@ -3426,7 +3496,7 @@
   }
 
   function renderTodoSection(root) {
-    var s = section("任务");
+    var s = section("待办清单");
     if (!S.todos.length) {
       s.body.appendChild(el("div", "empty-note", "暂无任务列表"));
     } else {
@@ -3469,11 +3539,23 @@
     AskUserQuestion: "向用户提出澄清问题",
     ExitPlanMode: "提交方案等待批准",
     Task: "委派子任务给独立上下文的子代理",
+    TaskOutput: "读取后台子任务的输出与状态",
     GitStatus: "查看分支与工作区改动",
     GitDiff: "查看改动差异",
     GitLog: "查看提交历史",
     GitCommit: "暂存并提交改动"
   };
+
+  /* 只读清单的展示分组：按能力归类，不属于 Claude 行为定义。
+     未列入的工具统一归入「其它」，保证新增/MCP 工具不会被漏掉。 */
+  var TOOL_GROUPS = [
+    { name: "文件与编辑", tools: ["Read", "Write", "Edit", "MultiEdit", "LS", "NotebookRead", "NotebookEdit"] },
+    { name: "搜索", tools: ["Glob", "Grep"] },
+    { name: "终端与后台任务", tools: ["Bash", "BashOutput", "KillShell", "TaskOutput"] },
+    { name: "网络", tools: ["WebFetch", "WebSearch"] },
+    { name: "代理与规划", tools: ["TodoWrite", "AskUserQuestion", "ExitPlanMode", "Task"] },
+    { name: "Git", tools: ["GitStatus", "GitDiff", "GitLog", "GitCommit"] }
+  ];
 
   function toolZh(name, description) {
     if (TOOL_ZH[name]) { return TOOL_ZH[name]; }
@@ -4620,7 +4702,7 @@
 
   /* ================================================================ 模态 === */
 
-  function openModal(title, buildBody, footButtons) {
+  function openModal(title, buildBody, footButtons, opts) {
     var m = $("modal");
     var mt = $("modal-title");
     if (mt) { mt.textContent = title; }
@@ -4636,6 +4718,9 @@
       btn.addEventListener("click", function () { if (b.fn) { b.fn(); } });
       foot.appendChild(btn);
     });
+    /* 每次打开都重设宽版标记，避免上一个弹窗的宽版残留到下一个 */
+    var card = m.querySelector(".modal-card");
+    if (card) { card.classList.toggle("modal-wide", !!(opts && opts.wide)); }
     m.hidden = false;
   }
 
@@ -5030,6 +5115,8 @@
       var topRow = el("div", "pcard-top");
       var icon = el("span", "pcard-icon", preset.icon || "🤖");
       var name = el("strong", "pcard-name", preset.name);
+      // 列变窄后名字会省略；悬停仍能看到全称。
+      name.title = preset.name;
       topRow.appendChild(icon);
       topRow.appendChild(name);
 
@@ -5229,6 +5316,9 @@
 
       postJSON("/api/config", {
         activeProviderKey: curPreset.key,
+        // 线协议跟卡片走：Anthropic 官方必须用 Messages API 适配器，
+        // 否则 baseUrl 指到 api.anthropic.com 也只会发出 OpenAI 格式而失败。
+        provider: curPreset.key === "anthropic" ? "anthropic" : "openai",
         baseUrl: targetBaseUrl,
         apiKey: targetApiKey,
         model: targetModel,
@@ -5239,6 +5329,7 @@
 
         if (S.config) {
           S.config.activeProviderKey = curPreset.key;
+          S.config.provider = curPreset.key === "anthropic" ? "anthropic" : "openai";
           S.config.baseUrl = targetBaseUrl;
           S.config.apiKey = targetApiKey;
           S.config.model = targetModel;
@@ -5448,13 +5539,45 @@
     var tools = (S.config && S.config.tools) || [];
     openModal("工具（" + tools.length + "）", function (body) {
       if (!tools.length) { body.appendChild(el("div", "empty-note", "暂无工具")); return; }
-      tools.forEach(function (t) {
-        var row = el("div", "tool-row");
-        row.appendChild(el("b", null, t.name));
-        row.appendChild(el("span", null, toolZh(t.name, t.description)));
-        body.appendChild(row);
+      var intro = el("div", "tools-intro");
+      intro.appendChild(el("b", null, String(tools.length)));
+      intro.appendChild(document.createTextNode(" 个已注册工具 · 由模型在对话中按权限调用；这里是只读清单，不直接执行。"));
+      body.appendChild(intro);
+
+      function cardFor(t) {
+        var card = el("div", "tool-card");
+        card.title = t.description || "";
+        card.appendChild(el("b", null, t.name));
+        card.appendChild(el("span", null, toolZh(t.name, t.description)));
+        return card;
+      }
+      function appendGroup(name, items) {
+        if (!items.length) { return; }
+        var group = el("section", "tool-group");
+        var head = el("div", "tool-group-head");
+        head.appendChild(el("span", "tool-group-name", name));
+        head.appendChild(el("span", "tool-group-count", String(items.length)));
+        group.appendChild(head);
+        var grid = el("div", "tool-grid");
+        items.forEach(function (t) { grid.appendChild(cardFor(t)); });
+        group.appendChild(grid);
+        body.appendChild(group);
+      }
+
+      var remaining = tools.slice();
+      TOOL_GROUPS.forEach(function (g) {
+        var items = [];
+        g.tools.forEach(function (n) {
+          var idx = -1;
+          for (var i = 0; i < remaining.length; i++) {
+            if (remaining[i].name === n) { idx = i; break; }
+          }
+          if (idx >= 0) { items.push(remaining[idx]); remaining.splice(idx, 1); }
+        });
+        appendGroup(g.name, items);
       });
-    }, [{ label: "关闭", fn: closeModal }]);
+      appendGroup("其它", remaining);
+    }, [{ label: "关闭", fn: closeModal }], { wide: true });
   }
 
   function openSessions() {
@@ -5554,6 +5677,16 @@
     render();
     if (!inbox.timer) { inbox.timer = setInterval(render, 1500); }
   }
+  /** /tasks 与 /bashes：先确保右栏打开并切到「任务」页签，再交给 switchInspectorTab 渲染。
+   * openTasks() 本身只往 #tasks-body 里画，页签未激活时该容器是 hidden ——
+   * 以前两个命令点了没反应，就是这个原因。不要反过来在 openTasks 里调
+   * switchInspectorTab，会形成递归（switchInspectorTab → openTasks → …）。 */
+  function showTasks() {
+    var appEl = $("app");
+    if (appEl && !appEl.classList.contains("insp-open")) { setInspector(true); }
+    switchInspectorTab("tasks");
+  }
+
   function openFiles(dir) {
     var path = dir || ((S.config && S.config.cwd) || ".");
     getJSON("/api/fs?path=" + encodeURIComponent(path)).then(function (j) {
@@ -5759,18 +5892,265 @@
     { k: "/help", d: "显示命令列表", fn: function () { runCommand("/help"); } },
     { k: "/new", d: "新对话", fn: function () { newChat(); } },
     { k: "/model", d: "查看或切换模型", fn: function () { openSettings(); } },
-    { k: "/mode", d: "切换权限模式", fn: function () { runCommand("/mode"); } },    { k: "/auto", d: "自主续跑：到回合上限自动继续（/auto on|off|status）", fn: function () { runCommand("/auto status"); } },
+    { k: "/mode", d: "切换权限模式", fn: function () { runCommand("/mode"); } },
+    { k: "/auto", d: "自主续跑：到回合上限自动继续（/auto on|off|status）", fn: function () { runCommand("/auto status"); } },
     { k: "/tools", d: "可用工具", fn: function () { openTools(); } },
     { k: "/config", d: "查看当前配置", fn: function () { runCommand("/config"); } },
     { k: "/sessions", d: "历史会话", fn: function () { openSessions(); } },
     { k: "/files", d: "浏览工作目录", fn: function () { openFiles(); } },
     { k: "/prompts", d: "打开提示词与系统指令库（Prompt Library）", fn: function () { openPromptLibraryModal(); } },
-    { k: "/tasks", d: "后台任务", fn: function () { openTasks(); } },
+    { k: "/tasks", d: "后台任务", fn: function () { showTasks(); } },
+    { k: "/bashes", d: "后台 shell（/tasks 别名）", fn: function () { showTasks(); } },
     { k: "/settings", d: "设置", fn: function () { openSettings(); } },
     { k: "/voice", d: "开启/关闭免费中文语音转文字（Alt+V）", fn: function () { toggleVoiceInput(); } },
     { k: "/shortcuts", d: "键盘快捷键面板（? 或 Ctrl+/）", fn: function () { openShortcutsModal(); } },
-    { k: "/theme", d: "切换深色 / 浅色", fn: function () { toggleTheme(); } }
+    { k: "/theme", d: "切换深色 / 浅色", fn: function () { toggleTheme(); } },
+    { k: "/status", d: "会话状态一览", fn: function () { runCommand("/status"); } },
+    { k: "/stats", d: "消息 / 回合 / token 统计", fn: function () { runCommand("/stats"); } },
+    { k: "/context", d: "上下文分解与水位", fn: function () { runCommand("/context"); } },
+    { k: "/cost", d: "token 用量与计价估算", fn: function () { runCommand("/cost"); } },
+    { k: "/doctor", d: "环境健康检查", fn: function () { runCommand("/doctor"); } },
+    { k: "/title", d: "重命名当前会话（/title <名称>）", fn: function () { runCommand("/title"); } },
+    { k: "/todos", d: "待办清单", fn: function () { runCommand("/todos"); } },
+    { k: "/permissions", d: "权限规则", fn: function () { runCommand("/permissions"); } },
+    { k: "/hooks", d: "Hooks 配置", fn: function () { runCommand("/hooks"); } },
+    { k: "/mcp", d: "MCP 服务器", fn: function () { runCommand("/mcp"); } },
+    { k: "/effort", d: "思考深度（/effort high|medium|low|off）", fn: function () { runCommand("/effort"); } },
+    { k: "/models", d: "打开模型选择器", fn: function () { runCommand("/models"); } },
+    { k: "/export", d: "导出对话", fn: function () { runCommand("/export"); } },
+    { k: "/memory", d: "项目记忆（/memory add <内容>）", fn: function () { runCommand("/memory"); } },
+    { k: "/skills", d: "已安装技能", fn: function () { runCommand("/skills"); } },
+    { k: "/plugin", d: "已安装插件", fn: function () { runCommand("/plugin"); } },
+    { k: "/agents", d: "已定义子代理", fn: function () { runCommand("/agents"); } },
+    { k: "/release-notes", d: "发布说明", fn: function () { runCommand("/release-notes"); } },
+    { k: "/add-dir", d: "额外工作目录（/add-dir <路径>）", fn: function () { runCommand("/add-dir"); } },
+    { k: "/compact", d: "立即压缩上下文", fn: function () { runCommand("/compact"); } },
+    { k: "/rewind", d: "回退上一回合（含文件）", fn: function () { runCommand("/rewind"); } },
+    { k: "/fast", d: "快速模式（/fast on|off|status）", fn: function () { runCommand("/fast status"); } },
+    { k: "/fork", d: "从当前会话分叉新会话", fn: function () { runCommand("/fork"); } },
+    { k: "/branch", d: "分叉会话（/fork 别名）", fn: function () { runCommand("/branch"); } },
+    { k: "/init", d: "生成 MYCLAUDE.md（/init force 重生成）", fn: function () { runCommand("/init"); } },
+    { k: "/clear", d: "新对话（/new 别名）", fn: function () { newChat(); } },
+    { k: "/provider", d: "打开供应商设置", fn: function () { openSettings(); } }
   ];
+
+  /* ------------------------------------------------------------------
+   * GUI 内建命令补充（迭代第 2 轮）
+   *
+   * TUI main.js 有约 60 个内建命令，GUI 原先只实现了 switch 里约 20 个，
+   * 其余一律落到「未知命令」。这里按「能映射到现有 API / 面板」逐批补齐，
+   * 每条是 function(arg)，可异步（内部 fetch 自行 catch），不新增后端端点。
+   * ------------------------------------------------------------------ */
+  function fmtK(n) { var v = Number(n) || 0; return v >= 1000 ? (v / 1000).toFixed(1) + "k" : String(v); }
+  function fmtUsd(n) { return "$" + Number(n).toFixed(4); }
+  function ctxBar(label, used, limit) {
+    var w = 24, share = limit > 0 ? Math.max(0, Math.min(1, used / limit)) : 0;
+    var fill = Math.round(share * w);
+    return "  " + label + "  │" + new Array(fill + 1).join("█") + new Array(w - fill + 1).join("░") + "│ " + fmtK(used) + " / " + fmtK(limit);
+  }
+  function sessionKeyOf() { return S.sessionKey || "default"; }
+
+  var EXTRA_COMMANDS = {
+    status: function () {
+      var c = S.config || {}, s = S.stats || {};
+      addNotice([
+        "模型        " + (c.model || "-"),
+        "供应商      " + (c.provider || (c.endpoint && c.endpoint.vendor) || "-"),
+        "权限模式    " + modeName(c.permissionMode || "ask"),
+        "思考深度    " + (c.effort || "默认"),
+        "MCP 服务器  用 /mcp 查看实时状态",
+        "接口地址    " + (c.baseUrl || "-"),
+        "消息 / 回合 " + (s.messages || 0) + " / " + (s.turns || 0),
+        "上下文      " + fmtK(s.contextUsed || 0) + " / " + fmtK(s.contextLimit || 0) + " tok"
+      ].join("\n"), "info");
+    },
+    stats: function () {
+      var s = S.stats || {};
+      addNotice("消息 " + (s.messages || 0) + " 条 · 回合 " + (s.turns || 0) + "\n" +
+        "累计输入 " + fmtK(s.inputTokens || 0) + " tok · 累计输出 " + fmtK(s.outputTokens || 0) + " tok\n" +
+        "当前上下文 " + fmtK(s.contextUsed || 0) + " / " + fmtK(s.contextLimit || 0) + " tok", "info");
+    },
+    context: function () {
+      var s = S.stats || {}, c = S.config || {};
+      // 新会话还没有 stats，用模型窗口 × 压缩阈值给出有意义的压缩线，
+      // 否则满屏 0 / 0 的空条没有信息量。
+      var limit = s.contextLimit || Math.round((Number(c.modelContextWindow) || 200000) * 0.8);
+      var sys = s.systemTokens || 0, hist = s.historyTokens || 0, used = s.contextUsed || 0;
+      addNotice([
+        "上下文分解（压缩线 " + fmtK(limit) + " tok）",
+        ctxBar("系统提示", sys, limit),
+        ctxBar("历史消息", hist, limit),
+        ctxBar("已用合计", used, limit),
+        ctxBar("剩余", Math.max(0, limit - used), limit),
+        "",
+        "  消息 " + (s.messages || 0) + " 条 · 回合 " + (s.turns || 0),
+        "  累计输入 " + (s.inputTokens || 0) + " / 输出 " + (s.outputTokens || 0) + " tok"
+      ].join("\n"), "info");
+    },
+    cost: function () {
+      var c = S.config || {}, s = S.stats || {};
+      var m = c.currentModel || null, inT = Number(s.inputTokens) || 0, outT = Number(s.outputTokens) || 0;
+      var price = "该模型未配置价格，仅显示 token 用量";
+      if (m && typeof m.inputPrice === "number" && typeof m.outputPrice === "number") {
+        price = fmtUsd((inT / 1e6) * m.inputPrice + (outT / 1e6) * m.outputPrice) + "（按公开标价估算）";
+      }
+      addNotice([
+        "模型   " + (c.model || "-"),
+        "输入   " + inT.toLocaleString() + " tok",
+        "输出   " + outT.toLocaleString() + " tok",
+        "总计   " + (inT + outT).toLocaleString() + " tok",
+        "计价   " + price
+      ].join("\n"), "info");
+    },
+    doctor: function () {
+      getJSON("/api/config").then(function (c) {
+        var rows = [
+          ["ok", "model", c.model || "(unset)"],
+          ["ok", "baseUrl", c.baseUrl || "(unset)"],
+          [c.apiKeyConfigured ? "ok" : "warn", "apiKey", c.apiKeyConfigured ? "(set)" : "未设置（网关可能不需要）"],
+          ["ok", "tools", (c.tools || []).length + " 个"]
+        ];
+        return Promise.all([
+          getJSON("/api/hooks").catch(function (e) { return { err: e.message }; }),
+          getJSON("/api/mcp").catch(function (e) { return { err: e.message }; }),
+          getJSON("/api/models").catch(function (e) { return { err: e.message }; })
+        ]).then(function (r) {
+          var hooks = r[0], mcp = r[1], models = r[2];
+          rows.push([hooks.err ? "FAIL" : "ok", "hooks", hooks.err || Object.keys(hooks.hooks || {}).length + " 个事件"]);
+          rows.push([mcp.err ? "FAIL" : "ok", "mcp", mcp.err || (mcp.servers || mcp.mcpServers || []).length + " 个服务器"]);
+          var gwState = models.err ? "FAIL" : (models.probeOk === false ? "warn" : "ok");
+          var gwDetail = models.err ? models.err :
+            ((models.models || []).length + " 个模型 · " + (models.probeOk ? "网关可达" : "网关不可达（用缓存目录）"));
+          rows.push([gwState, "gateway", gwDetail]);
+          addNotice("MyClaude 环境检查\n" + rows.map(function (x) {
+            return "  " + (x[0] === "ok" ? "✓" : x[0] === "warn" ? "!" : "✗") + "  " + x[1] + "  " + x[2];
+          }).join("\n"), "info");
+        });
+      }).catch(function (e) { addNotice("环境检查失败：" + e.message, "err"); });
+    },
+    title: function (arg) {
+      var name = String(arg || "").trim();
+      if (!name) {
+        var t = $("top-title");
+        addNotice("当前会话标题：" + (t ? t.textContent.trim() : "(未命名)") + "\n用法：/title <标题>", "info");
+        return;
+      }
+      var id = S.sessionKey;
+      if (!id || id === "default") { addNotice("会话尚未保存，先发一条消息再使用 /title", "warn"); return; }
+      fetch("/api/sessions/" + encodeURIComponent(id), {
+        method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title: name })
+      }).then(function (r) {
+        if (!r.ok) { throw new Error("HTTP " + r.status); }
+        S.titleOverride = { key: id, title: name };
+        renderTopMeta(); refreshSessions();
+        toast("会话标题 → " + name, "ok");
+      }).catch(function (e) { addNotice("重命名失败：" + e.message, "err"); });
+    },
+    todos: function () {
+      getJSON("/api/todos?sessionKey=" + encodeURIComponent(sessionKeyOf())).then(function (j) {
+        var list = j.todos || [];
+        if (!list.length) { addNotice("暂无待办（/todos）", "info"); return; }
+        var mark = { completed: "✓", in_progress: "▶", pending: "○", cancelled: "✗" };
+        addNotice("待办清单（" + list.length + "）\n" + list.map(function (t) {
+          return "  " + (mark[t.status] || "○") + " " + t.content;
+        }).join("\n"), "info");
+      }).catch(function (e) { addNotice("读取待办失败：" + e.message, "err"); });
+    },
+    permissions: function () {
+      getJSON("/api/permissions").then(function (j) {
+        var p = j.permissions || {};
+        addNotice("权限规则\n" + ["allow", "deny", "ask"].map(function (k) {
+          return "  " + k + "  " + (((p[k] || []).join("、")) || "（空）");
+        }).join("\n"), "info");
+      }).catch(function (e) { addNotice("读取权限失败：" + e.message, "err"); });
+    },
+    hooks: function () {
+      getJSON("/api/hooks").then(function (j) {
+        var h = j.hooks || {}, keys = Object.keys(h);
+        var body = keys.length ? keys.map(function (k) {
+          return "  " + k + "  " + (Array.isArray(h[k]) ? h[k].length + " 条" : JSON.stringify(h[k]).slice(0, 60));
+        }).join("\n") : "  未配置；可用事件：" + (j.events || []).join("、");
+        addNotice("Hooks（" + keys.length + " 个事件）\n" + body, "info");
+      }).catch(function (e) { addNotice("读取 hooks 失败：" + e.message, "err"); });
+    },
+    mcp: function () {
+      getJSON("/api/mcp").then(function (j) {
+        var list = j.servers || j.mcpServers || [];
+        if (!list.length) { addNotice("未连接 MCP 服务器（在 设置 → MCP 添加）", "info"); return; }
+        addNotice("MCP 服务器（" + list.length + "）\n" + list.map(function (s) {
+          return "  " + (s.name || "?") + "  " + (s.tools != null ? s.tools + " 工具" : (s.status || ""));
+        }).join("\n"), "info");
+      }).catch(function (e) { addNotice("读取 MCP 失败：" + e.message, "err"); });
+    },
+    effort: function (arg) {
+      var v = String(arg || "").trim().toLowerCase();
+      if (!v) { addNotice("思考深度：" + ((S.config || {}).effort || "默认") + "\n用法：/effort high|medium|low|off", "info"); return; }
+      if (["high", "medium", "low", "off"].indexOf(v) < 0) { addNotice("用法：/effort high|medium|low|off", "warn"); return; }
+      postJSON("/api/config", { effort: v }).then(function () {
+        if (S.config) { S.config.effort = v === "off" ? null : v; }
+        toast("思考深度 → " + v, "ok");
+      }).catch(function (e) { addNotice("设置失败：" + e.message, "err"); });
+    },
+    models: function () {
+      var b = $("btn-model");
+      if (b) { toggleModelMenu(b); } else { addNotice("模型选择器不可用", "warn"); }
+    },
+    export: function () {
+      var b = $("btn-export-chat");
+      if (b) { b.click(); } else { addNotice("导出入口不可用", "warn"); }
+    },
+    memory: function (arg) { runServerCommand("memory", arg); },
+    skills: function () { runServerCommand("skills"); },
+    plugin: function () { runServerCommand("plugin"); },
+    agents: function () { runServerCommand("agents"); },
+    "release-notes": function () { runServerCommand("release-notes"); },
+    "add-dir": function (arg) { runServerCommand("add-dir", arg); },
+    compact: function () { runServerCommand("compact"); },
+    rewind: function (arg) { runServerCommand("rewind", arg); },
+    fast: function (arg) {
+      var v = String(arg || "").trim().toLowerCase();
+      var cur = !!(S.config && S.config.fastMode);
+      if (!v || v === "status") {
+        addNotice("快速模式：" + (cur ? "开" : "关") + "\n用法：/fast on|off|status", "info");
+        return;
+      }
+      if (v !== "on" && v !== "off" && v !== "1" && v !== "0") { addNotice("用法：/fast on|off|status", "warn"); return; }
+      var on = v === "on" || v === "1";
+      postJSON("/api/config", { fastMode: on }).then(function () {
+        if (S.config) { S.config.fastMode = on; }
+        toast(on ? "快速模式已开启 — 每轮只带最近 24 条历史" : "快速模式已关闭 — 每轮发送完整历史", "ok");
+      }).catch(function (e) { addNotice("设置失败：" + e.message, "err"); });
+    },
+    // Claude Code 964_chunk-0qdm07jf：branch 是 fork 的别名（forkSessionId 同源）
+    fork: function () { runServerCommand("fork"); },
+    branch: function () { runServerCommand("branch"); },
+    init: function (arg) { runServerCommand("init", arg); },
+    clear: function () { newChat(); },
+    provider: function () { openSettings(); }
+  };
+
+  /** 需要读本机文件 / 改 agent 状态的命令：走服务端白名单，返回纯文本。 */
+  function runServerCommand(name, arg) {
+    // 不用 postJSON：它对非 2xx 只抛「HTTP 404」，会丢掉服务端给出的
+    // 「当前没有活跃会话」这类真正有用的原因。
+    fetch("/api/command", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: name, arg: arg || "", sessionKey: sessionKeyOf() })
+    }).then(function (r) {
+      return r.json().then(function (j) { return { status: r.status, j: j }; });
+    }).then(function (out) {
+      var j = out.j;
+      if (!j.ok) { addNotice("命令失败：" + (j.error || ("HTTP " + out.status)), "err"); return; }
+      addNotice(j.text || "(无输出)", "info");
+      // /fork 返回新会话 id：直接切过去，原会话留在侧栏。
+      if (j.forkedTo) { try { resumeSession(j.forkedTo, { quiet: true }); } catch (e) {} }
+      // compact / rewind 改了会话历史，静默重放一次，避免界面还停在旧内容。
+      if (j.refresh && S.sessionKey && S.sessionKey !== "default") {
+        try { resumeSession(S.sessionKey, { quiet: true }); } catch (e) { /* 重放失败不掩盖命令结果 */ }
+      }
+    }).catch(function (e) { addNotice("命令失败：" + e.message, "err"); });
+  }
 
   function runCommand(text) {
     var parts = text.slice(1).split(/\s+/);
@@ -5779,7 +6159,11 @@
     if (cmd === "output-style" && arg) { cmd = "output-style-set"; }
     switch (cmd) {
       case "help":
-        addNotice("命令：/help /new /model /mode /prompts /tools /config /sessions /files /tasks /settings /voice /shortcuts /theme", "info");
+        addNotice("命令：/help /new /model /mode /prompts /tools /config /sessions /files /tasks /bashes /settings /voice /shortcuts /theme\n" +
+          "信息：/status /stats /context /cost /doctor /todos /permissions /hooks /mcp\n" +
+          "操作：/title <名称> /effort high|medium|low|off /fast on|off /models /export\n" +
+          "扩展：/memory /skills /plugin /agents /release-notes /add-dir /compact /rewind\n" +
+          "会话：/fork /branch /init /clear /provider /output-style /review", "info");
         break;
       case "shortcuts":
         openShortcutsModal();
@@ -5793,7 +6177,23 @@
       case "model":
         openSettings();
         break;
-      case "auto": {        // /auto on|off|status — 自主续跑开关。max_turns 提示卡推荐的就是这条命令，        // 它必须真实存在，否则提示语在撒谎。        var want = String(arg || "").trim().toLowerCase();        if (want === "on" || want === "off") {          postJSON("/api/config", { autoRun: want === "on" }).then(function () {            if (S.config) { S.config.autoRun = want === "on"; }            toast(want === "on" ? "自主续跑已开启：到回合上限自动继续（含轮数与时长护栏）" : "自主续跑已关闭", "ok");          }).catch(function (e) { addNotice("设置失败：" + e.message, "err"); });        } else if (want === "" || want === "status") {          addNotice("自主续跑：" + (S.config && S.config.autoRun ? "已开启" : "未开启") + "（/auto on 或 /auto off 切换）", "info");        } else {          addNotice("用法：/auto on|off|status", "warn");        }        break;      }      case "mode":
+      case "auto": {
+        // /auto on|off|status — 自主续跑开关。max_turns 提示卡推荐的就是这条命令，
+        // 它必须真实存在，否则提示语在撒谎。
+        var want = String(arg || "").trim().toLowerCase();
+        if (want === "on" || want === "off") {
+          postJSON("/api/config", { autoRun: want === "on" }).then(function () {
+            if (S.config) { S.config.autoRun = want === "on"; }
+            toast(want === "on" ? "自主续跑已开启：到回合上限自动继续（含轮数与时长护栏）" : "自主续跑已关闭", "ok");
+          }).catch(function (e) { addNotice("设置失败：" + e.message, "err"); });
+        } else if (want === "" || want === "status") {
+          addNotice("自主续跑：" + (S.config && S.config.autoRun ? "已开启" : "未开启") + "（/auto on 或 /auto off 切换）", "info");
+        } else {
+          addNotice("用法：/auto on|off|status", "warn");
+        }
+        break;
+      }
+      case "mode":
         if (["ask", "auto", "plan"].indexOf(arg) >= 0) {
           postJSON("/api/config", { permissionMode: arg }).then(function (j) {
             if (S.config) { S.config.permissionMode = j.permissionMode || arg; }
@@ -5818,8 +6218,9 @@
       case "files":
         openFiles(arg || null);
         break;
+      case "bashes":
       case "tasks":
-        openTasks();
+        showTasks();
         break;
       case "settings":
         openSettings();
@@ -5868,6 +6269,9 @@
       default: {
         var custom = findCustom(cmd);
         if (custom) { runCustomCommand(custom, arg); break; }
+        // TUI 有而 GUI 原先没有的内建命令，走 EXTRA_COMMANDS 注册表补齐。
+        var extra = EXTRA_COMMANDS[cmd];
+        if (extra) { extra(arg); break; }
         addNotice("未知命令：/" + cmd + "（试试 /help 或 /commands）", "warn");
       }
     }
@@ -6113,8 +6517,6 @@
     if (bInsp) { bInsp.addEventListener("click", function () { setInspector(!$("app").classList.contains("insp-open")); }); }
     var bModel = $("btn-model");
     if (bModel) { bModel.addEventListener("click", function (e) { e.stopPropagation(); toggleModelMenu(bModel); }); }
-    var bTopModel = $("btn-top-model");
-    if (bTopModel) { bTopModel.addEventListener("click", function (e) { e.stopPropagation(); toggleModelMenu(bTopModel); }); }
     var bOpenCfg = $("btn-open-model-config");
     if (bOpenCfg) { bOpenCfg.addEventListener("click", function (e) { e.stopPropagation(); openModelConfigModal("providers"); }); }
     var bCloseCfg = $("btn-close-model-config");
@@ -6152,7 +6554,6 @@
     document.addEventListener("click", function (e) {
       var m = $("model-menu");
       if (m && !m.hidden && !m.contains(e.target) &&
-          !($("btn-top-model") && $("btn-top-model").contains(e.target)) &&
           !($("btn-wmc-switch") && $("btn-wmc-switch").contains(e.target)) &&
           !($("btn-model") && $("btn-model").contains(e.target))) {
         closeModelMenuSmoothly();
@@ -6236,6 +6637,8 @@
       var tag = (e.target && e.target.tagName) || "";
       var typing = tag === "INPUT" || tag === "TEXTAREA" || (e.target && e.target.isContentEditable);
       var mod = e.ctrlKey || e.metaKey;
+      // Shift+Tab 切换权限模式（上游全局生效；放在 document 级，焦点在输入框里也能用）。
+      if (e.shiftKey && e.key === "Tab") { e.preventDefault(); cyclePermissionMode(); return; }
       if (e.key === "Escape") {
         if ($("model-config-modal") && !$("model-config-modal").hidden) { closeModelConfigModal(); return; }
         if ($("projects-modal") && !$("projects-modal").hidden) { closeProjectModal(); return; }
@@ -8472,7 +8875,7 @@ function switchInspectorTab(tab) {
         var mdBox = el("div", "artifact-md-preview md");
         mdBox.innerHTML = MD.render(rawCode);
         stage.appendChild(mdBox);
-      } else {
+      } else if (!renderChangeListStage(stage, rawCode)) {
         var pre = el("pre", "artifact-code-view");
         pre.textContent = rawCode;
         stage.appendChild(pre);
@@ -8484,6 +8887,60 @@ function switchInspectorTab(tab) {
     }
   }
 
+  /**
+   * A TEXT artifact that is really a git-status-style change list gets
+   * structure: status badge, path, annotation. Plain prose keeps the raw
+   * <pre> — only two or more parseable status rows are promoted.
+   */
+  function renderChangeListStage(stage, text) {
+    var rows = [];
+    var re = /^\s*(M|A|D|R|C|U|\?\?|!!|MM|AM|AD|MD)\s+(.+?)\s*$/;
+    String(text || "").split(/\r?\n/).forEach(function (line) {
+      var m = line.match(re);
+      if (!m) { return; }
+      var rest = m[2], note = "";
+      var arrow = rest.indexOf("←");
+      if (arrow >= 0) { note = rest.slice(arrow + 1).trim(); rest = rest.slice(0, arrow).trim(); }
+      rows.push({ status: m[1], path: rest.trim(), note: note });
+    });
+    if (rows.length < 2) { return false; }
+
+    var wrap = el("div", "chg-view");
+    var head = el("div", "chg-view-head");
+    head.appendChild(el("span", "chg-view-title", "工作区变更"));
+    head.appendChild(el("span", "chg-view-count", rows.length + " 项"));
+    var legend = el("div", "chg-view-legend");
+    var seen = {};
+    rows.forEach(function (r) { seen[r.status] = (seen[r.status] || 0) + 1; });
+    Object.keys(seen).forEach(function (s) {
+      var tag = el("span", "chg-view-legend-item");
+      tag.appendChild(el("span", "chg-view-badge " + changeStatusClass(s), s));
+      tag.appendChild(el("span", "chg-view-legend-num", String(seen[s])));
+      legend.appendChild(tag);
+    });
+    head.appendChild(legend);
+    wrap.appendChild(head);
+
+    var list = el("div", "chg-view-list");
+    rows.forEach(function (r, i) {
+      var row = el("div", "chg-view-row");
+      row.appendChild(el("span", "chg-view-idx", (i + 1 < 10 ? "0" : "") + (i + 1)));
+      row.appendChild(el("span", "chg-view-badge " + changeStatusClass(r.status), r.status));
+      row.appendChild(el("span", "chg-view-path", r.path));
+      if (r.note) { row.appendChild(el("span", "chg-view-note", r.note)); }
+      list.appendChild(row);
+    });
+    wrap.appendChild(list);
+    stage.appendChild(wrap);
+    return true;
+  }
+
+  function changeStatusClass(status) {
+    if (status === "??" || status === "!!") { return "st-untracked"; }
+    if (status === "A" || status.indexOf("A") === 0) { return "st-added"; }
+    if (status === "D" || status.indexOf("D") >= 0) { return "st-deleted"; }
+    return "st-modified";
+  }
   function submitArtifactRefine() {
     var inp = $("artifact-refine-input");
     if (!inp) { return; }
@@ -9043,7 +9500,7 @@ function switchInspectorTab(tab) {
   function positionModelMenu(anchor) {
     var menu = $("model-menu");
     if (!menu) return;
-    anchor = anchor || $("btn-top-model") || $("btn-wmc-switch") || $("btn-model");
+    anchor = anchor || $("btn-model") || $("btn-wmc-switch");
     if (!anchor) return;
     var rect = anchor.getBoundingClientRect();
     var menuWidth = Math.min(490, window.innerWidth - 20);
@@ -9053,7 +9510,7 @@ function switchInspectorTab(tab) {
     menu.style.maxHeight = menuMaxHeight + "px";
     menu.style.zIndex = "9998";
 
-    // If anchor is near top (like topbar #btn-top-model or welcome card):
+    // If anchor is near the top (e.g. the welcome card):
     if (rect.top < window.innerHeight / 2) {
       menu.style.top = (rect.bottom + 8) + "px";
       menu.style.bottom = "auto";
@@ -9079,7 +9536,7 @@ function switchInspectorTab(tab) {
       closeModelMenuSmoothly();
       return;
     }
-    currentModelMenuAnchor = anchorEl || $("btn-top-model") || $("btn-wmc-switch") || $("btn-model");
+    currentModelMenuAnchor = anchorEl || $("btn-model") || $("btn-wmc-switch");
     menu.classList.remove("closing");
     menu.hidden = false;
     positionModelMenu(currentModelMenuAnchor);
@@ -9117,15 +9574,6 @@ function switchInspectorTab(tab) {
       modelLbl.title = name || "选择模型";
     }
 
-    // 同步顶栏 Claude 药丸状态
-    var tName = $("top-model-name");
-    var tVendor = $("top-model-vendor");
-    if (tName) {
-      tName.textContent = (match && match.name) ? match.name.split("·")[0].trim() : (name || "选择模型");
-    }
-    if (tVendor) {
-      tVendor.textContent = v || "Anthropic 官方";
-    }
 
     // 同步顶栏配置按钮状态徽章
     var topCfgBadge = $("top-cfg-status-badge");

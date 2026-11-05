@@ -182,15 +182,6 @@
         <button class="icon-btn only-collapsed" id="btn-top-new" title="新对话" aria-label="新对话">
           <svg width="18" height="18"><use href="#i-plus"/></svg>
         </button>
-        <!-- Claude 顶栏模型指示与切换药丸 -->
-        <div class="top-model-wrap">
-          <button class="top-model-pill" id="btn-top-model" type="button" title="点击切换当前模型（按供应商分类）">
-            <svg class="top-model-spark" width="13" height="13" aria-hidden="true"><use href="#i-spark"/></svg>
-            <span class="top-model-name" id="top-model-name">模型</span>
-            <span class="top-model-vendor" id="top-model-vendor"></span>
-            <svg width="12" height="12" class="top-model-chev"><use href="#i-chev"/></svg>
-          </button>
-        </div>
       </div>
 
       <div class="top-meta">
@@ -400,7 +391,7 @@
               </button>
             </div>
             <div class="prompt-right">
-              <span class="prompt-stat" id="stat"></span>
+              <!-- 任务计时已移入对话流的思考条（.thought-timer） -->
               <div class="model-pick">
                 <button class="model-btn" id="btn-model" title="切换模型与供应商">
                   <span class="latency-dot fast" id="model-btn-dot" aria-hidden="true"></span>
@@ -438,7 +429,7 @@
           <span>Artifacts</span>
           <span class="insp-tab-badge" id="artifact-count" hidden>0</span>
         </button>
-        <button class="insp-tab" id="tab-insp-tasks" data-tab="tasks" type="button">
+        <button class="insp-tab" id="tab-insp-tasks" data-tab="tasks" type="button" title="后台任务（Bash / 子代理 / 工作流），与上方「待办清单」不同">
           <span>任务</span>
         </button>
         <button class="insp-tab" id="tab-insp-changes" data-tab="changes" type="button">变更</button>

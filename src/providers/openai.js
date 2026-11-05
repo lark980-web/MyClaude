@@ -392,7 +392,7 @@ export class OpenAIProvider {
  * ERR_INVALID_ARG_TYPE on an undefined path). Escaping control characters
  * that sit inside a string literal recovers those calls.
  */
-function repairToolJson(text) {
+export function repairToolJson(text) {
   if (typeof text !== "string" || !text.trim()) return null;
   let out = "";
   let inString = false;
@@ -420,12 +420,6 @@ function repairToolJson(text) {
   return null;
 }
 
-export function createProvider(config) {
-  switch (config.provider) {
-    case "openai":
-    case "workbuddy":
-    case "qoder":
-    default:
-      return new OpenAIProvider(config);
-  }
-}
+// createProvider 已移到 providers/index.js：AnthropicProvider 继承本模块的
+// OpenAIProvider，工厂若留在这里就要 import anthropic.js，形成模块级循环
+// （class extends 在求值期就要拿到父类绑定，会直接 ReferenceError）。

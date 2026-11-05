@@ -12,7 +12,8 @@
  * key, not just a different model name.
  */
 
-import { createProvider, ProviderError } from "./openai.js";
+import { createProvider } from "./index.js";
+import { ProviderError } from "./openai.js";
 
 /** Status codes worth retrying on another model. */
 const RETRYABLE_STATUS = new Set([408, 409, 425, 429, 500, 502, 503, 504, 529]);

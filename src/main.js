@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { loadConfig, saveConfig, configPath } from "./config.js";
 import { listOutputStyles } from "./output-style.js";
-import { createProvider } from "./providers/openai.js";
+import { createProvider } from "./providers/index.js";
 import { Agent } from "./agent/agent.js";
 import { TerminalUI } from "./ui/terminal.js";
 import { allRegisteredTools } from "./tools/index.js";
@@ -682,11 +682,7 @@ async function handleCommand(raw, ctx) {
         return {};
       }
       ui.info(`执行技能 ${hit.name}…`);
-      // 注入基目录：技能正文里的 references/*.md 等相对路径要能解析。
-      // 与 claude-src 的 1148_unnamed.js 一致 —— 它展开技能时前置
-      // `Base directory for this skill: <dir>`，否则模型只能靠搜索猜路径。
-      const base = hit.file.replace(/[\\/]SKILL\.md$/i, "");
-      await agent.run(`Base directory for this skill: ${base}\n\n${hit.body || ""}`);
+      await agent.run(hit.body || "");
       return {};
     }
     case "release-notes": {

@@ -26,6 +26,26 @@ export const PERMISSION_MODES = [
 
 export const MODE_IDS = PERMISSION_MODES.map((m) => m.id);
 
+/**
+ * Shift+Tab 的轮转顺序，逐字对齐 Claude Code 2.1.302：
+ *   default -> acceptEdits -> plan -> bypassPermissions -> auto -> default
+ * （见 claude-re-2.1.302/07-assets/docs/recent-changes-j2j9vm5c.md 的
+ *   「Commonly misremembered behavior」；上游的 default 在本项目叫 ask）。
+ *
+ * 两个模式刻意不在环里：
+ *   - dontAsk：上游明确「永不进入 Shift+Tab 环」；
+ *   - fullAccess：本项目独有的逃生门，必须刻意指定，不能被一次误触的 Tab 切到。
+ */
+export const MODE_CYCLE = ["ask", "acceptEdits", "plan", "bypassPermissions", "auto"];
+
+/** 环上的下一个模式；当前值不在环上时从环首开始。 */
+export function nextMode(current) {
+  const canon = normalizeMode(current);
+  const i = MODE_CYCLE.indexOf(canon);
+  if (i < 0) { return MODE_CYCLE[0]; }
+  return MODE_CYCLE[(i + 1) % MODE_CYCLE.length];
+}
+
 const ALIASES = {
   default: "ask",
   ask: "ask",

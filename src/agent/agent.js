@@ -5,7 +5,7 @@ import { normalizeMode, isCommonFileCommand, isDestructiveCommand, FILE_EDIT_TOO
 import { isAutoApprovable } from "./command-safety.js";
 import { reviewToolCall } from "./auto-review.js";
 import { outputStyleFragment } from "../output-style.js";
-import { SYSTEM_PROMPT } from "./prompt.js";
+import { SYSTEM_PROMPT, AUTONOMY_SECTION } from "./prompt.js";
 import { buildUserContent, buildToolAttachmentContent, resolveAttachments } from "../attachments.js";
 import { setQuestionPresenter } from "../tools/extended.js";
 import { HookRunner } from "../hooks.js";
@@ -64,6 +64,38 @@ const NON_MUTATING_TOOLS = new Set([
   "GitDiff",
   "GitLog",
 ]);
+
+/**
+ * reasoning 通道的最后一段。推理模型把整段答复写进 reasoning_content、
+ * content 留空时，这是唯一还可读的正文来源。超长只取尾部，避免整段思考灌进界面。
+ */
+function lastReasoningParagraph(raw) {
+  const s = String(raw || "").trim();
+  if (!s) return "";
+  const parts = s.split(/\n\s*\n/).map((x) => x.trim()).filter(Boolean);
+  const tail = parts[parts.length - 1] || s;
+  return tail.length > 1200 ? tail.slice(-1200) : tail;
+}
+
+/**
+ * 确定性兜底：连收尾请求都失败时，用本轮真实执行过的工具生成结论，
+ * 而不是把问题推回给用户（旧版在这里输出的是一句让用户自己再问一次的占位文案）。
+ */
+function summarizeTurn(messages) {
+  const names = [];
+  let tail = "";
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    if (m.role === "tool") {
+      if (!tail && typeof m.content === "string") tail = m.content.trim().slice(-260);
+      names.push(m.name || m.tool_call_id || "工具");
+    } else if (m.role === "user" && names.length) { break; }
+  }
+  const head = names.length
+    ? "本轮共执行 " + names.length + " 个工具操作，模型未输出文字结论。"
+    : "模型本轮未输出文字结论。";
+  return head + (tail ? "\n\n最后一步工具输出（节选）：\n" + tail : "");
+}
 
 export class Agent {
   constructor({ provider, config, ui, tools = toolSchemas(), permissions, sessionKey }) {
@@ -195,6 +227,9 @@ export class Agent {
         "conflict with a habit or a general assumption, follow them.");
     }
     parts.push(SYSTEM_PROMPT);
+    // 自主模式（autoRun / 长目标自动续跑）：注入上游 autonomy_append 段。
+    // 只在该模式下注入 —— 普通交互里「不必确认」会与用户的即时确认预期冲突。
+    if (this.config && this.config.autoRun) { parts.push("\n\n" + AUTONOMY_SECTION); }
     // Output style (/output-style)：reshape how the assistant communicates.
     const styleFrag = outputStyleFragment(this.config.outputStyle);
     if (styleFrag) { parts.push("\n\n" + styleFrag); }
@@ -500,7 +535,83 @@ export class Agent {
    * @param {boolean} [options.reuseLastUser] replay the existing last user
    *   message instead of appending a new one (used by Retry)
    */
-  async run(userInput, { attachments, reuseLastUser } = {}) {
+  /**
+   * 一次用户回合：跑循环，再保证有一个可读的结论。
+   *
+   * 循环自己会在「模型只思考不写正文」时提前返回，错误路径也会直接返回 ——
+   * 收尾因此放在循环之外兜一层，而不是散落在每个 return 前。
+   */
+  async run(userInput, opts = {}) {
+    this._finalizeUsed = false;
+    this._emptyBodyRetries = 0;
+    const result = await this.runLoop(userInput, opts);
+    if (!result) return result;
+    // 这些结局不该被收尾请求改写：达到轮次上限/被中断/被钩子拦下/用户停止。
+    if (result.maxTurnsReached || result.interrupted || result.blocked || this.stopRequested) { return result; }
+    await this.ensureFinalAnswer();
+    return result;
+  }
+
+  /**
+   * 收尾请求：一次不带工具、预算很小的补问，只为拿到一段给用户看的正文。
+   *
+   * 用**自己的 AbortController**。旧实现复用 this.abortController，而浏览器刷新会触发
+   * res.close → agent.abort()，把收尾请求一并打死；它还自带 15s 定时器自杀。
+   * 两次都失败时退回确定性摘要，不把问题推回给用户。
+   */
+  async ensureFinalAnswer() {
+    if (this._finalizeUsed) { return; }
+    this._finalizeUsed = true;
+    const last = this.messages[this.messages.length - 1];
+    // 已经是带正文的 assistant 结尾：不需要再问一次。
+    if (last && last.role === "assistant" && !Array.isArray(last.tool_calls) && String(last.content ?? "").trim()) { return; }
+
+    const instruction = {
+      role: "user",
+      content: "[系统] 这一轮已经结束。请用中文直接写出给用户的最终结论：做了什么、结果如何、还有什么没做。不要调用工具，不要只思考。",
+    };
+    const base = this.buildRequestMessages();
+    const localAbort = new AbortController();
+    const timer = setTimeout(() => { try { localAbort.abort(); } catch {} }, 30000);
+    let lastErr = null;
+    let closing = null;
+    try {
+      for (let attempt = 0; attempt < 2; attempt++) {
+        if (this.stopRequested) { return; }
+        // 第二次只带系统提示 + 收尾指令：长历史刚被打断过一次，重发全部只会再挂一次。
+        const messages2 = attempt === 0 ? base.concat([instruction]) : [base[0], instruction];
+        try {
+          closing = await this.router.streamChat({
+            maxTokens: this.maxTokens,
+            messages: messages2,
+            tools: [],
+            signal: localAbort.signal,
+          });
+          if (closing) { break; }
+        } catch (e) {
+          lastErr = e;
+          if (localAbort.signal.aborted) { break; }
+        }
+      }
+    } finally {
+      clearTimeout(timer);
+    }
+
+    let text = stripReasoning(closing && closing.text ? closing.text : "").trim();
+    if (!text) { text = lastReasoningParagraph(closing && closing.reasoning ? closing.reasoning : ""); }
+    if (!text) {
+      text = summarizeTurn(this.messages);
+      if (lastErr) {
+        this.ui.warn("结语生成失败：" + String((lastErr && lastErr.message) || lastErr) + "；已用工具执行摘要代替。");
+      }
+    }
+    this.messages.push({ role: "assistant", content: text });
+    this.ui.streamText(text);
+    if (closing && closing.finishReason) { this.lastFinishReason = closing.finishReason; }
+    this.ui.endStream();
+  }
+
+  async runLoop(userInput, { attachments, reuseLastUser } = {}) {
     // A previous stop must not brick this agent: the flag is checked at every
     // turn boundary, so without the reset every later run instantly returned
     // (interrupted) — "I stopped a task and now nothing runs".
@@ -578,7 +689,7 @@ export class Agent {
 
       if (streamed) this.ui.endStream();
 
-      const { text, toolCalls } = result;
+      const { text, toolCalls, reasoning } = result;
 
       // Accumulate reported usage; endpoints that omit it leave the counters
       // at zero rather than guessing.
@@ -588,6 +699,26 @@ export class Agent {
       }
 
       if (!toolCalls.length) {
+        const visible = stripReasoning(text).trim();
+        if (!visible) {
+          // 推理模型会把整段答复放进 reasoning_content、content 留空。旧实现把空字符串
+          // 当成「回答完成」，界面于是留下一个空气泡。这里先有界催两次让模型写正文，
+          // 仍空则用 reasoning 尾段兜底 —— 绝不 push 空 assistant 消息污染历史。
+          this._emptyBodyRetries = (this._emptyBodyRetries || 0) + 1;
+          if (this._emptyBodyRetries <= 2) {
+            this.messages.push({ role: "user", content: "[系统] 上一条回复只有思考过程、没有正文。请直接写出给用户的最终结论（中文正文，不要只思考，不要调用工具）。" });
+            continue;
+          }
+          const fromReasoning = lastReasoningParagraph(reasoning);
+          this.lastFinishReason = result.finishReason || null;
+          if (fromReasoning) {
+            this.messages.push({ role: "assistant", content: fromReasoning });
+            this.ui.streamText(fromReasoning);
+            this.ui.endStream();
+            return { text: fromReasoning, done: true, turns: this.turnCount, finishReason: this.lastFinishReason };
+          }
+          return { text: "", done: true, turns: this.turnCount, finishReason: this.lastFinishReason };
+        }
         // A gateway that answers with a leading <think> block would otherwise
         // persist it in history and replay it to the model next turn.
         this.messages.push({ role: "assistant", content: stripReasoning(text) });
@@ -606,10 +737,7 @@ export class Agent {
           }
         }
         this.stopHookUsed = false;
-        // finish_reason=length 说明回复被 max_tokens 截断：GUI 侧用它
-        // 弹「继续生成」按钮，终端侧只在一行提示里带过。
-        this.lastFinishReason = result.finishReason || null;
-        return { text, done: true, turns: this.turnCount, finishReason: this.lastFinishReason };
+        return { text, done: true, turns: this.turnCount };
       }
 
       this.messages.push({

@@ -8,6 +8,357 @@
 
 ## [Unreleased]
 
+### Changed（系统提示词对齐 Claude Code 2.1.302）
+- 依据 `claude-re-2.1.302/04-prompts/system-prompt.txt`（逐字还原 10,707 字符）重写
+  `src/agent/prompt.js`：1,455 → **11,266 字符**，按上游六段结构组织
+  `# System` / `# Doing tasks` / `# Executing actions with care` / `# Using your tools` / `# Tone and style`，
+  外加本项目原有的 `# Language` 与 `# Environment`。
+- 对齐内容：persona 前置（对应上游 persona+intro 两段）、授权安全测试边界、URL 生成禁令、
+  权限模式与拒绝后不得重复同一调用、`[系统]` 注入说明、hooks 反馈视为用户输入、
+  上下文自动压缩、判断用户是否觉得任务过大以用户为准、探索性问题 2-3 句回答、
+  不过度设计/不加无用错误处理/默认不写注释、UI 改动须真浏览器验证、
+  **可逆性与影响范围（Executing actions with care 全文含危险动作清单）**、
+  TodoWrite 跟踪任务、并行工具调用、tone 规则（file_path:line_number、工具调用前不用冒号）。
+- 本地化改写：`TaskCreate`→`TodoWrite`、`CLAUDE.md`→`MYCLAUDE.md`、`/help` 指向 MyClaude、
+  去掉 GitHub issue 反馈链接与 `You are Claude Code` 身份，保留 `You are MyClaude`。
+- 新增 `test/system-prompt-parity.test.js`（6 项）：六段结构、密度区间、
+  14 条高价值子句、**只引用真实存在的工具**（防提示词指挥模型调不存在的工具）、
+  不冒用上游身份、本地命名与插值正确。
+- 全量 **546/546**、`verify-features` ✓、exe 已重打并确认关键子句已编入二进制。
+
+### Fixed（源码被并发进程覆盖后的完整恢复）
+- **事故**：01:34:10 有一并发进程同时改写了 `src/agent/agent.js`、`src/skills.js`、
+  `test/skills.test.js`、`src/main.js`，把多轮成果回退成旧版本。表现为 13 个测试突然失败，
+  以及 `node scripts/build-exe.mjs` 报 `No matching export in providers/openai.js for
+  import "createProvider"`（`main.js` 被回退到工厂迁移之前的导入路径）。
+- **丢失并已恢复**：
+  - `agent.js`：空正文守卫（`_emptyBodyRetries`）、`lastReasoningParagraph`/`summarizeTurn`、
+    `ensureFinalAnswer()` 独立 AbortController + 30s + 重试、`run()`/`runLoop()` 拆分、
+    自主模式段注入；
+  - `skills.js`：内置技能铺底 + `opts.builtin` 开关，以及**正确的 `skillDirs`**；
+  - `test/skills.test.js`：`MYCLAUDE_HOME` 隔离（必须动态 import，静态 import 会被提升到
+    赋值之前，隔离失效）+ `{ builtin: false }`；
+  - `main.js`：`createProvider` 导回 `providers/index.js`。
+- **恢复过程中发现并修掉一个真 BUG**：回退版 `skillDirs` 会**逐级向上爬 6 层父目录**找
+  `.myclaude/skills`，于是从 Temp 之类目录出发时，用户家目录的 `~/.myclaude/skills`
+  被误判成 project 技能 —— 同一个技能被加载两次、作用域错误。改为「只认项目根一处」
+  （git 根，非仓库则退回 cwd）。
+- **防复发**：全部改动已 `git add` 暂存（不提交、不推送，未包含大文件），
+  内容已进 `.git/objects`，工作树再被覆盖可用 `git checkout -- <path>` 取回。
+- 验证：全量 **564/564**、`npm run test:smoke` 45 命令 0 崩溃、exe 重打（01:45:25，650 模块）、
+  `_emptyBodyRetries`/`_finalizeUsed` 已确认编入二进制。
+
+### Fixed（一个写了却从不执行的测试）
+- `test/smoke-commands.smoke.js` 是 `scripts/smoke-commands.mjs` 的 `node:test` 包装
+  （注释自述「exe 未构建就 skip，保证纯源码检出也是绿的」），但 `npm test` 的 glob 是
+  `test/*.test.js`，**匹配不到 `*.smoke.js`** —— 这个针对构建产物的检查因此从未被任何
+  入口执行过。新增 `npm run test:smoke`（`node --test test/smoke-commands.smoke.js`）。
+- 与主套件分开是刻意的：它需要已构建的 exe，属于**产物闸门**而非源码测试；
+  实测 2 项通过、耗时 13.7s；探测 45 条斜杠命令、0 崩溃（`/exit` 无输出属预期，
+  脚本已专门过滤它）。
+- 顺带清理根目录 14 个历轮遗留的临时文件（全部未跟踪、`_` 前缀草稿，释放 1.09 MB）。
+
+### Verified（六轮成果一致性审计）
+- exe（01:31:42）比所有源文件都新，无陈旧产物。
+- 全量 **564/564** 通过、`verify-features` ✓、`npm run test:smoke` ✓。
+- 提示词 13,147 字符 / 8 段；自主段 1,398 字符按 `autoRun` 条件注入；
+  内置 verify 技能 8,593 字符；Shift+Tab 轮转顺序与上游逐字一致。
+
+### Added（Shift+Tab 权限模式轮转，对齐上游顺序）
+- 依据 `07-assets/docs/recent-changes-j2j9vm5c.md`「Commonly misremembered behavior」：
+  上游轮转顺序为 `default -> acceptEdits -> plan -> bypassPermissions -> auto -> default`，
+  `bypassPermissions` / `auto` 仅在可用时出现，**`dontAsk` 永不进环**。
+- `src/agent/modes.js` 新增 `MODE_CYCLE` 与 `nextMode()`（单一来源）；本项目 `ask` 即上游 `default`。
+  两个模式刻意排除在环外：`dontAsk`（上游明确排除）、`fullAccess`（本项目逃生门，
+  必须刻意指定，不能被误触的 Tab 切到）。
+- GUI 新增 `cyclePermissionMode()` + **Shift+Tab** 绑定（document 级，焦点在输入框中也生效），
+  经 `/api/config` 持久化并调用 `agent.setMode`。
+- 首次绑定误落在 composer 的 keydown 处理器里（导致页面主体按 Shift+Tab 无反应），
+  真浏览器验证时发现并移到 document 级。
+- 新增 `test/mode-cycle.test.js`（5 项，含**GUI 环与 modes.js 一致性断言**，防两处定义漂移）。
+  真浏览器实测：`fullAccess`（不在环上）→ Shift+Tab → `ask → acceptEdits → plan →
+  bypassPermissions → auto`，0 JS 异常。全量 **564/564**、exe 已重打。
+
+### Noted（仅有信息价值，无代码动作）
+- `03-features/module-architecture.md`：2,433 节点 / 22,940 边的依赖图，最大枢纽
+  `chunk-e0x0xb6d`（入度 411 / 出度 350，系统提示词组装器所在），979 个零入度模块。
+  对只有 ~30 个源文件的 MyClaude 无可直接落地动作，仅作架构参考。
+- **`/vim` 在 2.1.302 已被移除**（改为 `/config` → Editor mode），故不实现；
+  `/output-style` 同样已被移除（保留 MyClaude 现有实现，仅记录差异）。
+
+### Added（Anthropic prompt caching —— 补上此前标注的缺口）
+- 依据 `07-assets/docs/prompt-caching-485cdf9d.md`（33,539 字符官方设计文档）实现
+  `src/providers/anthropic.js` 的 `withCacheBreakpoints()`：
+  **唯一不变量是「缓存 = 前缀匹配」** —— 前缀任意字节变化会作废其后所有断点；
+  渲染顺序固定 `tools -> system -> messages`，因此 **最后一个 system 块打点即同时缓存
+  tools + system**，无需单独标注 tools；再在**最后一条消息的最后一个内容块**打点，
+  后续请求复用整段前缀、命中随对话增长累积。共用 **2 个断点**（API 上限 4）。
+- `config.promptCaching === false` 可整体关闭；断点只作用于每次请求新建的块对象，
+  **不会污染 agent 历史**（有测试断言调用后原消息字节不变）。
+- 已知边界（文档明载）：最小可缓存前缀因模型而异（512~4096 tokens），不足时服务端
+  **静默不缓存且不报错**；缓存按 workspace 隔离；读取约 0.1× 输入价、写入 1.25×（5m TTL）/2×（1h）。
+- 新增 `test/anthropic-prompt-caching.test.js`（5 项）；`anthropic-provider-e2e` 的 system
+  断言改为块数组形态并新增断点断言。全量 **559/559**、exe 已重打。
+
+### Changed（委派纪律升级 + 自主模式提示段）
+- **委派纪律换为上游 gated 段原文**（`04-prompts/raw/subagent_steer_delegation.txt`，1,440 字符）：
+  先算清子代理开销再决定委派、小事自己做、不为一件小任务扇出、
+  **不派子代理去复查自己能在主循环验证的东西**、委派后不得重复它的工作、
+  少而精地派（一次briefing到位）。替代上一轮较宽松的版本。
+- **新增 `AUTONOMY_SECTION`**（`04-prompts/raw/autonomy_append.txt`，1,398 字符），
+  对应上游 autonomy_append gated 段，**仅在 `config.autoRun` 开启时注入**
+  （`buildSystemPrompt` 条件 push，与上游按模式 gating 一致）：
+  自主模式下不要问「要我做吗」、可逆动作直接做、只为止损/范围变更停下、
+  描述问题/提问时交付评估而非改动、**回合结束前检查最后一段**（若为计划/分析/
+  问题/下一步/未兑现承诺，立刻用工具做掉）、不因上下文长而停、
+  改系统状态前先确认证据支持该动作。
+- 主提示词 12,310 → **13,147 字符**；自主模式开启时实际注入 23,867 字符（关闭时 22,467）。
+- `test/system-prompt-parity.test.js` 增至 10 项（含 autoRun 开/关的注入断言）；
+  全量 **554/554**、exe 已重打并确认新段已编入。
+
+### Added（内置 verify 技能，来自 Claude Code 2.1.302）
+- 新增 `src/skills-builtin.js`：随包发布的内置技能，用 JS 模块承载正文（单文件 exe 内
+  没有可读的 `skills/` 目录，只能编译进包）。
+- 移植上游 `verify` 技能（`07-assets/docs/SKILL-cf37e4b8.md`，12,146 字符 → 本地化 8,593 字符）：
+  **验证是运行时观察**，跑测试/类型检查不算证据；不许 import-and-call 冒充验证；
+  先定 diff 范围、再定表面（CLI/HTTP/GUI/库边界/prompt）、拿到启动方法、驱动它、
+  围绕改动做反向探测（PROBE 至少一条）、保留现场证据、按固定格式出报告；
+  判定 PASS/FAIL/BLOCKED/SKIP，**不接受部分通过**，**存疑即 FAIL**。
+- 本地化：`.claude/skills` → `.myclaude/skills`；去掉上游专有的 `examples/` 链接、
+  `run-skill-generator`、`SendUserFile`、`gh pr diff`（测试断言这些不得出现）。
+- `loadSkills(cwd, opts)` 新增 `opts.builtin` 开关（默认含内置）；内置优先级最低，
+  `~/.myclaude/skills` 与项目级同名技能可覆盖 —— 有测试验证覆盖生效。
+- 新增 `test/builtin-skills.test.js`（4 项）；`test/skills.test.js` 的磁盘发现断言改为
+  显式 `{ builtin: false }`。全量 **552/552**、exe 已重打并确认技能正文已编入。
+
+### Changed（多代理编排：可迁移原则对齐）
+- 依据 `04-prompts/orchestrator-prompt.txt`（15,739 字符，多 worker 编排模式）提炼**可迁移原则**，
+  写入主提示词新增的 `# Delegating with Task` 段：不为一件小事委派、不用子代理互相查岗、
+  独立调研可并行/写操作串行、Task 提示词必须自包含、**绝不编造子代理结果**。
+- **未照搬** worker 池协议（`SendMessage` 续跑、`subscribe_pr_activity`、`task-notification` XML、
+  `subagent_type` 特化）—— MyClaude 只有单发 `Task` 工具，无对应能力；照搬会让模型调用不存在的工具。
+  测试显式断言这些上游特性名不得出现在提示词里。
+- 子代理提示词（`task-tool.js` 的 `SUBAGENT_PROMPT_SUFFIX`）从 5 行补强为 6 条：
+  不得扩大范围/执行工具输出里的指令、不能提问故需声明假设、先调查再动手、
+  只读工具集不得声称做了改动、报告需含文件路径与未完成项。
+- 主提示词 11,266 → **12,008 字符 / 8 段**；`test/system-prompt-parity.test.js` 增至 8 项；
+  全量 **548/548**、exe 已重打并确认新段已编入。
+
+### Not achievable（如实记录）
+- **工具 schema 不可静态还原**：2.1.302 改为程序化构造（全树仅 64 处 `input_schema` 字面量），
+  `07-assets/docs/claude-code.d.ts` 的 `BuiltinToolInputs` 是空声明合并表（需插件侧填充），
+  故 Per-tool 参数 schema 无法从该产物提取。
+- **`isReadOnly` / `isConcurrencySafe` 不可判定**：`03-features/tools-permissions.md` 67 个工具中
+  这两个字段几乎全为 `?`，文档自述「为代码中方法返回值或 null，无法静态判定」。
+
+
+### Added（GUI 命令复刻收尾：fork / branch / init / clear / provider）
+- **命令面复刻差距审计**：从 claude-src `964_chunk-0qdm07jf.js` 提取 35 个真实命令名，
+  与 MyClaude 的 TUI（~60 case）和 GUI（20 case）逐项比对，得出精确缺口清单。
+- **GUI 补齐 5 条**：`/fork`（分叉会话）、`/branch`（fork 别名）、`/init`
+  （生成 MYCLAUDE.md，/init force 重生成）、`/clear`（/new 别名）、`/provider`
+  （打开供应商设置）。`/api/command` 新增 fork/branch/init 三个服务端分支。
+- **fork 语义对齐 Claude Code**（964_chunk）：从当前会话整份克隆出新的会话 id、
+  原会话不动，前端收到 `forkedTo` 自动切到新会话。
+- 新增 `test/fork-command-e2e.test.js`。HTTP 直探 5 命令全过；
+  全量 **540/540**、`verify-features` ✓、exe 已重打。
+- 复刻差距归零：35 个非 Anthropic 专属命令中，TUI 缺 5 个（plugins/statusline/
+  sandbox/vim/todo）、GUI 缺 0 个（除 anthropic 生态专属与需要 Claude Code 客户端
+  本体的 IDE/login/bug 等）。
+
+
+### Added（底层接 Anthropic：Messages API 传输层）
+- **`src/providers/anthropic.js`**：Anthropic Messages API 适配器，继承 `OpenAIProvider`
+  复用传输层（独占连接 / TTFB 超时 / abort 语义 / 流空闲看门狗），只替换线协议：
+  `x-api-key` + `anthropic-version` 认证、`system` 顶层字段、`input_schema` 工具、
+  `tool_use`/`tool_result` 内容块、thinking 块走 reasoning 通道、
+  `stop_reason` 映射（tool_use→tool_calls / max_tokens→length）、usage 映射。
+- **消息转换**（`toAnthropicMessages`）：system 提升为顶层字段；assistant 的
+  `tool_calls` 转成 `tool_use` 内容块；连续 `role:"tool"` 合并为一条 user 的
+  `tool_result`；连续 user 合并（Anthropic 要求交替）；多模态 `image_url` data:URL
+  转 base64 image source；空 assistant 内容不再产出空 text 块。
+- **effort 接 thinking**：`/effort high|medium|low` 映射为 `thinking.budget_tokens`
+  （8000/4000/2000，且开启时强制 temperature=1，符合 Anthropic 约束）。
+- **工厂移到 `providers/index.js`**：AnthropicProvider 在求值期就要 extends
+  OpenAIProvider，工厂留在 openai.js 会形成模块级循环 import；main.js /
+  gui-server.js / router.js 的 import 同步改到 index.js。
+- **`/api/config` 新增 `provider` 字段**：此前 POST 从不写 `config.provider`，
+  设置中心选「Anthropic 官方」只改了 baseUrl/model/key，传输层仍走 OpenAI 协议，
+  请求必失败（选了也白选）。现在白名单切换线协议并同步活跃 agent 的 router。
+- **GUI**：选「Anthropic 官方」卡片保存时带上 `provider: "anthropic"`。
+- 新增 `test/anthropic-provider.test.js`（4 项：分发 / 消息与工具转换 / 多模态）
+  与 `test/anthropic-provider-e2e.test.js`（本地 mock Anthropic SSE 服务器真跑一轮：
+  请求体形状、thinking→reasoning 通道、tool_use 还原为真实工具调用、usage 统计）。
+  全量 **539/539**、`verify-features` ✓、exe 已重打。
+- **限制**：本机无 `ANTHROPIC_API_KEY`，以上验证均针对本地 mock 的 Anthropic 线协议；
+  真实 api.anthropic.com 调用需要用户填入 sk-ant 密钥后实测。
+
+
+### Added（任务执行中的实时读数：耗时 + token）
+- **工具聚合条（「正在执行 N 项工具操作…」）右侧**新增 `.tool-group-live` 徽标，
+  显示 `M:SS · 4.2k tok`；执行中每秒更新，回合结束后**定格**为该轮执行记录。
+  徽标悬停显示精确数值（累计 / 输入 / 输出 tokens）。
+- 服务端 `/api/chat` 新增 `type: "progress"` SSE 事件，每秒推送 `elapsedMs` +
+  `totalInputTokens`/`totalOutputTokens`/turns/messages；原先 `stats` 只在回合末尾发一次，
+  过程中拿不到数据。前端 `progress` 分支更新 `S.stats` 并刷新徽标，
+  客户端 `setBusy` 的 1s 自转作为断流兜底。思考条计时器同步显示同一读数。
+- 顺带修 **定时器泄漏**：`flushTimer`（2.5s）原为 try 块内 `const`，
+  `finally` 里 `typeof flushTimer !== "undefined"` 恒为假，每回合泄漏一个 interval。
+  两个定时器改为 try 之前声明、finally 显式 `clearInterval`。
+- 状态类名用 `is-running` 避开已有 `.live` 星标规则；装饰细线限定在弹窗工具清单，
+  否则其 `flex:1` 会把徽标和 chevron 挤到中间。
+- 新增 `test/task-live-stat.test.js`（3 项静态接线）+ `test/task-live-stat-e2e.test.js`
+  （真实 `/api/chat` 慢后端跑一轮，断言 SSE 流收到 `progress` 且回合正常完成）。
+  全量 **534/534**、`verify-features` ✓、真浏览器实测徽标右对齐（距边 12px）、
+  mono/tabular-nums、脉冲点、0 异常；exe 已重打。
+
+
+### Fixed（结论缺失复发：空正文 + 收尾请求被 abort）
+- **现场**：长会话压缩后模型连续两轮只发工具调用，第三轮返回空正文（`content: ""`），
+  界面出现「结语生成失败：stream interrupted: aborted」+「（本轮工具已执行完毕……再发一句
+  即可让它补上。）」。落盘会话 `2026-11-03T16-59-42_4ec450.json` 尾部复现。
+- **根因 1（主循环）**：`runLoop` 的 `!toolCalls.length` 分支无条件
+  `push(stripReasoning(text))` 并 `return done`。推理模型只吐 `reasoning_content`、
+  `content` 为空时，空字符串被当成「回答完成」，留下空气泡。第 1 轮的 `ensureFinalAnswer()`
+  只是事后补丁，没堵住这里。
+- **根因 2（补丁自身）**：旧兜底复用 `this.abortController`（浏览器刷新触发
+  `res.on("close")` → `agent.abort()` 会误伤它），且自带 15s 定时器把自己 abort；
+  `openai.js` 把 caller abort 转成 `Error("aborted")` → 即截图里的报错。兜底还只认
+  `result.text`，忽略 `reasoning`，失败时输出「再发一句」把问题推回给用户。
+- **修复（三层）**：
+  1. 主循环拒绝空正文：先有界催 2 次让模型写正文，再用 `reasoning` 尾段兜底，
+     全程不 push 空 assistant 消息污染历史；
+  2. `ensureFinalAnswer()` 改用局部 `AbortController`、超时 15s → 30s、失败重试一次
+     （第二次只带系统提示 + 收尾指令，去掉长历史），并接受 `result.reasoning` 尾段；
+  3. 彻底失败时用 `summarizeTurn()` 生成**确定性工具执行摘要**（工具数 + 最后一步输出节选），
+     删除「再发一句」占位文案，警告改为「已用工具执行摘要代替」。
+- 新增 4 项回归测试（含源码级断言：占位文案/15s 自 abort 不再存在），
+  `test/final-answer.test.js` 共 7 项。全量 **530/530**、`verify-features` ✓、
+  真浏览器 0 异常、exe 已重打。
+
+
+### Changed（迭代第 6 轮：输入框快捷 chips 收尾）
+- `.welcome-cats` 间距 8 → 6px；`.welcome-cat-btn` 圆角 10 → 8px、
+  边框由 `--line-strong` 改 `--line` 细线、高度 34 → 32px、字号 13 → 12.5px；
+  选中态阴影改主题感知的 `--card-shadow`。与追问卡 / 画布 / 设置中心同套语言。
+- `test/iteration-round4.test.js` 补 1 项断言（注意 2279 行另有 media 覆盖规则，
+  测试切片需从 `.welcome-cats` 之后开始找主规则）。
+- 收尾验证：全量 **526/526**、`verify-features` ✓、真浏览器实测 chips
+  `8px / 32px / gap 6px`、4 个右栏页签逐一切换正确、0 异常。
+
+
+### Fixed（迭代第 4 轮：设置中心布局 BUG + 视觉语言统一）
+- **设置中心供应商网格第三列被裁掉**（真 BUG）：`.cfg-provider-grid` 用裸
+  `repeat(3, 1fr)`，grid 项默认 `min-width:auto`，长供应商名把第三列撑宽。
+  实测 grid 728px / scrollWidth 927px（溢出 199px），卡片宽 296/278/333 不等，
+  「Google Gemini」等被容器裁掉。修为 `minmax(0, 1fr)` + 卡片 `min-width:0`；
+  实测溢出归零、9 张卡片全部 236px 等宽。名字省略时补 `title` 悬停全称。
+- 同类隐患预防：`.welcome-suggestions` 与 640px 断点也改用 `minmax(0, 1fr)`；
+  新增 420px 断点的单列回退。
+- **设置中心统一到编辑式视觉语言**：`.cfg-pane-title` 加延伸细线；
+  `.cfg-form-card` / `.welcome-sug-card` 改 8px 圆角 + `--card-shadow`
+  主题感知分层阴影（原来写死的 rgba 在深色下失效）；行分隔由虚线改实线细线；
+  `.modal-card` 圆角 18px → 12px。欢迎卡间距 12 → 10px。
+- 新增 `test/iteration-round4.test.js`（3 项）。真浏览器浅色/深色双主题实测：
+  溢出 0、等宽 236px、阴影随主题翻转、0 异常。全量 **525/525**。
+
+
+### Added（迭代第 3 轮：GUI 命令第二批 + 代码质量）
+- **通用命令桥**：新增 `POST /api/command` 白名单端点，把需要读本机文件 /
+  改 agent 状态的 TUI 命令搬到 GUI。返回纯文本，`compact`/`rewind` 额外返回
+  `refresh`，前端静默 `resumeSession(..., {quiet:true})` 重放历史。
+- **第二批 9 条命令**：`/memory`（含 add/path）、`/skills` `/plugin` `/agents`
+  `/release-notes` `/add-dir` `/compact` `/rewind` `/fast`，全部进 COMMANDS
+  菜单与 `/help`。`/fast` 走 `POST /api/config` 新增的 `fastMode` 白名单，
+  GET 也返回该字段，刷新后状态不丢。
+- **命令失败原因**：`runServerCommand` 改用原生 fetch 解析错误体，
+  不再把「当前没有活跃会话」显示成干巴巴的「HTTP 404」。
+- **`/compact` / `/rewind` 真实生效**：服务端调 `agent.maybeCompact()` /
+  `agent.rewind()`并强制落盘，前端重放界面。
+
+### Fixed（迭代第 3 轮）
+- **app.js 17 个孤立 CR 行尾**：来自历史追加式补丁（`/auto` 命令块），
+  统一为 CRLF，JS 语义不变但 diff / 编辑器不再错乱。
+- **单实例守卫只报错不给解法**：`npm run dev` 撞守卫时改为列出三条可执行路径
+  （直接用已有页面 / taskkill / `MYCLAUDE_HOME` 隔离数据目录）。
+- 新增 `test/iteration-round3.test.js`（5 项）。真浏览器 9/9 命令无「未知命令」、
+  0 异常；守卫消息、错误体、`fastMode` 读写均实测。全量 **522/522**。
+
+
+### Added（迭代第 2 轮：GUI 内建命令补齐第一批）
+- **问题**：TUI `main.js` 有约 60 个内建命令，GUI `runCommand` 只实现约 20 个，
+  其余一律返回「未知命令」，`/compact /cost /context /status …` 全是死路。
+- **机制**：新增 `EXTRA_COMMANDS` 注册表，`default` 分支在自定义命令之后查表，
+  后续批次只需加条目，不必再膨胀 switch。
+- **第一批 13 条**（全部映射到现有 API / 面板，不新增后端端点）：
+  `/status /stats /context /cost /doctor /title /todos /permissions /hooks /mcp`
+  `/effort /models /export`。同步进 COMMANDS 斜杠菜单与 `/help`。
+  `/title <名称>` 走 `PATCH /api/sessions/<id>`；`/effort` 走 `POST /api/config`；
+  `/doctor` 并发探 `/api/config|hooks|mcp|models`；`/cost` 用目录里的 `inputPrice`
+  `/outputPrice`（每 1M tok）估算，无价格时明确说明而不是显示 $0。
+- `/context` 新会话无 stats 时用 `modelContextWindow × 0.8` 兜底压缩线，
+  避免满屏 `0 / 0` 空条（实测显示 102.4k）。
+- 新增 `test/gui-extra-commands.test.js`（3 项）：注册表被查表、13 条都在菜单里、
+  且都是 TUI 真实存在的命令（防止凭空发明）。真浏览器逐条实测 13/13 无「未知命令」、0 异常。
+
+
+### Fixed（迭代第 1 轮：右栏信息架构 + /bashes 命令）
+- **右栏页签窄宽度换行**：`.insp-tab` 加 `white-space:nowrap; flex:none`，
+  `.insp-tabs` 改横向滚动，4 个页签不再被挤成竖排（1440/900 双宽度实测 26px 单行）。
+- **「任务」标签二义**：会话详情内嵌的 TodoWrite 待办改名「待办清单」，
+  右栏「任务」页签加 tooltip 说明是后台任务（Bash / 子代理 / 工作流）。
+- **右栏 section 头 / 键值行**：改编辑式低对比组头 + 延伸细线（与追问卡 / 画布
+  同一套语言），KV 行改 76px 两列网格 + tabular-nums，补 900px 窄屏规则。
+- **`/tasks` 与 `/bashes` 点了没反应**（真 BUG）：`openTasks()` 只往 `#tasks-body`
+  渲染，不激活页签，而该容器默认 `hidden`。新增 `showTasks()` 先开右栏再
+  `switchInspectorTab("tasks")`，两命令与 COMMANDS 入口统一走它；不在
+  `openTasks()` 内反向调用以免递归。真浏览器实测两命令均 `active=["任务"]`。
+- **`/bashes` GUI 缺失**：补 COMMANDS 项、`runCommand` case 穿透、`/help` 文案；
+  `docs/parity-targets.md` 同步标记完成（TUI 早已实现，属文档漂移）。
+- 新增 `test/gui-command-parity.test.js`（3 项）、`docs/iteration-backlog.md`
+  （长目标待办清单：基线 511/511、0 异常，列明后续功能/样式缺口）。
+
+
+### Changed（UI：顶栏去重 / 追问卡 / 画布）
+- **顶栏模型药丸移除**：`btn-top-model` 与输入框旁 `btn-model` 打开的是同一个
+  `#model-menu`，属重复控件。删 HTML/事件/CSS，菜单锚点统一回 `#btn-model`。
+- **追问卡重设计**（number-details + beautiful-shadows + framed-grid）：
+  组头改「继续追问 / FOLLOW-UPS + 延伸细线」；01–03 编号做低对比等宽角标；
+  卡片由 14px 大圆角粗边框改 8px + 分层中性阴影，标题与描述间加细线，
+  hover 浮现 L 形角标；保留键盘可达与三列网格。
+- **画布重设计**：`.artifact-stage` 改细线框架 + 极低对角纹理；TEXT 工件若含
+  ≥2 行 git status 记录，自动结构化为「状态徽章 / 路径 / 说明 + 汇总图例」，
+  `M`/`??`/`A`/`D` 用语义色区分；切「代码」视图仍是原文，纯散文不受影响。
+- 新增 `docs/ui-redesign-preview.html` 静态预览（引用真实 CSS 令牌，无需启动程序）。
+- **深色主题 + 窄屏收尾**：追问卡阴影与画布对角纹理原本写死深灰 rgba，
+  深色下几乎不可见；改由 `--card-shadow` / `--card-shadow-hover` /
+  `--grid-texture` 两主题各定义一份（深色用黑阴影 + 微亮白纹理）。窄屏
+  720px 隐藏英文组标、卡片最小高度改 `--fc-min-h` 变量；900px 收紧画布
+  内边距与图例换行。真浏览器双主题对照确认两种配色下结构都成立。
+- **任务计时移位**：「任务进行中 · 10s」从输入框右侧（`#stat`）移到对话流
+  当前回合的思考条上，与「正在思考…」同行。计时 span 独立于 `thought-label`
+  （后者会被 `endTurn` / reasoning 改写为「已思考 N 秒」），回合结束时清空，
+  最终时长仍由 label 表述，不重复显示。新增 `test/task-timer.test.js` 防回归。
+### Fixed（任务不再「突然结束」：一定有最终结论）
+- **根因**：`agent.run()` 里 `!toolCalls.length` 直接把 `stripReasoning(text)` 存成
+  assistant 消息并 `return done`。推理模型常只吐 `reasoning_content`、不吐
+  `content`，此时 `text === ""`，循环照样判定「正常完成」→ 用户看到一条空白气泡。
+  另一条路径是回合停在 `tool_calls` 上（turn cap / 流掐断），最后只留一张工具卡。
+  会话 `4ec450` 的 #5 正文为空、#6 用户当场问「为什么我总是看不到结论」即此。
+- **修复**：原循环改名 `runLoop()`，外层 `run()` 统一调 `ensureFinalAnswer()`：
+  末尾不是「有正文的 assistant 消息」时，用 `tools: []` 再请求一次写结语
+  （15s 超时、尊重停止、失败也有明确兜底文案），正常回合零额外请求。
+  `maxTurnsReached` / `interrupted` / `blocked` 不插手，保证自主续跑语义。
+- 新增 `test/final-answer.test.js`：空正文、已有结论、流错误三种收束各 1 例。
+
+### Fixed（双击必达：页面真的打开）
+- **双击 `myclaude.exe` 不再"嘴上打开"**：旧逻辑 `exec("start ...")` 刚发出去就
+  `process.exit(0)`，和子进程赛跑——实测 3 次双击只有 1 次真的拉起浏览器，
+  控制台却照样打印"已为你打开浏览器"。现在 `openInBrowser()` 等 exec 回调
+  （`windowsHide`，8s 上限）拿到结果再退出；打不开就如实提示手动粘贴地址，不撒谎。
+- **全新启动路径同源**：`startGui()` 末尾那份重复的 `start`/`open`/`xdg-open`
+  三平台判断改为复用同一个 helper，去掉 lazy import + fire-and-forget。
+
 ### Added（GUI 对齐 claude.ai 第三轮 —— 外观/导航/引用）
 - **主题三态**：深 → 浅 → 跟随系统循环（`prefers-color-scheme` 实时联动），boot 认 auto 偏好。
 - **设置中心「通用与外观」页签**：主题/提示音/桌面通知/显示名/数据管理集中一处；

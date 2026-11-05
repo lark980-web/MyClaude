@@ -46,9 +46,9 @@
 - 实现点：config.statusLineCommand；TUI 每次渲染底行时 spawn 脚本取输出；
   /statusline 无参说明 + 带参设置/清除
 
-### 3. /bashes（低优先）
-- /tasks 已超集覆盖（含 LOCAL_BASH 筛选与 BashOutput/KillShell）；
-  可加别名让 /bashes 等价 /tasks，一行代码
+### 3. ~~ /bashes ~~ ✅ 已完成（2026-11-05 第 1 轮）
+- TUI main.js:648 早已把 /bashes 转发到 /tasks；本轮补齐 GUI：
+  COMMANDS 列表、runCommand 的 case 穿透、/help 文本。文档此前未同步，属文档漂移。
 
 ### 4. /vim（低优先，工作量大）
 - TUI 输入框 vim 模式（normal/insert、hjkl、w/b、dd…）

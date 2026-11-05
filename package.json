@@ -13,6 +13,7 @@
     "build": "node scripts/bundle-gui.mjs",
     "gui": "node bin/myclaude.js --gui",
     "test": "node --test \"test/*.test.js\"",
+    "test:smoke": "node --test test/smoke-commands.smoke.js",
     "build:exe": "node scripts/build-exe.mjs"
   },
   "engines": {

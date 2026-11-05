@@ -1,15 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { tmpdir } from "node:os";
 
-// skillDirs() 除了项目目录还会扫用户级 ~/.myclaude/skills，若不隔离，
-// 用户真实装着的技能会混进这些断言（本机装了 reverse-engineer-anything
-// 就曾让 4 个用例集体失败）。用临时 MYCLAUDE_HOME 顶掉真实配置目录。
-// ESM 的 import 会提升，所以 skills.js 必须在环境变量就位后再动态载入。
-const HOME = mkdtempSync(join(tmpdir(), "myclaude-skills-home-"));
-process.env.MYCLAUDE_HOME = HOME;
+// 用户家目录里的真实技能会漏进这些断言：给测试一个隔离的 MYCLAUDE_HOME，
+// 并且必须用动态 import —— 静态 import 会被提升到赋值之前，隔离不生效。
+process.env.MYCLAUDE_HOME = mkdtempSync(join(tmpdir(), "myclaude-skills-home-"));
 const { loadSkills, findSkill, skillCatalogue, skillDirs } = await import("../src/skills.js");
 
 /**
@@ -31,7 +28,7 @@ test("a skill is a directory containing SKILL.md", () => {
     review: "---\ndescription: Review the diff\n---\nPlease review carefully.\n",
   });
   try {
-    const skills = loadSkills(root);
+    const skills = loadSkills(root, { builtin: false });
     assert.equal(skills.length, 1);
     assert.equal(skills[0].name, "review");
     assert.equal(skills[0].description, "Review the diff");
@@ -49,7 +46,7 @@ test("a loose SKILL.md without a directory is ignored", () => {
     const base = join(root, ".myclaude", "skills");
     mkdirSync(base, { recursive: true });
     writeFileSync(join(base, "SKILL.md"), "---\ndescription: stray\n---\nbody\n", "utf8");
-    assert.equal(loadSkills(root).length, 0, "only directories are skills");
+    assert.equal(loadSkills(root, { builtin: false }).length, 0, "only directories are skills");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -59,7 +56,7 @@ test("a directory without SKILL.md is not a skill", () => {
   const root = mkdtempSync(join(process.env.TEMP || ".", "skills-nofile-"));
   try {
     mkdirSync(join(root, ".myclaude", "skills", "empty"), { recursive: true });
-    assert.equal(loadSkills(root).length, 0);
+    assert.equal(loadSkills(root, { builtin: false }).length, 0);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -92,7 +89,7 @@ test("catalogue carries only name and description", () => {
     one: "---\ndescription: First\n---\nbody one\n",
   });
   try {
-    const cat = skillCatalogue(root);
+    const cat = skillCatalogue(root, { builtin: false });
     assert.deepEqual(cat, [{ name: "one", description: "First" }]);
     // The body must not leak into the catalogue: it would bloat every request.
     assert.ok(!("body" in cat[0]));

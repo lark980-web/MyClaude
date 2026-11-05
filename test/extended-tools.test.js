@@ -28,7 +28,7 @@ function tmp() {
 
 test("tool registry contains the extended Claude-style surface", async () => {
   const { createTaskTool } = await import("../src/agent/task-tool.js");
-  const { createProvider } = await import("../src/providers/openai.js");
+  const { createProvider } = await import("../src/providers/index.js");
   const { loadConfig } = await import("../src/config.js");
   registerTools([...EXTENDED_TOOLS, createTaskTool({ provider: createProvider(loadConfig()), config: loadConfig() })]);
   const names = allRegisteredTools().map((t) => t.name);
