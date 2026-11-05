@@ -14,6 +14,7 @@
     "gui": "node bin/myclaude.js --gui",
     "test": "node --test \"test/*.test.js\"",
     "test:smoke": "node --test test/smoke-commands.smoke.js",
+    "inspect:prompt": "node scripts/inspect-prompt.mjs",
     "build:exe": "node scripts/build-exe.mjs"
   },
   "engines": {

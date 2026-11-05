@@ -51,6 +51,9 @@
 - [x] **运行时审计发现并修复重复内存**（复刻轮 H）：转储真实系统提示词时发现
   MYCLAUDE.md 被加载两次（大小写不敏感文件系统上两个候选名同一文件，按字面路径去重失效）。
   改用 realpathSync 去重后提示词 22,682 → 18,610 字符（-18%），3 项新测试，全量 567/567。
+- [x] **提示词体检常设化**（复刻轮 I）：`scripts/inspect-prompt.mjs` + `npm run inspect:prompt`，
+  七类检查（内存重复/段落重复/必需段缺失/自主段一致性/技能段一致/空段/体量），
+  支持 --json/--dump、有 error 退出码 1。5 项测试含「人造坏提示词反证有效性」。全量 572/572。
 - [ ] 待办：剩余 skills、
   builtin-docs.md（89KB）、module-architecture.md、TUI 剩余 /statusline /vim /todo。
 
