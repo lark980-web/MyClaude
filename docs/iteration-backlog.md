@@ -68,6 +68,13 @@
 - [x] **自主段扩为循环工作口径**（复刻轮 K）：依据 loopAutonomousPreamble 两版，
   AUTONOMY_SECTION 1,398 → 3,161 字符（What to act on / How far to go / When there is nothing to do），
   8 条新断言；体检 0 error；全量 572/572；exe 重打。
+- [x] **消息目录补齐**（复刻轮 M）：目录从「已渲染 DOM」改为按 `S._replayMsgs` 数据构建，
+  未渲染条目点击后分批加载；真浏览器 150 问会话实测 30 → 150 条、落点正确、0 异常；
+  5 项测试；全量 579/579。
+- [ ] **`/statusline` 仍未做（原因已查清）**：上游把它做成「配置里的外部命令」
+  （与 `apiKeyHelper` 同类，证据 `chunk-a8gj4nyv.js`），而 `StatusLineCommandInput` 的字段
+  在产物中**只被引用、从未定义**；本项目 TUI 也没有状态栏组件。按 MYCLAUDE.md
+  「提取不出来要如实说明，不要用『我认为』填空」，需先定契约再实现。
 - [ ] 待办：剩余 skills、
   builtin-docs.md（89KB）、module-architecture.md、TUI 剩余 /statusline /vim /todo。
 

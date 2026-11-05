@@ -673,6 +673,9 @@ svg { flex: none; }
   padding: 6px 8px; border-radius: 7px; text-align: left;
   transition: background var(--t) var(--ease);
 }
+/* 目录里尚未渲染的条目：会话很长时它们还没进 DOM，点击后才加载 */
+.toc-row.is-unloaded { opacity: .55; }
+.toc-row.is-unloaded:hover { opacity: .85; }
 .toc-row:hover { background: var(--hover); }
 .toc-idx { font-size: 10.5px; color: var(--fg-4); font-variant-numeric: tabular-nums; flex-shrink: 0; }
 .toc-text { font-size: 12.5px; color: var(--fg-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

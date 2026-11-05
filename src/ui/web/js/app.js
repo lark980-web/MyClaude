@@ -3224,24 +3224,40 @@
     root.appendChild(s.sec);
 
     // 消息目录：长对话里按用户提问快速跳转（点击滚动+闪烁定位）
+    // 会话恢复时只渐进渲染最后 REPLAY_CHUNK 条，若按 DOM 取列表，目录就只有那一小截。
+    // 因此优先按 S._replayMsgs 的数据构建，未渲染的条目在点击时按批补齐再滚动。
     var tocSec = section("消息目录");
-    var userMsgs = Array.prototype.slice.call((logRoot() || {}).querySelectorAll ? logRoot().querySelectorAll(".msg-user") : []);
-    if (!userMsgs.length) {
+    var tocEntries = [];
+    var tocMsgs = S._replayMsgs || [];
+    if (tocMsgs.length) {
+      tocMsgs.forEach(function (m, i) {
+        if (!m || m.role !== "user") { return; }
+        var raw = typeof m.content === "string" ? m.content : "";
+        if (Array.isArray(m.content)) {
+          m.content.forEach(function (pt) { if (pt && pt.type === "text") { raw += (raw ? "\n" : "") + pt.text; } });
+        }
+        tocEntries.push({ idx: i, text: raw.replace(/\s+/g, " ").trim().slice(0, 60) });
+      });
+    } else {
+      var domUsers = Array.prototype.slice.call((logRoot() && logRoot().querySelectorAll) ? logRoot().querySelectorAll(".msg-user") : []);
+      domUsers.forEach(function (node) {
+        tocEntries.push({ node: node, text: (node.textContent || "").replace(/\s+/g, " ").trim().slice(0, 60) });
+      });
+    }
+    if (!tocEntries.length) {
       tocSec.body.appendChild(el("div", "empty-note", "开始对话后，这里列出你的每一次提问，点击即可跳转。"));
     } else {
       var list = el("div", "toc-list");
-      userMsgs.forEach(function (node, idx) {
-        var text = ((node.textContent || "").replace(/\s+/g, " ").trim()).slice(0, 60) || ("提问 " + (idx + 1));
-        var row = el("button", "toc-row");
+      tocEntries.forEach(function (entry, i) {
+        var text = entry.text || ("提问 " + (i + 1));
+        var node = entry.node || (entry.idx != null ? logRoot().querySelector('[data-src-idx="' + entry.idx + '"]') : null);
+        var notLoaded = !node && entry.idx != null;
+        var row = el("button", "toc-row" + (notLoaded ? " is-unloaded" : ""));
         row.type = "button";
-        row.appendChild(el("span", "toc-idx", String(idx + 1).padStart(2, "0")));
+        row.appendChild(el("span", "toc-idx", String(i + 1).padStart(2, "0")));
         row.appendChild(el("span", "toc-text", text));
-        row.title = text;
-        row.addEventListener("click", function () {
-          node.scrollIntoView({ behavior: "smooth", block: "start" });
-          node.classList.add("msg-flash");
-          setTimeout(function () { node.classList.remove("msg-flash"); }, 2600);
-        });
+        row.title = notLoaded ? (text + "（尚未加载，点击后加载）") : text;
+        row.addEventListener("click", function () { jumpToTocEntry(entry); });
         list.appendChild(row);
       });
       tocSec.body.appendChild(list);
@@ -4481,7 +4497,12 @@
             });
           }
           if (text.trim() || imgs) {
+            // 打上源消息下标：消息目录要按「数据」列出全部提问，
+            // 而渐进渲染只把一部分节点放进 DOM，两者需要一把钥匙对上。
+            var prevNode = _logRedirect.lastElementChild;
             addUserMessage(text + (imgs ? "  [" + imgs + " 张图片]" : ""), []);
+            var madeNode = _logRedirect.lastElementChild;
+            if (madeNode && madeNode !== prevNode) { madeNode.dataset.srcIdx = String(j); }
           }
         } else if (msg.role === "assistant" && msg.content) {
           var h = addAssistantMessage();
@@ -4517,6 +4538,62 @@
     wrap.appendChild(msg);
     wrap.appendChild(btn);
     root.insertBefore(wrap, root.firstChild);
+  }
+
+  /**
+   * 把某个消息节点滚到视野里并闪一下，提示「就是这条」。
+   *
+   * instant=true 用于「刚补加载一大批再跳过去」：此时 loadEarlierReplay 刚调整过
+   * scrollTop 以保持视图不跳，smooth 滚动会和它打架，实测落不到目标位置。
+   * 直接按几何位置算一次 scrollTop 才可靠。
+   */
+  function flashToNode(node, instant) {
+    if (!node) { return; }
+    if (instant) {
+      var stream = $("stream");
+      if (stream) {
+        var sr = stream.getBoundingClientRect();
+        var nr = node.getBoundingClientRect();
+        stream.scrollTop += (nr.top - sr.top) - 80;
+      } else {
+        node.scrollIntoView();
+      }
+    } else {
+      node.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+    node.classList.add("msg-flash");
+    setTimeout(function () { node.classList.remove("msg-flash"); }, 2600);
+  }
+
+  /** 目录点击：已渲染就滚过去；还没渲染就分批补到它出现，再滚。 */
+  function jumpToTocEntry(entry) {
+    var node = entry.node || (entry.idx != null ? logRoot().querySelector('[data-src-idx="' + entry.idx + '"]') : null);
+    if (node) { flashToNode(node); return; }
+    if (entry.idx == null) { return; }
+    loadUntilRendered(entry.idx, function () { renderInspector(); });
+  }
+
+  /**
+   * 分批向前加载，直到目标下标进入 DOM 然后滚过去。
+   *
+   * 每批之间让出主线程：几百条消息一次性同步渲染曾把界面卡死 20-30 秒，
+   * 渐进渲染正是为了避免它 —— 跳转不能把这个保证撤销掉。tries 上限是防呆，
+   * 正常情况按 REPLAY_BATCH 每批 80 条，几百条的会话几轮就够。
+   */
+  function loadUntilRendered(targetIdx, done) {
+    var tries = 0;
+    (function step() {
+      var start = S._replayStart || 0;
+      if (start <= 0 || targetIdx >= start) {
+        var node2 = logRoot().querySelector('[data-src-idx="' + targetIdx + '"]');
+        if (node2) { flashToNode(node2, true); }
+        if (done) { done(); }
+        return;
+      }
+      if (tries++ > 40) { if (done) { done(); } return; }
+      loadEarlierReplay();
+      setTimeout(step, 16);
+    })();
   }
 
   /** 向前加载一批更早的消息，保持滚动位置不跳。 */
