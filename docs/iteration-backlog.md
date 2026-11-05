@@ -4,6 +4,14 @@
 > 本文件每轮更新：新增发现、划掉已完成、记录验证证据。
 > 起始：2026-11-05 00:30（Asia/Shanghai），计划约 07:00 收尾。
 
+## 复刻轮 L（交接文档 + 命令面校正）
+
+- [x] **新增 `docs/HANDOFF.md`**：当前状态、已完成提交、真正剩余、8 条踩坑约束、
+  逆向产物位置、接手时先跑的三条命令。所有状态都标注了核实方式，避免下一会话误判。
+- [x] **校正过期 backlog**：原记录称 `/fork /branch /init` 仍缺 —— 实测已实现。
+  命令面逐条核对（`src/main.js` case + `app.js` handlers），真正缺的只有 `/statusline`；
+  `/vim` 上游已移除、`/sandbox` 有意不做。
+- [x] 补 `/todo` 别名（TUI 与 GUI 都落到 `/todos` 分支）。
 ## 复刻轮 A（2026-11-06 01:06–01:20）：以 claude-re-2.1.302 对齐提示词
 
 - [x] 产物可用性实测：2432 模块 / 2428 具名 / import 可解析 87.7%（余为 Node 内置）/
@@ -219,9 +227,9 @@
 - [x] ~~第二批 GUI 命令~~ ✅ 第 3 轮已补齐 9 条（`/memory /skills /plugin`
   `/agents /release-notes /add-dir /compact /rewind /fast`），累计 GUI 已有
   「第 1 轮 1 条 + 第 2 轮 13 条 + 第 3 轮 9 条」共 23 条补齐命令。
-- [ ] **第三批（仍缺）**：`/fork /branch /loop /init /statusline /vim`。
-  其中 `/fork /branch` 需会话分叉 API；`/loop /init` 需新端点；`/statusline`
-  曾有挂起问题已回滚、`/vim` 工作量大，均排最后。
+- [x] **第三批**（已核实）：`/fork` `/branch` `/init` `/clear` `/provider` `/todo` **均已实现**
+  （见 `docs/HANDOFF.md` 第 3 节）；`/vim` 上游已移除、`/sandbox` 本项目有意不做。
+  仅剩 `/statusline` 需要新功能。
 - [ ] Esc+Esc 编辑上一条消息（TUI，parity-targets #1）；GUI 等价物（右栏消息编辑，
   parity-targets 末行）。`agent.rewind(text)` 已存在，可复用。
 - [ ] `/statusline` 自定义状态行（TUI，parity-targets #2）—— 首次实现有挂起问题已回滚，

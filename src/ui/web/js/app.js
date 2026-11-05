@@ -6046,6 +6046,7 @@
         toast("会话标题 → " + name, "ok");
       }).catch(function (e) { addNotice("重命名失败：" + e.message, "err"); });
     },
+    todo: function () { return EXTRA_COMMANDS.todos(); },
     todos: function () {
       getJSON("/api/todos?sessionKey=" + encodeURIComponent(sessionKeyOf())).then(function (j) {
         var list = j.todos || [];

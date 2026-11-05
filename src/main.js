@@ -610,6 +610,8 @@ async function handleCommand(raw, ctx) {
       return {};
     }
 
+    // /todo 与 /todos 同义（上游只有 /todos，这里接受更短的写法）
+    case "todo":
     case "todos": {
       const { getTodos } = await import("./tools/extra.js");
       const list = getTodos();

@@ -26,6 +26,16 @@
   不冒用上游身份、本地命名与插值正确。
 - 全量 **546/546**、`verify-features` ✓、exe 已重打并确认关键子句已编入二进制。
 
+### Added（交接文档 + 命令面校正）
+- 新增 **`docs/HANDOFF.md`**：状态表（带核实命令）、已完成提交、真正剩余、8 条踩坑约束、
+  逆向产物位置、接手时先跑的三条命令。目标的本质是「中断可续」，这份文档就是为此而写。
+- **校正过期记录**：backlog 原称 `/fork /branch /init` 仍缺，实测**均已实现**。
+  逐条核对 `src/main.js` 的 case 与 `app.js` 的 handlers 后确认：真正缺的只有 `/statusline`；
+  `/vim` 上游已移除、`/sandbox` 本项目有意用命令分级替代。
+- 补 `/todo` 别名：TUI 落到 `/todos` 分支（case fallthrough），GUI 委托 `EXTRA_COMMANDS.todos()`；
+  并加入 smoke 探测列表 —— 真实 exe 上 46 条命令 **0 崩溃**（`/exit` 无输出属预期）。
+- 新增 `test/command-alias.test.js`（2 项）；全量 **574/574**、exe 已重打。
+
 ### Changed（自主模式段扩为「循环工作」口径）
 - 依据产物 `02-modules/files/loopAutonomousPreamble-5hfhrxrk.md`（4,995 字符）与
   `loopAutonomousPreamblePersistent-2y5ccy21.md`（5,403 字符，定时循环自主工作），
