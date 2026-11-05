@@ -1,3 +1,4 @@
+import { estimateTextTokens } from "../tokens.js";
 import { findTool, toolSchemas } from "../tools/index.js";
 import { ProviderRouter } from "../providers/router.js";
 import { PermissionEngine, loadMemory } from "./permissions.js";
@@ -1009,13 +1010,11 @@ function estimateTokens(messages) {
   let tokens = 0;
   for (const m of messages) {
     const text = typeof m.content === "string" ? m.content : JSON.stringify(m.content ?? "");
-    // Count CJK characters separately: they are ~1 token each.
-    const cjk = (text.match(/[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\u3040-\u30ff\uac00-\ud7af]/g) || []).length;
-    const rest = text.length - cjk;
-    tokens += cjk + Math.ceil(rest / 4) + 8;
-    // Tool call payloads are JSON and cost tokens too.
+    // CJK 与拉丁文分别估算，口径见 src/tokens.js（此前这里有一份内联实现，
+    // GUI 侧却各写各的 chars/4，同一段中文在三处显示三个数）。
+    tokens += estimateTextTokens(text) + 8;
     if (Array.isArray(m.tool_calls)) {
-      tokens += Math.ceil(JSON.stringify(m.tool_calls).length / 4);
+      tokens += estimateTextTokens(JSON.stringify(m.tool_calls));
     }
   }
   return tokens;

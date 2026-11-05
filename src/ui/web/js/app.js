@@ -357,6 +357,19 @@
     if (g) { g.textContent = greetingText(); }
   }
 
+  /**
+   * Token 估算，口径与 src/tokens.js 一致：CJK 约 1 字符 1 token，其余约 4 字符 1 token。
+   * 前端各处的 chars/4 会把中文低估 3-4 倍，同一段提示词在卡片上显示 36 tok、
+   * 实际约 114 —— 上下文占用因此看起来比真实情况宽松得多。
+   */
+  function estimateTextTokens(str) {
+    var t = str == null ? "" : String(str);
+    if (!t) { return 0; }
+    var m = t.match(/[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\u3040-\u30ff\uac00-\ud7af\u3000-\u303f\uff00-\uffef]/g);
+    var cjk = m ? m.length : 0;
+    return cjk + Math.ceil((t.length - cjk) / 4);
+  }
+
   function logRoot() { return _logRedirect || $("log"); }
 
   /* 渐进重放期间把渲染临时导入离屏容器，整批再插回真实 #log（见 replayTranscript） */
@@ -7189,7 +7202,7 @@
       }
       top.appendChild(titleRow);
 
-      var metaText = (item.content || "").length + " 字 · ~" + Math.ceil((item.content || "").length / 4) + " tok" + (item.usageCount ? " · 已复用 " + item.usageCount + " 次" : "");
+      var metaText = (item.content || "").length + " 字 · ~" + estimateTextTokens(item.content || "") + " tok" + (item.usageCount ? " · 已复用 " + item.usageCount + " 次" : "");
       top.appendChild(el("span", "plib-card-meta", metaText));
       card.appendChild(top);
 
@@ -7411,7 +7424,7 @@
         source: u.source === "snippet" ? "snippet" : "upload",
         size: typeof u.size === "number" ? u.size : content.length,
         lines: content ? content.split(/\r?\n/).length : 0,
-        tokens: Math.ceil(content.length / 4),
+        tokens: estimateTextTokens(content),
         enabled: u.enabled !== false,
         content: content,
         rawRef: u
@@ -7428,7 +7441,7 @@
         source: "workspace",
         size: meta.size || content.length || 0,
         lines: meta.lines || (content ? content.split(/\r?\n/).length : 0),
-        tokens: meta.tokens || Math.ceil((content.length || meta.size || 0) / 4),
+        tokens: meta.tokens || estimateTextTokens(content || ""),
         enabled: !disabledSet[rel],
         content: content
       });
@@ -7447,7 +7460,7 @@
     var counts = { all: allItems.length, upload: 0, workspace: 0, snippet: 0 };
     var enabledCount = 0;
     var instText = ($("proj-inst-ta") && $("proj-inst-ta").value) || projModalDraft.instructions || "";
-    var totalTokens = Math.ceil(instText.length / 4);
+    var totalTokens = estimateTextTokens(instText);
 
     allItems.forEach(function (item) {
       counts[item.source] = (counts[item.source] || 0) + 1;
@@ -7612,7 +7625,7 @@
           item.rawRef.content = ta.value;
           item.rawRef.size = ta.value.length;
           item.rawRef.lines = ta.value.split(/\r?\n/).length;
-          item.rawRef.tokens = Math.ceil(ta.value.length / 4);
+          item.rawRef.tokens = estimateTextTokens(ta.value);
           renderProjectsModalContent();
           toast("已更新「" + item.name + "」内容，点击底部保存后生效", "ok");
         }
@@ -7665,7 +7678,7 @@
           source: "upload",
           size: file.size || content.length,
           lines: content ? content.split(/\r?\n/).length : 0,
-          tokens: Math.ceil(content.length / 4),
+          tokens: estimateTextTokens(content),
           enabled: true,
           updatedAt: new Date().toISOString(),
           content: content
@@ -7776,7 +7789,7 @@
           source: "snippet",
           size: content.length,
           lines: content.split(/\r?\n/).length,
-          tokens: Math.ceil(content.length / 4),
+          tokens: estimateTextTokens(content),
           enabled: true,
           updatedAt: new Date().toISOString(),
           content: content
@@ -7821,7 +7834,7 @@
               projModalDraft.workspaceMeta[rel] = {
                 size: fd.size || c.length,
                 lines: c.split(/\r?\n/).length,
-                tokens: Math.ceil(c.length / 4),
+                tokens: estimateTextTokens(c),
                 content: c
               };
               renderProjectsModalContent();

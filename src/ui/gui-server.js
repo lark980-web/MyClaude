@@ -1,3 +1,4 @@
+import { estimateTextTokens } from "../tokens.js";
 import { createServer } from "node:http";
 import { spawnSync, exec } from "node:child_process";
 import { consoleUi } from "./console-ui.js";
@@ -496,14 +497,13 @@ const makeTurnUi = (res, key) => {
     } catch {}
   }
 
-  /** Rough character-based token estimate (matches Agent.maybeCompact). */
+  /** Token 估算，口径与 Agent.maybeCompact 一致（见 src/tokens.js）。 */
   const approxTokens = (agent) => {
     if (!agent) return 0;
-    const chars = agent.messages.reduce((sum, m) => {
+    return agent.messages.reduce((sum, m) => {
       const c = typeof m.content === "string" ? m.content : JSON.stringify(m.content ?? "");
-      return sum + c.length + 20;
+      return sum + estimateTextTokens(c) + 5;
     }, 0);
-    return Math.ceil(chars / 4);
   };
 
   /** Keep only the JSON-safe structured bits of a tool result. */
@@ -1559,7 +1559,7 @@ async function searchWorkspaceFiles(query = "", limit = 40) {
                     source: u.source === "snippet" ? "snippet" : "upload",
                     size: typeof u.size === "number" ? u.size : Buffer.byteLength(content, "utf8"),
                     lines: content ? content.split(/\r?\n/).length : 0,
-                    tokens: Math.ceil(content.length / 4),
+                    tokens: estimateTextTokens(content),
                     enabled: u.enabled !== false,
                     updatedAt: u.updatedAt || new Date().toISOString(),
                     content
@@ -1710,7 +1710,7 @@ async function searchWorkspaceFiles(query = "", limit = 40) {
                   source: item.source === "snippet" ? "snippet" : "upload",
                   size: typeof item.size === "number" ? item.size : Buffer.byteLength(content, "utf8"),
                   lines: content ? content.split(/\r?\n/).length : 0,
-                  tokens: Math.ceil(content.length / 4),
+                  tokens: estimateTextTokens(content),
                   enabled: item.enabled !== false,
                   updatedAt: new Date().toISOString(),
                   content
@@ -1730,13 +1730,13 @@ async function searchWorkspaceFiles(query = "", limit = 40) {
 
         const state = store.projects.find((p) => p.id === store.activeProjectId) || store.projects[0];
         const knowledgeItems = [];
-        let totalChars = (state.instructions || "").length;
+        let totalTokensAcc = estimateTextTokens(state.instructions || "");
         const disabledSet = new Set(state.disabledFiles || []);
 
         // 1. Uploaded local project files & custom text snippets
         for (const up of state.uploadedFiles || []) {
           if (up.enabled !== false) {
-            totalChars += (up.content || "").length;
+            totalTokensAcc += estimateTextTokens(up.content || "");
           }
           knowledgeItems.push({
             id: up.id,
@@ -1762,7 +1762,7 @@ async function searchWorkspaceFiles(query = "", limit = 40) {
             const raw = readFileSync(safe, "utf8").slice(0, 32000);
             const relClean = relative(resolve(cwd), safe).replace(/\\/g, "/");
             const enabled = !disabledSet.has(relClean);
-            if (enabled) totalChars += raw.length;
+            if (enabled) { totalTokensAcc += estimateTextTokens(raw); }
             knowledgeItems.push({
               id: `ws-${relClean}`,
               name: basename(relClean),
@@ -1770,7 +1770,7 @@ async function searchWorkspaceFiles(query = "", limit = 40) {
               source: "workspace",
               size: st.size,
               lines: raw.split(/\r?\n/).length,
-              tokens: Math.ceil(raw.length / 4),
+              tokens: estimateTextTokens(raw),
               enabled,
               updatedAt: st.mtime ? st.mtime.toISOString() : null,
               content: raw
@@ -1778,7 +1778,7 @@ async function searchWorkspaceFiles(query = "", limit = 40) {
           } catch {}
         }
 
-        const totalTokens = Math.ceil(totalChars / 4);
+        const totalTokens = totalTokensAcc;
         const limitTokens = config.contextWindow || 128000;
         const capacityPct = Math.min(100, Math.round((totalTokens / limitTokens) * 1000) / 10);
 

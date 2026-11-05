@@ -79,6 +79,9 @@
   显式点击改为 info 文案；真浏览器验证无红条、无 HTTP 404 字样；3 项测试；全量 582/582。
 - [x] **备用模型空池禁用态**：实测已符合预期（测活 disabled + 说明 title + 添加可用），
   属其他会话已完成，本次仅核实未改动。
+- [x] **中文 token 低估修复**（复刻轮 O）：新增 `src/tokens.js` 统一 CJK 感知估算，
+  `agent.js` / `gui-server.js` / `app.js` 三处接入，前端 6 处 + 后端 5 处裸 `chars/4` 清零；
+  实测卡片 36 → 123 tok；6 项测试；全量 588/588。
 - [ ] 待办：剩余 skills、
   builtin-docs.md（89KB）、module-architecture.md、TUI 剩余 /statusline /vim /todo。
 
