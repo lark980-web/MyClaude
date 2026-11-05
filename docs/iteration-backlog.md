@@ -48,6 +48,9 @@
   防复发：全部改动已 `git add` 暂存。
 - [x] **已提交固化**：b0f108a（未推送、不含 apk/exe）。此前覆盖后只能靠测试契约重建，现已可从 git 直接回退。另一进程在 01:34:10 留下的 _p*.txt / _rea_probe*.txt 未跟踪草稿，未纳入提交、未删除。
   建议尽快 `git commit` 固化（不含 2.8GB apk）。
+- [x] **运行时审计发现并修复重复内存**（复刻轮 H）：转储真实系统提示词时发现
+  MYCLAUDE.md 被加载两次（大小写不敏感文件系统上两个候选名同一文件，按字面路径去重失效）。
+  改用 realpathSync 去重后提示词 22,682 → 18,610 字符（-18%），3 项新测试，全量 567/567。
 - [ ] 待办：剩余 skills、
   builtin-docs.md（89KB）、module-architecture.md、TUI 剩余 /statusline /vim /todo。
 

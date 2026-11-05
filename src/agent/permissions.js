@@ -11,7 +11,7 @@
  * name matches every invocation. The most specific match wins, evaluated in
  * the order deny > ask > allow.
  */
-import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, realpathSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 export class PermissionEngine {
@@ -161,6 +161,21 @@ export function globToRegExp(glob) {
 
 const MEMORY_FILES = ["MYCLAUDE.md", "myclaude.md"];
 
+/** Windows 与 macOS 默认大小写不敏感，两个候选名指向同一个文件。 */
+const CASE_INSENSITIVE_FS = process.platform === "win32" || process.platform === "darwin";
+
+/**
+ * 去重键：必须按「解析后的真实路径」比对，不能按字面路径。
+ * MEMORY_FILES 里 MYCLAUDE.md 与 myclaude.md 在大小写不敏感的文件系统上是同一个
+ * 文件，按字面路径去重会让同一份项目内存被读两遍 —— 每轮请求白多一份内容，
+ * 指令也重复出现两次。
+ */
+function memoryKey(file) {
+  let real = file;
+  try { real = realpathSync(file); } catch { real = file; }
+  return CASE_INSENSITIVE_FS ? real.toLowerCase() : real;
+}
+
 /** Load project memory from cwd, walking up to the git root or filesystem root. */
 export function loadMemory(cwd = process.cwd(), { maxBytes = 100_000 } = {}) {
   const parts = [];
@@ -169,8 +184,10 @@ export function loadMemory(cwd = process.cwd(), { maxBytes = 100_000 } = {}) {
   for (let depth = 0; depth < 12; depth++) {
     for (const name of MEMORY_FILES) {
       const file = join(dir, name);
-      if (seen.has(file) || !existsSync(file)) continue;
-      seen.add(file);
+      if (!existsSync(file)) continue;
+      const key = memoryKey(file);
+      if (seen.has(key)) continue;
+      seen.add(key);
       try {
         const text = readFileSync(file, "utf8");
         if (text.trim()) parts.push({ file, text });
