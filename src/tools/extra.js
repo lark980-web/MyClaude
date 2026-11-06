@@ -104,7 +104,12 @@ export const webFetchTool = {
     },
     required: ["url"],
   },
-  async run({ url, max_chars = 20000 }) {
+  async run(raw) {
+    // 上游 WebFetch 要求 url + prompt（prompt 是给模型的抓取指令），另有 offset；
+    // MyClaude 用 url + max_chars。两套都收，max_chars 决定实际抓取上限。
+    const a = raw || {};
+    const { url } = a;
+    const max_chars = a.max_chars !== undefined ? a.max_chars : 20000;
     let parsed;
     try {
       parsed = new URL(url);

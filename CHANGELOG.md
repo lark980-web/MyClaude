@@ -26,6 +26,29 @@
   不冒用上游身份、本地命名与插值正确。
 - 全量 **546/546**、`verify-features` ✓、exe 已重打并确认关键子句已编入二进制。
 
+### Added（代码层复刻 A 片段：上游工具契约逐字接入）
+- **新增 `scripts/gen-upstream-schemas.mjs` + `src/tools/upstream-schemas.js`**：把上游 2.1.302 的
+  工具 `input_schema`（含属性级描述词，AST 级抽取的 85/92）按**逐工具决策表**接入 MyClaude。
+  唯一 choke point 是 `toolSchemas()` —— 工具送往 provider 的序列化点，一处换掉全部。
+- **9 个工具采用/合并上游契约**：Read、Write、Edit、Glob、Grep、Bash、TodoWrite、NotebookEdit、WebFetch。
+  属性名、描述词、required 全部逐字采用上游（例如 Glob.path 的描述词现在带着上游那句
+  `DO NOT enter "undefined" or "null"`，MyClaude 自研版没有）。
+- **保留自研契约并记明原因**：WebSearch / AskUserQuestion（上游 schema 是运行时分支 getter，
+  静态不可还原）、ExitPlanMode（上游是 allowedPrompts，MyClaude 是 plan，契约不同）、
+  LS / MultiEdit / BashOutput / KillShell / Git*（上游没有）。
+- **run() 同步兼容上游命名**：Grep 收 `-A/-B/-C/-n/-i/-o` 与 `head_limit`（并**实现**了 `-o`
+  只输出匹配片段，rg 路径用 --only-matching、JS 回退路径自己截匹配段）；Bash 收 `timeout`
+  与 `dangerouslyDisableSandbox`；Read 收 `allow_large`（放宽体积上限到 25MB）；
+  WebFetch 收 `prompt`/`offset`。MyClaude 旧命名全部保留，两套并行可用。
+- **还原出一个被漏掉的真实上游参数**：`Read.allow_large` —— 抽取器把它记成计算键 `[computed:[Rge]]`，
+  生成器从 `x-raw` 还原出真实键名与布尔类型。
+- **测试 8 项**：逐字一致性、描述词确实到达模型、保留自研契约的工具未被误改、别名已声明、
+  Grep/Bash/Read 的上游命名实跑。全量 **604/604**；`verify-features` ✓、`inspect:prompt` 0 error、
+  生成器 `--check` 幂等、smoke 46 命令 0 崩溃、exe 已重打。
+- **未覆盖（如实标注）**：上游**工具级长描述**仍在 `async description(){return cAo(void 0)}` 之后，
+  需按 inputSchema 同款手法解构造链（已定位 `cAo` 在 chunk-y41y4f2h.js，模板字面量 + 条件分支），
+  属下一片；本片只对齐了参数面。
+
 ### Added（代码层复刻 B 路线落地：原生 Claude Code 引擎并入）
 - **新增 `src/engines/claude-code.js`**：把 claude-re-2.1.302 提取的 2433 模块明文树当作
   「另一个 agent 内核」驱动 —— spawn `bun B:/~BUN/root/cli` 子进程、prompt 走 stdin

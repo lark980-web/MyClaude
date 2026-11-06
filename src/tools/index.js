@@ -6,6 +6,7 @@ import { createRequire } from "node:module";
 import { startBackground, killTask, readTaskOutput, waitTask, taskSummaries, adoptProcess,
 } from "./tasks.js";
 import { todoWriteTool, webFetchTool } from "./extra.js";
+import { upstreamSchema } from "./upstream-schemas.js";
 import { GIT_TOOLS } from "./git.js";
 import { tmpdir } from "node:os";
 
@@ -85,11 +86,13 @@ export const readTool = {
     },
     required: ["file_path"],
   },
-  async run({ file_path, offset = 1, limit = 2000, pages }) {
+  async run({ file_path, offset = 1, limit = 2000, pages, allow_large }) {
     try {
       const st = await stat(file_path);
       if (st.isDirectory()) return err(`EISDIR: ${file_path} is a directory (use LS)`);
-      if (st.size > MAX_READ_BYTES * 5) return err(`file too large: ${st.size} bytes`);
+      // allow_large 是上游参数：放宽单文件体积上限（上游语义是「只要还塞得进上下文就允许」）。
+      const sizeCap = MAX_READ_BYTES * (allow_large ? 25 : 5);
+      if (st.size > sizeCap) return err(`file too large: ${st.size} bytes`);
 
       const ext = extname(file_path).toLowerCase();
       const IMAGE_EXT = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"]);
@@ -401,7 +404,7 @@ function findRipgrep() {
  * @returns {{ok: boolean, content: string}|null} null when ripgrep is absent
  *   or failed in a way the fallback should handle instead.
  */
-function ripgrepSearch({ pattern, path, glob, type, output_mode, i, n, A, B, C, max_results }) {
+function ripgrepSearch({ pattern, path, glob, type, output_mode, i, n, o, A, B, C, max_results }) {
   const rg = findRipgrep();
   if (!rg) { return null; }
 
@@ -415,7 +418,11 @@ function ripgrepSearch({ pattern, path, glob, type, output_mode, i, n, A, B, C, 
   if (after > 0) { args.push("-A", String(after)); }
   if (output_mode === "files_with_matches") { args.push("--files-with-matches"); }
   else if (output_mode === "count") { args.push("--count"); }
-  else { if (n) { args.push("--line-number"); } }
+  else {
+    // -o（上游参数）：只输出匹配到的片段，而不是整行
+    if (o) { args.push("--only-matching"); }
+    else if (n) { args.push("--line-number"); }
+  }
   args.push("--", pattern, path);
 
   let out;
@@ -482,23 +489,38 @@ export const grepTool = {
     },
     required: ["pattern"],
   },
-  async run({
-    pattern,
-    path = process.cwd(),
-    glob,
-    type,
-    output_mode = "content",
-    i = false,
-    n = true,
-    A = 0,
-    B = 0,
-    C = 0,
-    max_results = 200,
-  }) {
+  async run(raw) {
+    // 上游用 ripgrep 风格的短横线参数（-A/-B/-C/-n/-i/-o）与 head_limit；
+    // MyClaude 历史上用 A/B/C/i/n/max_results。两套都收，上游优先。
+    const a = raw || {};
+    const norm = {
+      ...a,
+      i: a["-i"] !== undefined ? a["-i"] : a.i,
+      n: a["-n"] !== undefined ? a["-n"] : a.n,
+      o: a["-o"] !== undefined ? a["-o"] : a.o,
+      A: a["-A"] !== undefined ? a["-A"] : a.A,
+      B: a["-B"] !== undefined ? a["-B"] : a.B,
+      C: a["-C"] !== undefined ? a["-C"] : (a.context !== undefined ? a.context : a.C),
+      max_results: a.head_limit !== undefined ? a.head_limit : a.max_results,
+    };
+    const {
+      pattern,
+      path = process.cwd(),
+      glob,
+      type,
+      output_mode = "content",
+      i = false,
+      n = true,
+      o = false,
+      A = 0,
+      B = 0,
+      C = 0,
+      max_results = 200,
+    } = norm;
     try {
       // Prefer ripgrep when installed: it honours .gitignore and is far faster
       // on large trees. Falls through to the JS scan below when unavailable.
-      const rgResult = ripgrepSearch({ pattern, path, glob, type, output_mode, i, n, A, B, C, max_results });
+      const rgResult = ripgrepSearch({ pattern, path, glob, type, output_mode, i, n, o, A, B, C, max_results });
       if (rgResult) { return rgResult; }
       let flags = "m";
       if (i) flags += "i";
@@ -544,7 +566,13 @@ export const grepTool = {
         for (const li of sorted) {
           if (li > prev + 1 && prev >= 0) results.push("--");
           const prefix = n ? `${file}:${li + 1}: ` : "";
-          results.push(`${prefix}${lines[li].slice(0, 300)}`);
+          if (o) {
+            // -o（上游参数）：只输出匹配片段本身，而不是整行
+            const mm = lines[li].match(re);
+            if (mm) { results.push(`${prefix}${mm[0].slice(0, 300)}`); }
+          } else {
+            results.push(`${prefix}${lines[li].slice(0, 300)}`);
+          }
           prev = li;
           if (results.length >= max_results) return;
         }
@@ -688,7 +716,12 @@ export const bashTool = {
     },
     required: ["command"],
   },
-  async run({ command, cwd = process.cwd(), timeout_ms = 120000, run_in_background = false, signal } = {}) {
+  async run(raw) {
+    // 上游用 timeout（毫秒）+ dangerouslyDisableSandbox；MyClaude 用 timeout_ms + cwd + signal。
+    // timeout 优先（上游命名），dangerouslyDisableSandbox 无对应沙箱实现，忽略并说明。
+    const a = raw || {};
+    const timeout_ms = a.timeout !== undefined ? a.timeout : (a.timeout_ms !== undefined ? a.timeout_ms : 120000);
+    const { command, cwd = process.cwd(), run_in_background = false, signal } = a;
     if (run_in_background) {
       const started = await startBackground({ command, cwd, timeout_ms: Math.max(timeout_ms, 60000) });
       if (!started.ok) return err(`failed to start background task: ${started.status}`);
@@ -897,6 +930,15 @@ export function allRegisteredTools() {
   return out;
 }
 
+/**
+ * 工具的参数面：采用上游 Claude Code 2.1.302 的契约（逐字，含属性级描述词）。
+ * 上游没有同名工具、或该工具 schema 是运行时分支无法静态还原时，保留 MyClaude 自研 schema。
+ * 决策表见 scripts/gen-upstream-schemas.mjs 的 DECISIONS。
+ */
+export function toolInputSchema(t) {
+  return upstreamSchema(t.name) || t.input_schema;
+}
+
 export function toolSchemas(tools) {
   const list = tools || allRegisteredTools();
   return list.map((t) => ({
@@ -904,7 +946,7 @@ export function toolSchemas(tools) {
     function: {
       name: t.name,
       description: t.description,
-      parameters: t.input_schema,
+      parameters: toolInputSchema(t),
     },
   }));
 }
