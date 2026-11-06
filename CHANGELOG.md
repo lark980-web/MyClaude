@@ -8,6 +8,13 @@
 
 ## [Unreleased]
 
+### Added（追加轮 3：TUI /config 交互面板 —— 夜航轮 7）
+- 上游 /config 是 enum 交互面板（{id,label,options,type:"enum"}），MyClaude 此前是 JSON dump。
+- ink 面板：↑↓ 选行、←→/Enter 循环取值、Esc 关闭；本地相关三项——Editor mode、
+  Output style（含自定义风格清单）、自动压缩；应用即改即存（saveConfig）并重建提示词。
+- /config raw 保留 JSON dump（plain UI 同样走原路径，零回归）。
+- test/ink-tui.test.js 增面板用例（5/5）；全量 708/708 全绿；TTY 闸门改轮询式。
+
 ### Added（追加轮 2：真 TTY 验证闸门 —— winpty）
 - ink TUI 此前从未在真实终端验证过（管道回落 plain UI）。新 scripts/verify-tui-tty.mjs
   用 winpty 代理 pty 真渲染：欢迎屏/插入指示器/状态行 vim 标记/真实回合全部确认。

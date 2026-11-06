@@ -44,7 +44,9 @@ function mockStdout(capture) {
   return s;
 }
 
-function startTuiHarness({ vim = false, busy = false, users = ["q1", "q2"] } = {}) {
+function startTuiHarness(options = {}) {
+  const opts = options;
+  const { vim = false, busy = false, users = ["q1", "q2"] } = opts;
   const bridge = new TuiBridge({ config: {} });
   bridge.state.busy = busy;
   for (const u of users) { bridge.user(u); }
@@ -55,7 +57,11 @@ function startTuiHarness({ vim = false, busy = false, users = ["q1", "q2"] } = {
   const stdin = mockStdin();
   const capture = [];
   const stdout = mockStdout(capture);
-  const calls = { onEditMessage: [], onSubmit: [], onCommand: [] };
+  const calls = { onEditMessage: [], onSubmit: [], onCommand: [], onConfigApply: [] };
+  const cfgRows = opts.cfgRows || [
+    { key: "editorMode", label: "Editor mode", values: ["normal", "vim"], valueIdx: 0 },
+    { key: "outputStyle", label: "Output style", values: ["default", "explanatory"], valueIdx: 0 },
+  ];
   const instance = render(
     h(App, {
       bridge,
@@ -63,6 +69,8 @@ function startTuiHarness({ vim = false, busy = false, users = ["q1", "q2"] } = {
       onSubmit: async (t) => { calls.onSubmit.push(t); },
       onCommand: async (t) => { calls.onCommand.push(t); },
       onEditMessage: async (depth, text) => { calls.onEditMessage.push({ depth, text }); },
+      onConfigOpen: () => cfgRows,
+      onConfigApply: (key, value) => { calls.onConfigApply.push({ key, value }); },
       getTodos: () => [],
     }),
     { stdin, stdout, exitOnCtrlC: false, patchConsole: false }
@@ -148,5 +156,22 @@ test("vim 模式：空输入双 esc 同样唤起选择器，编辑回填进 INSE
     t.key("\r"); // 重发预填文本
     await t.waitFrame(() => t.calls.onEditMessage.length > 0, 4000, "resubmit");
     assert.deepEqual(t.calls.onEditMessage, [{ depth: 1, text: "q2" }]);
+  } finally { t.instance.unmount(); }
+});
+
+test("/config 打开交互面板：↑↓ 选行、→ 循环取值并即时应用", async () => {
+  const t = startTuiHarness({});
+  try {
+    await sleep(300);
+    t.key("/config"); await sleep(120); t.key("\r");
+    await t.waitFrame((f) => f.includes("Editor mode"), 4000, "panel opens");
+    await sleep(150);
+    t.key("\x1b[B"); // ↓ → Output style 行
+    await sleep(120);
+    t.key("\x1b[C"); // → 循环取值 → explanatory
+    await sleep(200);
+    assert.deepEqual(t.calls.onConfigApply, [{ key: "outputStyle", value: "explanatory" }], JSON.stringify(t.calls.onConfigApply));
+    t.key("\x1b"); // 关闭面板
+    await sleep(200);
   } finally { t.instance.unmount(); }
 });

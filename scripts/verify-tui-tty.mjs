@@ -31,8 +31,9 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const w = (s, ms = 600) => sleep(ms).then(() => p.stdin.write(s));
 
 try {
-  await w("", 3000); // 等 TUI 首帧
-  const welcome = out.includes("Welcome to MyClaude");
+  // 等 TUI 首帧（轮询，帧重绘可能覆盖快照）
+  let welcome = false;
+  for (let i = 0; i < 25 && !welcome; i++) { await sleep(300); welcome = out.includes("Welcome to MyClaude"); }
   // vim：INSERT 打字 → esc → x
   for (const c of "hi") await w(c, 200);
   await sleep(600);

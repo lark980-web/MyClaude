@@ -1574,6 +1574,34 @@ async function runTui({ config, provider, agent, autoSaver }) {
         }
       }
     },
+    onConfigOpen: () => {
+      // 上游 /config 的 enum 面板形态（{id,label,value,options,type:"enum"}）：
+      // 行数据现读现给，本地相关三项（编辑器模式/输出样式/自动压缩）。
+      const styles = listOutputStyles();
+      const styleIdx = styles.findIndex((s) => s.name === (config.outputStyle || "default"));
+      return [
+        { key: "editorMode", label: "Editor mode（编辑器模式）", values: ["normal", "vim"], valueIdx: config.editorMode === "vim" ? 1 : 0 },
+        { key: "outputStyle", label: "Output style（输出样式）", values: styles.map((s) => s.name), valueIdx: Math.max(0, styleIdx) },
+        { key: "autoCompact", label: "自动压缩（autoCompact）", values: ["on", "off"], valueIdx: config.autoCompact === false ? 1 : 0 },
+      ];
+    },
+    onConfigApply: (key, value) => {
+      if (key === "editorMode") {
+        config.editorMode = value;
+        config.vimMode = value === "vim";
+        saveConfig({ editorMode: value, vimMode: config.vimMode });
+        bridge.info("Editor mode → " + value);
+      } else if (key === "outputStyle") {
+        agent.setOutputStyle(value);
+        config.outputStyle = value;
+        saveConfig({ outputStyle: value });
+        bridge.info("Output style → " + value + "（系统提示词已重建）");
+      } else if (key === "autoCompact") {
+        config.autoCompact = value === "on";
+        saveConfig({ autoCompact: config.autoCompact });
+        bridge.info("autoCompact → " + (config.autoCompact ? "on" : "off"));
+      }
+    },
     onEditMessage: async (depth, text) => {
       // Esc+Esc 编辑重发（上游 parity-targets #1）。depth=1 走 GUI 编辑重发的
       // 同一语义（保留并替换最后一条提问，重放循环）；depth>1 连目标一起撤掉，

@@ -304,7 +304,7 @@ function VimInputView({ text, view, busy }) {
   );
 }
 
-export function App({ bridge, config, onSubmit, onCommand, onExit, getStats, getTodos, onEditMessage }) {
+export function App({ bridge, config, onSubmit, onCommand, onExit, getStats, getTodos, onEditMessage, onConfigOpen, onConfigApply }) {
   const { exit } = useApp();
   const [, forceRender] = useState(0);
   const [input, setInput] = useState("");
@@ -336,6 +336,30 @@ export function App({ bridge, config, onSubmit, onCommand, onExit, getStats, get
     setEditing(null);
     setPicker({ list, idx: 0 });
   }, [bridge]);
+
+  // /config 交互面板（上游 /config 的 enum 面板形态）：↑↓ 选行、←→ 循环取值、Esc 关闭。
+  // 行数据由 main.js 的 onConfigOpen() 现读现给；应用经 onConfigApply(key, value)。
+  const [cfgPanel, setCfgPanel] = useState(null); // { rows: [{key,label,values,valueIdx}], idx }
+  const openConfigPanel = useCallback(() => {
+    if (bridge.state.busy) return;
+    if (typeof onConfigOpen !== "function") return;
+    const rows = onConfigOpen();
+    if (!rows || !rows.length) return;
+    setCfgPanel({ rows, idx: 0 });
+  }, [bridge, onConfigOpen]);
+  const cfgCycle = useCallback((dir) => {
+    setCfgPanel((p) => {
+      if (!p) return p;
+      const rows = p.rows.map((r, i) => {
+        if (i !== p.idx || !r.values || r.values.length < 2) return r;
+        const valueIdx = (r.valueIdx + (dir > 0 ? 1 : r.values.length - 1)) % r.values.length;
+        const value = r.values[valueIdx];
+        if (typeof onConfigApply === "function") { onConfigApply(r.key, value); }
+        return { ...r, valueIdx };
+      });
+      return { ...p, rows };
+    });
+  }, [onConfigApply]);
 
   useEffect(() => {
     const unsub = bridge.subscribe(() => forceRender((n) => n + 1));
@@ -412,6 +436,14 @@ export function App({ bridge, config, onSubmit, onCommand, onExit, getStats, get
         setInput(sel.text);
         return;
       }
+      return;
+    }
+    if (cfgPanel) {
+      if (key.escape) { setCfgPanel(null); return; }
+      if (key.upArrow) { setCfgPanel((p) => ({ ...p, idx: Math.max(0, p.idx - 1) })); return; }
+      if (key.downArrow) { setCfgPanel((p) => ({ ...p, idx: Math.min(p.rows.length - 1, p.idx + 1) })); return; }
+      if (key.leftArrow) { cfgCycle(-1); return; }
+      if (key.rightArrow || key.return) { cfgCycle(1); return; }
       return;
     }
     if (key.ctrl && ch === "c") {
@@ -553,10 +585,15 @@ export function App({ bridge, config, onSubmit, onCommand, onExit, getStats, get
       setInput("");
       setShowWelcome(false);
       setShowHelp(false);
+      if (text === "/config" && typeof onConfigOpen === "function") {
+        // 上游 /config 是交互面板（enum 循环），JSON dump 移到 /config raw
+        openConfigPanel();
+        return;
+      }
       if (text.startsWith("/")) await onCommand(text);
       else await onSubmit(text);
     },
-    [onCommand, onSubmit, editing, onEditMessage]
+    [onCommand, onSubmit, editing, onEditMessage, onConfigOpen, openConfigPanel]
   );
 
   const visible = state.items.slice(-80);
@@ -628,6 +665,21 @@ export function App({ bridge, config, onSubmit, onCommand, onExit, getStats, get
       : null,
     editing
       ? h(Box, null, h(Text, { color: "magenta" }, `  正在编辑倒数第 ${editing.depth} 条提问 — Enter 重发 · Esc 取消`))
+      : null,
+    cfgPanel
+      ? h(
+          Box,
+          { borderStyle: "round", borderColor: CLAUDE, paddingX: 1, marginTop: 1, flexDirection: "column" },
+          h(Text, { bold: true, color: CLAUDE }, "配置（↑/↓ 选择 · ←/→ 或 Enter 循环取值 · Esc 关闭）"),
+          ...cfgPanel.rows.map((r, i) =>
+            h(
+              Box,
+              { key: r.key },
+              h(Text, { color: i === cfgPanel.idx ? CLAUDE : "gray" }, `${i === cfgPanel.idx ? "❯ " : "  "}${r.label}：`),
+              h(Text, { bold: i === cfgPanel.idx }, String(r.values[r.valueIdx]))
+            )
+          )
+        )
       : null,
     h(
       Box,
