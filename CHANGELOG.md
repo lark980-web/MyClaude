@@ -26,6 +26,26 @@
   不冒用上游身份、本地命名与插值正确。
 - 全量 **546/546**、`verify-features` ✓、exe 已重打并确认关键子句已编入二进制。
 
+### Added（阶段 2 第一项：/statusline 从「只存配置」升级为「真执行外部命令」）
+- **上游契约实测**（不再猜）：`chunk-e0x0xb6d.js@2656002` 的 statusLine setup agent
+  提示词给出了完整 stdin JSON（session_id / session_name / prompt_id / transcript_path /
+  cwd / model{id,display_name} / workspace{...} / version / output_style / context_window / effort）；
+  `@3688311` 的 `Lbr()` 是执行点：stdin 传 JSON，取 status=0 的 stdout，
+  按 `trim().split(" ").flatMap(...).join(" ")` 压成单行。
+- **新增 `src/agent/statusline.js`**：`buildStatusLineInput()` 按上游契约构造 stdin、
+  `runStatusLine()` 执行外部命令（5s 超时、非零退出/超时/无命令一律降级返回 null，
+  状态行是装饰，绝不能拖垮主流程）、`normalizeStatusLineOut()` 按上游口径压行。
+- **三面接线**：
+  - 服务端新增 `GET /api/statusline`（执行命令返回文本）；`POST /api/config` 白名单加
+    `statusLineCommand`，修掉「GUI 只写 localStorage、服务端读不到」的两边不通；
+  - GUI 右栏新增「状态行」section，`refreshStatusLine()` 节流刷新、done 后强制刷新；
+    `/statusline <命令>` 同时写本地偏好与服务端并立即刷新；
+  - TUI `/statusline` 设置后**立即跑一次预览**并显示输出（无常驻状态栏，如实标注）。
+- **端到端实测**（无头浏览器）：`/statusline echo STATUSLINE-OK` → 右栏状态行节点显示
+  `STATUSLINE-OK`，`/api/statusline` 返回 `{ok:true,text:"STATUSLINE-OK",command:"echo STATUSLINE-OK"}`，0 JS 异常。
+- **测试 9 项**：契约字段、effort 可选、stdout 压行、stdin JSON 传递、非零退出/无命令降级、
+  `/api/statusline` 执行/未配置、POST 同步、三面注册。全量 **648/648**。
+
 ### Added（阶段 1 并行成果：命令面 100% + 运行时 schema 全量普查 + GUI 后端开关）
 - **命令面补齐（并行成员 cmd-porter）**：上游 133 个内置命令中**本地相关的 81 个**，
   TUI 与 GUI 均从 46%/38% 补到 **81/81 = 100%**（`parity-metrics` 现测，

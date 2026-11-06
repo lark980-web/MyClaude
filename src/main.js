@@ -8,6 +8,7 @@ import { allRegisteredTools } from "./tools/index.js";
 import { createAgent, closeAgent } from "./agent/runtime.js";
 import { runWithAutoContinue } from "./agent/autorun.js";
 import { setAutonomous } from "./tools/extended.js";
+import { buildStatusLineInput, runStatusLine } from "./agent/statusline.js";
 import {
   newSessionId,
   saveSession,
@@ -1314,10 +1315,22 @@ case "init": {
       return handleCommand("/title" + (arg ? " " + arg : ""), ctx);
     }
     case "statusline": {
-      // 上游 statusline 是「配置里的外部命令」；本机无状态栏组件，只持久化
-      // statusLineCommand 并如实说明不执行脚本。
+      // 阶段 2：真执行上游契约的外部命令。/
+      // `/statusline <命令>` 设置后立即跑一次预览；`/statusline status` 也跑一次，
+      // 输出即状态行文本（TUI 无常驻状态栏，但配置与执行语义与上游一致）。
       valueSetting("statusline", arg, config, ui, "statusLineCommand");
-      ui.info("注：本机 TUI 没有状态栏组件，仅记录该配置，不执行外部脚本。");
+      const slCmd = config.statusLineCommand;
+      if (!slCmd) { ui.info("未配置状态行命令；用法：/statusline <命令> | clear"); return {}; }
+      const slInput = buildStatusLineInput({
+        sessionId: agent ? agent.sessionKey : "default",
+        cwd: process.cwd(),
+        model: { id: config.model, displayName: config.model },
+        outputStyle: { name: config.outputStyle || "default" },
+        contextWindow: { contextWindowSize: Number(config.contextWindow) || 200000 },
+      });
+      const sl = await runStatusLine({ command: slCmd, input: slInput, cwd: process.cwd(), timeoutMs: 5000 });
+      if (sl.ok && sl.text) { ui.info("状态行预览：" + sl.text); }
+      else { ui.warn("状态行执行失败：" + (sl.error || "无输出")); }
       return {};
     }
     case "tui": {

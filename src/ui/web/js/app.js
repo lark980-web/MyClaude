@@ -2858,6 +2858,7 @@
     }
     if (ev.type === "compact") { addNotice("上下文已压缩（丢弃 " + (ev.dropped ?? "?") + " 条旧消息），长对话继续", "info"); }
           if (ev.type === "done") {
+      refreshStatusLine(true); // 回合结束按最新 stats 重算状态行
             // 定格实时读数：工具聚合条右侧保留本轮最终耗时 + token 作为记录。
             setLiveStat(Date.now() - (S.busyStartedAt || Date.now()),
               (S.stats && S.stats.inputTokens) || 0, (S.stats && S.stats.outputTokens) || 0, false);
@@ -3187,10 +3188,39 @@
     var body = $("insp-body");
     if (!body) { return; }
     clear(body);
+    renderStatusLineSection(body);
     renderSessionSection(body);
     renderRoutingSection(body);
     renderTodoSection(body);
     renderMcpSection(body);
+    refreshStatusLine();
+  }
+
+  /* ------------------------------------------------------------------
+   * 状态行（阶段 2）：右栏常驻一段，由 /api/statusline 真执行配置里的外部命令。
+   * 上游契约见 src/agent/statusline.js —— stdin 是 StatusLineCommandInput JSON。
+   * renderInspector 会被 stats 频繁重绘，所以这里节流；done 事件里强制刷新。
+   * ------------------------------------------------------------------ */
+  var _lastStatusRefresh = 0;
+  function renderStatusLineSection(root) {
+    var sec = section("状态行");
+    var box = el("div", "status-line-text", "（未配置）");
+    box.id = "status-line-text";
+    box.title = "用 /statusline <命令> 配置";
+    sec.body.appendChild(box);
+    root.appendChild(sec.sec);
+  }
+  function refreshStatusLine(force) {
+    var now = Date.now();
+    if (!force && now - _lastStatusRefresh < 2000) { return; }
+    _lastStatusRefresh = now;
+    getJSON("/api/statusline?sessionKey=" + encodeURIComponent(sessionKeyOf())).then(function (j) {
+      var n = $("status-line-text");
+      if (!n) { return; }
+      if (!j.configured) { n.textContent = "未配置（/statusline <命令>）"; return; }
+      n.textContent = j.text || (j.error ? "执行失败：" + j.error : "(无输出)");
+      if (j.command) { n.title = j.command; }
+    }).catch(function () { /* 状态行是装饰，失败不打扰用户 */ });
   }
 
   function renderSessionSection(root) {
@@ -6389,7 +6419,23 @@
     "reload-plugins": function () { runServerCommand("plugin"); },
     "reload-skills": function () { runServerCommand("skills"); },
     rename: function (arg) { return EXTRA_COMMANDS.title(arg); },
-    statusline: function (arg) { guiValue("statusline", arg, "statusLineCommand"); },
+    statusline: function (arg) {
+      var v = String(arg || "").trim();
+      if (!v || v === "status") { guiValue("statusline", arg, "statusLineCommand"); refreshStatusLine(true); return; }
+      var clear = ["clear", "off", "none", "delete"].indexOf(v.toLowerCase()) >= 0;
+      var value = clear ? null : v;
+      // 服务端 /api/statusline 读的是 config.statusLineCommand —— 只写 localStorage 两边不通，
+      // 所以同时 POST 到 /api/config，再强制刷新右栏状态行。
+      guiSetPref("statusLineCommand", value);
+      postJSON("/api/config", { statusLineCommand: value }).then(function () {
+        if (S.config) { S.config.statusLineCommand = value; }
+        toast("/statusline = " + (clear ? "(已清除)" : v) + "（已同步服务端）", "ok");
+        refreshStatusLine(true);
+      }).catch(function (e) {
+        toast("状态行同步失败：" + e.message, "err");
+        refreshStatusLine(true);
+      });
+    },
     tui: function () { addNotice("当前是 GUI；/tui 需退出浏览器后用 myclaude（不带 --gui）启动终端界面。", "info"); },
     ultrareview: function () { addNotice(guiUnsupported("ultrareview", "/review（本机单代理代码审查）"), "warn"); },
     "security-review": function (arg) {

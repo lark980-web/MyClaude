@@ -3,6 +3,7 @@ import { createServer } from "node:http";
 import { spawnSync, exec } from "node:child_process";
 import { engineStatus, runEngineTurn, engineSessionFor, rememberEngineSession, forgetEngineSession } from "../engines/claude-code.js";
 import { streamUpstreamTurn, upstreamBoundSession, bindUpstreamSession } from "../engines/upstream-chat.js";
+import { buildStatusLineInput, runStatusLine } from "../agent/statusline.js";
 import { consoleUi } from "./console-ui.js";
 import { runWithAutoContinue } from "../agent/autorun.js";
 import { setAutonomous } from "../tools/extended.js";
@@ -835,6 +836,16 @@ async function searchWorkspaceFiles(query = "", limit = 40) {
 
       if (path === "/api/config" && req.method === "POST") {
         const body = await readJson(req);
+        if (body.statusLineCommand !== undefined) {
+          const v = body.statusLineCommand;
+          if (v === null || String(v).trim() === '') {
+            delete config.statusLineCommand;
+            saveConfig({ statusLineCommand: null });
+          } else {
+            config.statusLineCommand = String(v);
+            saveConfig({ statusLineCommand: config.statusLineCommand });
+          }
+        }
         if (body.engineBackend !== undefined) {
           const v = String(body.engineBackend);
           if (v === "self" || v === "upstream") {
@@ -2223,6 +2234,27 @@ async function searchWorkspaceFiles(query = "", limit = 40) {
         return;
       }
 
+      /* ---- 状态行（阶段 2：真执行上游契约的外部命令）---- */
+      if (path === "/api/statusline" && req.method === "GET") {
+        const key = url.searchParams.get("sessionKey") || "default";
+        const agent = sessions.get(key);
+        const stats = agent ? statsOf(agent) : null;
+        const input = buildStatusLineInput({
+          sessionId: key,
+          sessionName: (loadSession(key) && loadSession(key).title) || null,
+          cwd,
+          model: { id: config.model, displayName: config.model },
+          outputStyle: { name: config.outputStyle || "default" },
+          contextWindow: {
+            totalInputTokens: Number(stats && stats.contextUsed) || 0,
+            totalOutputTokens: Number(stats && stats.outputTokens) || 0,
+            contextWindowSize: Number(stats && stats.contextLimit) || Number(config.contextWindow) || 200000,
+          },
+        });
+        const r = await runStatusLine({ command: config.statusLineCommand, input, cwd, timeoutMs: 5000 });
+        sendJson(res, 200, { ok: r.ok, text: r.text, error: r.error, command: r.command || null, configured: !!config.statusLineCommand });
+        return;
+      }
       if (path === "/api/output-styles" && req.method === "GET") {
         sendJson(res, 200, { styles: listOutputStyles(), current: config.outputStyle || "default" });
         return;
