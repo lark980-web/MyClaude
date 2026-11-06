@@ -110,3 +110,21 @@ marketplace、遥测、远程会话）。本机只有前者。所以：
   「加载更早」重复 push、无文本死行）——无头 CDP 13 项端到端实测
 - ✅ 工具卡渲染细节：折叠态 `⎿` 3 行预览 + `(+N lines)`（上游口径）、展开态
   30000 字符上限（上游 BASH_MAX_OUTPUT_LENGTH 默认值）
+## 8. 夜航计划（2026-11-07 02:18 → 07:30，连续推进不中断）
+
+> 目标：贴近完美复刻（本地可达范围）。每轮走固定验收闸门（§6），一轮一提交。
+> 当前基线：命令面本地相关 100%（TUI+GUI）、工具契约 12、全量测试 694 项 693 绿
+>（1 项 C:\.git 环境失败）。
+
+| 轮 | 内容 | 验收 |
+|---|---|---|
+| R1 | TUI Esc+Esc 编辑上一条消息（GUI 等价物已存在：内联编辑=分支重跑）。agent.rewind 加 depth；ink-app 加选择器（↑/↓ 选、Enter 进编辑、Esc 取消）；main.js 接 onEditMessage | 引擎单测 + TUI 管道 e2e（选择→编辑→重发） |
+| R2 | 工具契约扩容（本地相关 12 → 目标 ~20）：EnterPlanMode/ExitPlanMode、TaskCreate/Get/Update/List、TaskStop、ListMcpResources*/ReadMcpResource*、Skill —— 逐字契约来自 docs/tool-schemas-2.1.302.json，仅接入本地**真实存在**的工具；无本地实现的（LSP/Worktree/Cron/PowerShell）如实不接 | parity-metrics adopted 数上升 + 单测 |
+| R3 | changes-api 测试环境加固：GIT_CEILING_DIRECTORIES 隔离盘根 C:\.git → 全量 694/694 全绿 | npm test 全绿 |
+| R4 | GUI vim 输入模式：复用 src/ui/vim.js（bundle 进 GUI），textarea 键位接线，/vim 在 GUI 真生效；statusline stdin 补上游契约字段 vim.mode | CDP 端到端（NORMAL/INSERT 指示、esc 语义、提交） |
+| R5 | 视觉收尾：提示词库/Projects 模态框对齐细线体系 + 右栏「备用模型」空池禁用态 | CDP 截图对照 |
+| R6 | diff 视图细节对照上游（rewrite 检测/hunk 头/行内着色） | CDP + 单测 |
+| R7 | 输出样式对齐（/output-style 与上游 Explanatory/Learning 口径核对） | inspect:prompt + 单测 |
+| R8 | 总收官：复刻占比终测、文档收账、最后一轮全量闸门 | 六闸门全绿 + 提交 |
+
+> 时间盒到 07:30：未完成的轮次如实留待办，不假装完成。
