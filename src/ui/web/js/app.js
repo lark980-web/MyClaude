@@ -6247,7 +6247,17 @@
     var inEl = $("in");
     var st = vimSt.session;
     inEl.value = st.text;
-    try { inEl.setSelectionRange(st.cursor, st.cursor); } catch (e2) {}
+    try {
+      if ((st.mode === V.VISUAL || st.mode === V.VLINE)) {
+        // VISUAL 选区 → 原生 setSelectionRange：浏览器直接渲染反色高亮
+        //（textarea 原生控件无法自绘选区，借原生 selection 是最小实现）
+        var segs = V.visualSelection(st);
+        if (segs.length) { inEl.setSelectionRange(segs[0][0], segs[0][1]); }
+        else { inEl.setSelectionRange(st.cursor, st.cursor); }
+      } else {
+        inEl.setSelectionRange(st.cursor, st.cursor);
+      }
+    } catch (e2) {}
     autoGrow(inEl);
     updateSlashMenu(inEl.value);
     saveDraftSoon(inEl.value);
