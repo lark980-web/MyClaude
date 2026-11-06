@@ -6392,7 +6392,7 @@
     subtask: function () { addNotice("子任务与后台代理由 Task 工具创建；下面列出当前后台任务。", "info"); showTasks(); },
     cd: function () { addNotice(guiUnsupported("cd", "GUI 会话工作目录由服务端固定；用 /files 浏览工作区"), "warn"); },
     color: function (arg) { guiBool("color", arg, "color", { def: true, onText: "彩色输出已开启", offText: "彩色输出已关闭" }); },
-    vim: function (arg) { guiBool("vim", arg, "vimMode", { onText: "vimMode 偏好已开启（GUI 输入框不含完整 vim 键位）", offText: "vimMode 偏好已关闭" }); },
+    vim: function (arg) { guiBool("vim", arg, "vimMode", { onText: "vim 键位已开启（TUI 输入框生效；GUI 输入框暂为普通编辑）", offText: "vim 键位已关闭" }); },
     diff: function () {
       getJSON("/api/changes?sessionKey=" + encodeURIComponent(sessionKeyOf()) + "&scope=turn").then(function (j) {
         var files = j.files || j.changes || [];

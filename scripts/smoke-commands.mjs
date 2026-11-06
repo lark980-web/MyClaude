@@ -35,7 +35,7 @@ const PROBES = [
   "/memory", "/loop", "/plan", "/help", "/model", "/provider", "/mode",
   "/mcp", "/tools", "/permissions", "/stats", "/config", "/models",
   "/save", "/session", "/commands", "/clear", "/auto", "/todos", "/todo", "/context",
-  "/skill", "/release-notes", "/add-dir", "/agents", "/exit",
+  "/skill", "/release-notes", "/add-dir", "/agents", "/vim", "/exit",
 ];
 
 /** Patterns that mean the command died, not merely complained. */

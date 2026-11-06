@@ -98,11 +98,33 @@
 
 | 上游命令 | 2.1.302 状态 | 本项目处理 |
 |---|---|---|
-| `/vim` | **已移除**，改为 `/config` → Editor mode | 不实现 |
+| `/vim` | **已移除**，改为 `/config` → Editor mode | 保留开关并**真生效**（见 §2.9）；同时写上游真键 `editorMode` |
 | `/output-style` | **已移除**，改为 `/config` → Output style | 保留现有实现，仅记录差异 |
 | `/pr-comments` | 已移除 | 不实现 |
 | `/extra-usage` | 改名 `/usage-credits` | 不实现 |
 | `--enable-auto-mode` | 已移除，改 `--permission-mode auto` | 不实现 |
+
+### 2.9 vim 编辑模式（TUI，本轮对齐）
+
+上游 vim 是完整编辑器引擎，全部语义从产物提取（非凭记忆）：
+
+| 上游事实 | 出处 |
+|---|---|
+| `editorMode` 枚举 `["normal","vim"]` | `chunk-xsh3yvk4.js` `yBo=[...]` |
+| 启用判定 `editorMode==="vim"` | `chunk-ngbt62mk.js` `o8()` |
+| NORMAL 即时动作表 mn（x/s/S/D/C/Y/p/P/r/~//,、i/I/a/A/o/O、J） | `chunk-2n177qz0.js` `var mn=Object.assign(...)` |
+| VISUAL 动作表 wn（v/V 切换、o 交换、u/U 大小写、r、p） | 同上 `var wn=...` |
+| 操作符 `ge={d,c,y}`、运动集 dt/xe、find 集 `Oe={f,F,t,T}`、文本对象 `be={i,a}` | 同上 |
+| 计数上限 `pt=10000`、撤销栈上限 `Pt=1000`、单匿名寄存器 `gt()` | 同上 |
+| 插入进入位置 Qe()（`a` 在空格上原位） | 同上 |
+| remaps：仅插入模式、键恰两字符、目标仅 `<Esc>` | `chunk-a8gj4nyv.js` schema 描述 + `pn()` |
+| 模式指示 `-- INSERT --` / `-- VISUAL --`（NORMAL 隐藏） | `chunk-a8gj4nyv.js` `hideVimModeIndicator` 描述 |
+| statusline stdin `vim.mode ∈ INSERT\|NORMAL\|VISUAL\|VISUAL LINE` | `chunk-e0x0xb6d.js` 契约注释 |
+| 双击 esc 清空输入 | `chunk-9fg8a8zw.js` 页脚 "double tap esc to clear input" |
+
+本项目 `src/ui/vim.js`（纯状态机）+ `src/ui/ink-app.js`（接线）。**已知差异（如实）**：
+上游 NORMAL 的 X 无动作（mn 表未收录）→ 同样不动；无宏/搜索/redo（产物未见）；
+`>`/`<` 缩进不适用；GUI 输入框暂无 vim；statusline `vim.mode` 因 GUI 无 vim 暂不下发。
 
 ## 3. 不可得（附证据，不做假）
 

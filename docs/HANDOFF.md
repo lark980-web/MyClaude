@@ -8,7 +8,7 @@
 | 项 | 值 | 怎么核实 |
 |---|---|---|
 | HEAD | 见 `git log --oneline -1` | `git rev-parse --short HEAD` |
-| 测试 | **588** 项，全绿 | `npm test` |
+| 测试 | **686** 项（685 绿 + 1 环境性失败，见 §9 的 `C:\.git` 条目） | `npm test` |
 | 提示词 | SYSTEM_PROMPT 13,147 / AUTONOMY_SECTION 3,161 字符（autoRun 时实际 21,773） | `npm run inspect:prompt` |
 | 内置技能 | verify 正文 10,412 字符 | `node -e "import('./src/skills-builtin.js').then(m=>console.log(m.BUILTIN_SKILLS[0].body.length))"` |
 | exe | 构建时间见 `dist\myclaude.exe` | `git status` 与源文件 mtime 比对 |
@@ -33,8 +33,10 @@ exe 不重打，双击启动的还是旧代码。
 
 命令面实测（`src/main.js` 的 case + `src/ui/web/js/app.js` 的 handlers）：
 
-- `/statusline` — **确实缺**。需要新功能（自定义状态行），不是接线。
-- `/vim` — **不做**。上游 2.1.302 已移除该命令（见 `claude-re-2.1.302/07-assets/docs/recent-changes-j2j9vm5c.md`），改由 `/config` → Editor mode。
+- `/statusline` — ✅ 已做（`1f2d305`，按上游 stdin 契约真执行外部命令）。
+- `/vim` — ✅ 已做（TUI 输入框 vim 键位，`src/ui/vim.js` 纯状态机 + `ink-app.js` 接线；
+  上游 2.1.302 把 /vim 并入了 /config → Editor mode，本项目保留开关并真生效，
+  同时写上游真键 `editorMode` 与兼容键 `vimMode`）。
 - `/sandbox` — **不做**。本项目有意用命令分级替代沙箱（见 `docs/PERMISSION-MODEL.md`）。
 - `/output-style` — 已实现；注意上游已把它并入 `/config`，属已知差异，不是缺陷。
 
@@ -112,6 +114,13 @@ git log --oneline -6          # 看最近做了什么
   另一个用 base64+IEX 内联跑测试，脚本被当成木马命中。
 - 检测时间（11:37:25）与 git 失效时间吻合，但**因果未证实** —— Defender 隔离区为空，
   360 恢复区里也没有 git。如实记为「时间相关，机制未知」。
+
+**`C:\.git` 盘根仓库（2026-11-07 实测咬人）。** 盘根 `C:\` 下存在一个 `.git`
+（来源不明，疑似某工具误初始化）。git 的目录向上搜索让 **C: 盘所有目录都「在 git
+工作树内」**，包括 mkdtemp 出来的临时目录。后果：`test/changes-api.test.js` 的
+「non-git 目录降级」用例把临时目录判成了工作树内，服务端走到 diff 才失败，
+分类成 `git-failed` ≠ 期望的 `non-git` —— **这是环境性失败，不是代码回归**。
+换到 D: 盘的临时目录（或删掉 `C:\.git`，需先确认里面没有别人要的东西）即可让该用例恢复绿。
 ## 10. 原生引擎（/engine）与复刻度量
 
 **/engine 的连续会话**（2026-11-06 起）：

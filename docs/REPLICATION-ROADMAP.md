@@ -99,6 +99,12 @@ marketplace、遥测、远程会话）。本机只有前者。所以：
 ### 阶段 2 进度
 
 - ✅ `/statusline`：上游 stdin 契约实测 + 真执行外部命令 + 三面接线 + 端到端验证
-- ⬜ `/vim`：目前只记录偏好，需要 raw-mode 输入框重写（工作量大）
+- ✅ `/vim`：上游 vim 引擎语义还原（`src/ui/vim.js` 纯状态机 + 39 项单测），
+  TUI 输入框按 `editorMode==="vim"` 启用（NORMAL/INSERT/VISUAL/VISUAL LINE、
+  操作符 d/c/y + 运动 + 计数乘法、文本对象 iw/aw/引号/括号、f/F/t/T + ;/,、
+  寄存器 p/P、r/~/x/s/D/C/S、u 撤销、o/O/J 多行、双击 esc 清空、
+  插入模式 remaps `vimInsertModeRemaps`（照上游 pn() 只收两字符→\<Esc\>））。
+  已知差异如实标注在 vim.js 头注释（上游 NORMAL 的 X 无动作、无宏/搜索/redo、
+  GUI 输入框暂为普通编辑）。
 - ⬜ 消息目录：已按数据构建，仍有长对话边缘情况
 - ⬜ 工具卡渲染细节

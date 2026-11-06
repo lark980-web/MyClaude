@@ -8,6 +8,29 @@
 
 ## [Unreleased]
 
+### Added（/vim TUI vim 键位 —— 阶段 2 第二项）
+- 新增 `src/ui/vim.js`：vim 编辑引擎纯状态机（无 React/Ink 依赖），语义从上游
+  Claude Code 2.1.302 提取还原（`chunk-2n177qz0.js` 状态机与 mn/wn 两张动作表、
+  `chunk-xsh3yvk4.js` editorMode 枚举、`chunk-a8gj4nyv.js` vimInsertModeRemaps、
+  `chunk-e0x0xb6d.js` statusline vim.mode 契约、`chunk-9fg8a8zw.js` 双击 esc 清空）。
+  覆盖：NORMAL/INSERT/VISUAL/VISUAL LINE 四态、操作符 d/c/y（含 `2d3w` 计数乘法、
+  cw 特判、空范围分支）、运动 h/l/0/^/$/w/W/b/B/e/E/%/j/k/G/gg、f/F/t/T 与 ;/, 重复、
+  文本对象 iw/aw 与引号/括号（di(/ci"/da[）、单匿名寄存器（linewise 标志）+
+  p/P、r/~/x/s/S/D/C/Y、u 撤销（插入会话成组）、o/O/J 多行、双击 esc 清空、
+  插入模式 readline 键（ctrl+a/e/b/f/k/w）、remaps `{"jj":"<Esc>"}` 规范化。
+- `src/ui/ink-app.js`：`/vim` 开启后主输入框换装 vim 组件（NORMAL 反色块光标、
+  VISUAL 反色选区、`-- INSERT --`/`-- VISUAL --` 指示器 + showcmd pending 标签；
+  引擎为唯一事实源防 React 状态竞态；箭头保留历史导航；状态行加 vim 标记）。
+- `src/main.js` `/vim`：真生效并同步上游真键 `editorMode`（"vim"/"normal"）与
+  兼容键 `vimMode`；GUI `/vim` 文案更新（如实标注 GUI 输入框暂为普通编辑）。
+- 新增 `test/vim.test.js`（39 项）：引擎全语义 + 上游特判（NORMAL X 无动作、
+  a 的空格原位、计数上限 10000、remaps 两字符规范化）。
+- 已知差异（如实）：无宏/搜索/redo（上游提取未见）、`>`/`<` 缩进不适用、
+  GUI 输入框暂无 vim；上游 statusline stdin 的 `vim.mode` 字段因 GUI 无 vim
+  暂不下发，契约记录在 vim.js 头注释。
+- 验证：TUI 真跑 `/vim on` → INSERT 打字 → esc → `x` → `S` → 提交 `/help` 全链路；
+  smoke 探针加 `/vim`。
+
 ### Changed（系统提示词对齐 Claude Code 2.1.302）
 - 依据 `claude-re-2.1.302/04-prompts/system-prompt.txt`（逐字还原 10,707 字符）重写
   `src/agent/prompt.js`：1,455 → **11,266 字符**，按上游六段结构组织

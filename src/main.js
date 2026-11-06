@@ -1226,10 +1226,16 @@ case "init": {
       return {};
     }
     case "vim": {
-      // 上游 /vim 需要 raw-mode 输入框重写；这里只持久化偏好并如实说明范围。
+      // 上游 2.1.302 的 /vim 已改为跳转 /config（Editor mode，chunk-0p6y8rwv.js）；
+      // 本项目保留开关并真生效：TUI 输入框按 editorMode==="vim" 启用 vim 键位（src/ui/vim.js）。
       boolSetting("vim", arg, config, ui, "vimMode", {
-        onText: "vimMode 偏好已开启（已写入 config；当前 Ink TUI 只有基础行编辑，不含完整 vim 键位）",
-        offText: "vimMode 偏好已关闭"
+        onText: "vim 键位已开启（INSERT/NORMAL/VISUAL；esc 回 NORMAL，双击 esc 清空，i/a/A 回插入）",
+        offText: "vim 键位已关闭",
+        extra: (cfg, on) => {
+          // editorMode 是上游真键（yBo=["normal","vim"]，chunk-xsh3yvk4.js）
+          cfg.editorMode = on ? "vim" : "normal";
+          saveConfig({ editorMode: cfg.editorMode });
+        },
       });
       return {};
     }

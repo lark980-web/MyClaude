@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { Box, Text, useApp, useInput } from "ink";
 import TextInput from "ink-text-input";
 import Spinner from "ink-spinner";
@@ -7,6 +7,11 @@ const h = React.createElement;
 
 const CLAUDE = "#d97757";
 import { VERSION } from "../version.js";
+import {
+  vimEnabled, createVimSession, vimApply, resetVimSession, vimClear,
+  normalizeInsertRemaps, visualSelection, vimPendingLabel, MODE_LABELS,
+  NORMAL,
+} from "./vim.js";
 
 function ToolArgs({ args, max = 3, width = 72 }) {
   const parts = [];
@@ -154,6 +159,7 @@ function StatusLine({ config, busy, stats }) {
     h(Text, { color: modeColor }, mode),
     h(Text, { color: "gray", dimColor }, "  ·  "),
     h(Text, { color: "gray" }, config.provider),
+    vimEnabled(config) ? h(Text, { color: "magenta", dimColor: true }, "  ·  vim") : null,
     stats?.turns ? h(Text, { color: "gray", dimColor }, `  ·  turn ${stats.turns}`) : null,
     stats?.messages ? h(Text, { color: "gray", dimColor }, `  ·  ${stats.messages} msg`) : null,
     busy ? h(Text, { color: "yellow" }, "  ·  working…") : null,
@@ -247,6 +253,57 @@ function AttachmentBar({ attachments }) {
   );
 }
 
+/**
+ * vim 模式下的输入缓冲渲染：NORMAL/VISUAL 反色块光标，VISUAL 反色选区，
+ * 模式指示照上游（INSERT/VISUAL 显示、NORMAL 隐藏 —— statusLine.hideVimModeIndicator 描述）。
+ */
+function VimInputView({ text, view, busy }) {
+  const { cursor, mode, pending, sel } = view;
+  const marks = new Array(text.length).fill(null);
+  if (sel && sel.length) {
+    for (const [a, b] of sel) for (let i = a; i < b && i < text.length; i++) marks[i] = "sel";
+  } else if (cursor >= 0 && cursor < text.length) {
+    marks[cursor] = "cursor";
+  }
+  const pieces = [];
+  let buf = "";
+  let curMark = marks[0] || null;
+  const flush = () => {
+    if (!buf) return;
+    pieces.push(h(Text, { key: pieces.length, inverse: curMark != null }, buf));
+    buf = "";
+  };
+  for (let i = 0; i < text.length; i++) {
+    const m = marks[i] || null;
+    if (m !== curMark) { flush(); curMark = m; }
+    buf += text[i];
+  }
+  flush();
+  if (cursor >= text.length) pieces.push(h(Text, { key: "eol", inverse: true }, " "));
+
+  return h(
+    Box,
+    { flexDirection: "column" },
+    h(
+      Box,
+      null,
+      h(Text, { color: CLAUDE, bold: true }, "> "),
+      text || pieces.length > 1
+        ? h(Text, { wrap: "truncate" }, ...pieces)
+        : h(Text, { color: "gray", dimColor: true }, busy ? "working…" : "Ask anything — /help for commands"),
+      text ? null : h(Text, { inverse: true }, " ")
+    ),
+    mode !== NORMAL || pending
+      ? h(
+          Box,
+          null,
+          mode !== NORMAL ? h(Text, { color: "magenta", bold: true }, ` ${MODE_LABELS[mode]}`) : null,
+          pending ? h(Text, { color: "gray", dimColor: true }, ` ${pending}`) : null
+        )
+      : null
+  );
+}
+
 export function App({ bridge, config, onSubmit, onCommand, onExit, getStats, getTodos }) {
   const { exit } = useApp();
   const [, forceRender] = useState(0);
@@ -258,6 +315,10 @@ export function App({ bridge, config, onSubmit, onCommand, onExit, getStats, get
   const [showHelp, setShowHelp] = useState(false);
   const [question, setQuestion] = useState(null);
   const [qAnswer, setQAnswer] = useState({ text: "", selections: [] });
+  // vim 编辑模式（上游 editorMode==="vim" / 本项目 vimMode 布尔，见 src/ui/vim.js）
+  const vimOn = vimEnabled(config);
+  const vimRef = useRef(null);
+  const [vimView, setVimView] = useState({ cursor: 0, mode: "INSERT", pending: "", sel: [] });
 
   useEffect(() => {
     const unsub = bridge.subscribe(() => forceRender((n) => n + 1));
@@ -312,10 +373,6 @@ export function App({ bridge, config, onSubmit, onCommand, onExit, getStats, get
       }
       return;
     }
-    if (ch === "?" && !input) {
-      setShowHelp((v) => !v);
-      return;
-    }
     if (key.ctrl && ch === "c") {
       if (state.busy) bridge.abort?.();
       else {
@@ -332,6 +389,60 @@ export function App({ bridge, config, onSubmit, onCommand, onExit, getStats, get
     }
     if (key.ctrl && ch === "o") {
       setExpandAll((v) => !v);
+      return;
+    }
+    if (vimOn) {
+      if (!vimRef.current) {
+        vimRef.current = createVimSession({
+          text: input,
+          cursor: input.length,
+          insertRemaps: normalizeInsertRemaps(config.vimInsertModeRemaps),
+        });
+      }
+      const st = vimRef.current;
+      // 引擎是唯一事实源；input 状态只是它的渲染镜像。
+      const paint = () => {
+        setInput(st.text);
+        setVimView({ cursor: st.cursor, mode: st.mode, pending: vimPendingLabel(st), sel: visualSelection(st) });
+      };
+      if (key.upArrow && history.length) {
+        const next = histIdx < 0 ? history.length - 1 : Math.max(0, histIdx - 1);
+        setHistIdx(next);
+        st.text = history[next];
+        st.cursor = st.text.length;
+        paint();
+        return;
+      }
+      if (key.downArrow && histIdx >= 0) {
+        const next = histIdx + 1;
+        setHistIdx(next >= history.length ? -1 : next);
+        st.text = next >= history.length ? "" : history[next];
+        st.cursor = st.text.length;
+        paint();
+        return;
+      }
+      if (key.ctrl && ch === "u") {
+        vimClear(st);
+        paint();
+        return;
+      }
+      if (ch === "?" && !st.text && st.mode === NORMAL) {
+        setShowHelp((v) => !v);
+        return;
+      }
+      const r = vimApply(st, ch, key);
+      paint();
+      if (r.submit) {
+        const value = st.text;
+        resetVimSession(st, { text: "", cursor: 0 });
+        setVimView({ cursor: 0, mode: st.mode, pending: "", sel: [] });
+        setInput("");
+        handleSubmit(value);
+      }
+      return;
+    }
+    if (ch === "?" && !input) {
+      setShowHelp((v) => !v);
       return;
     }
     if (key.ctrl && ch === "u") {
@@ -424,13 +535,19 @@ export function App({ bridge, config, onSubmit, onCommand, onExit, getStats, get
     h(
       Box,
       { borderStyle: "round", borderColor: state.busy ? "yellow" : "gray", paddingX: 1, marginTop: 1 },
-      h(Text, { color: CLAUDE, bold: true }, "> "),
-      h(TextInput, {
-        value: input,
-        onChange: setInput,
-        onSubmit: handleSubmit,
-        placeholder: state.busy ? "working…" : "Ask anything — /help for commands",
-      })
+      vimOn
+        ? h(VimInputView, { text: input, view: vimView, busy: state.busy })
+        : h(
+            Box,
+            null,
+            h(Text, { color: CLAUDE, bold: true }, "> "),
+            h(TextInput, {
+              value: input,
+              onChange: setInput,
+              onSubmit: handleSubmit,
+              placeholder: state.busy ? "working…" : "Ask anything — /help for commands",
+            })
+          )
     ),
     h(StatusLine, { config, busy: state.busy, stats: getStats?.() })
   );
