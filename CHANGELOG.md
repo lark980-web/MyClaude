@@ -8,6 +8,11 @@
 
 ## [Unreleased]
 
+### Added（追加轮 5：截图证据链 3 —— 夜航轮 9）
+- 13 /output-style 五态清单（含 4 个上游新样式与描述词）14 设置中心四 tab。
+- R6 定案依据补充：上游字节码无 ⎿ 字符 —— 工具结果行格式与 MyClaude 不同源，
+  GUI 结构等价判定维持。
+
 ### Added（追加轮 4：截图证据链 + 变更 tab 空态文案 —— 夜航轮 8）
 - scripts/shot-parity.mjs / shot-parity2.mjs：GUI 功能全景截图证据（shots/ 12 张 PNG，
   每张先断言 DOM 标记再落盘，逐张人工校验）：vim INSERT/NORMAL/VISUAL 指示器、工具卡
