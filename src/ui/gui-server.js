@@ -2,6 +2,7 @@ import { estimateTextTokens } from "../tokens.js";
 import { createServer } from "node:http";
 import { spawnSync, exec } from "node:child_process";
 import { engineStatus, runEngineTurn, engineSessionFor, rememberEngineSession, forgetEngineSession } from "../engines/claude-code.js";
+import { streamUpstreamTurn, upstreamBoundSession, bindUpstreamSession } from "../engines/upstream-chat.js";
 import { consoleUi } from "./console-ui.js";
 import { runWithAutoContinue } from "../agent/autorun.js";
 import { setAutonomous } from "../tools/extended.js";
@@ -175,6 +176,8 @@ export async function startGui({ config: initialConfig, port = 7788, open = true
 // second /api/chat on the same key would put two run loops on one agent:
 // interleaved history, overwritten abort controllers, two SSE streams.
 const running = new Set();
+  /** upstream 后端正在跑的子进程，按会话键索引，供 /api/abort 与断连清理。 */
+  const upstreamChildren = new Map();
   const savers = new Map();
   const confirmResolvers = new Map();
   const questionResolvers = new Map();
@@ -202,6 +205,69 @@ const sse = (res, event) => {
     if (res.writableEnded || res.destroyed) return;
     try { res.write(`data: ${JSON.stringify(event)}\n\n`); } catch { /* client is gone; the run itself must not die from a write */ }
   };
+
+
+  /* ------------------------------------------------ 执行后端（阶段 1） */
+  /**
+   * 当前执行后端。默认 self（自研 agent，零回归），可由环境变量或 /api/config 切到 upstream。
+   * 环境变量优先于配置文件，方便临时验证而不改用户设置。
+   */
+  const currentEngineBackend = () => {
+    const env = String(process.env.MYCLAUDE_ENGINE_BACKEND || "").toLowerCase();
+    if (env === "upstream" || env === "self") return env;
+    return config.engineBackend === "upstream" ? "upstream" : "self";
+  };
+
+  /**
+   * /api/chat 的 upstream 分支：MyClaude 界面正常聊天，底下跑原生 Claude Code。
+   * 上游 stream-json 事件由 upstream-chat.js 翻译成 MyClaude SSE 事件；
+   * 回合结束后把 user/assistant 消息写进 MyClaude 会话（可恢复、可导出）。
+   */
+  async function runUpstreamChatTurn(res, body, key) {
+    const message = String(body.message || "").trim();
+    if (!message) { sendJson(res, 400, { ok: false, error: "empty message" }); return; }
+    res.writeHead(200, {
+      "Content-Type": "text/event-stream; charset=utf-8",
+      "Cache-Control": "no-cache, no-transform",
+      Connection: "keep-alive",
+      "X-Accel-Buffering": "no"
+    });
+    res.flushHeaders?.();
+    // 前端靠 session 事件 adopt id；上游模式沿用同一个 key
+    sse(res, { type: "session", id: key, file: null });
+    const bound = upstreamBoundSession(key);
+    const r = await streamUpstreamTurn({
+      prompt: message, model: config.model, baseUrl: config.baseUrl, apiKey: config.apiKey,
+      cwd, timeoutMs: 180_000, permissionMode: "acceptEdits", resumeSessionId: bound,
+      onEvent: (ev) => sse(res, ev),
+      onChild: (child) => upstreamChildren.set(key, child),
+    });
+    upstreamChildren.delete(key);
+    if (!r.ok) {
+      sse(res, { type: "error", text: r.timedOut ? "原生引擎超时（180 秒）" : ("原生引擎失败" + (r.error ? "：" + r.error : "")) });
+      sse(res, { type: "assistant_end" });
+      sse(res, { type: "done" });
+      res.end();
+      return;
+    }
+    const finalText = String(r.result || r.assistantTexts.join("\n\n") || "").trim();
+    if (finalText) {
+      try {
+        const prev = loadSession(key);
+        const messages = Array.isArray(prev && prev.messages) ? prev.messages.slice() : [];
+        messages.push({ role: "user", content: message });
+        messages.push({ role: "assistant", content: finalText });
+        saveSession(key, messages, {
+          cwd, model: config.model, provider: config.provider,
+          permissionMode: config.permissionMode, turnCount: (prev && prev.turnCount || 0) + 1,
+          version: VERSION, ui: "web", engine: "upstream",
+        });
+      } catch (e) { sse(res, { type: "warn", text: "会话落盘失败：" + e.message }); }
+    }
+    if (r.sessionId) bindUpstreamSession(key, r.sessionId);
+    sse(res, { type: "done" });
+    res.end();
+  }
 
   const keyOf = (body) => (body && typeof body.sessionKey === "string" && body.sessionKey) || "default";
 
@@ -758,6 +824,7 @@ async function searchWorkspaceFiles(query = "", limit = 40) {
           modelSupportsVision: supportsVision(config.model),
   effort: config.effort ?? null,
   autoRun: !!config.autoRun,
+  engineBackend: currentEngineBackend(),
   fastMode: !!config.fastMode,
           routing: agent ? agent.routingStatus?.() : null,
           tools: toolList(),
@@ -768,6 +835,13 @@ async function searchWorkspaceFiles(query = "", limit = 40) {
 
       if (path === "/api/config" && req.method === "POST") {
         const body = await readJson(req);
+        if (body.engineBackend !== undefined) {
+          const v = String(body.engineBackend);
+          if (v === "self" || v === "upstream") {
+            config.engineBackend = v;
+            saveConfig({ engineBackend: v });
+          }
+        }
         if (body.model) {
           config.model = String(body.model);
           provider.model = config.model;
@@ -2165,8 +2239,10 @@ async function searchWorkspaceFiles(query = "", limit = 40) {
         const key = keyOf(body);
         const agent = sessions.get(key);
         if (agent && typeof agent.abort === "function") agent.abort();
+        const upChild = upstreamChildren.get(key);
+        if (upChild) { try { upChild.kill(); } catch { /* 已退出 */ } upstreamChildren.delete(key); }
         flushInteractive(key);
-        sendJson(res, 200, { ok: true, aborted: !!agent });
+        sendJson(res, 200, { ok: true, aborted: !!agent || !!upChild });
         return;
       }
 
@@ -2223,7 +2299,20 @@ async function searchWorkspaceFiles(query = "", limit = 40) {
           flushInteractive(key);
           const a = sessions.get(key);
           if (a && typeof a.abort === "function") { a.abort(); }
+          const up = upstreamChildren.get(key);
+          if (up) { try { up.kill(); } catch { /* 已退出 */ } upstreamChildren.delete(key); }
         });
+        // 阶段 1：执行后端分流。默认 self（自研 agent，零回归）；
+        // upstream 时走原生 Claude Code 引擎，事件翻译成同一套 SSE。
+        if (currentEngineBackend() === "upstream") {
+          running.add(key);
+          try {
+            await runUpstreamChatTurn(res, body, key);
+          } finally {
+            running.delete(key);
+          }
+          return;
+        }
 running.add(key);
         try {
         res.writeHead(200, {

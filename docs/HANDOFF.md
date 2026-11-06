@@ -129,3 +129,18 @@ git log --oneline -6          # 看最近做了什么
 - 也报工具契约采用数、上游工具条目数、上游代码规模。
 
 > 需要 bun 与 `B:` 虚拟根映射（见 §9）；缺任一则上游侧标记为不可用，脚本**不会用旧数字凑数**。
+## 11. 执行后端切换（2026-11-06）
+
+MyClaude 的主对话 `/api/chat` 现在可切换执行后端：
+
+- **GUI**：输入框内「自研 / 原生 Claude」两段开关（默认自研）。
+- **配置**：`POST /api/config {engineBackend: "upstream"}` 持久化；
+  `GET /api/config` 回传当前值。
+- **环境变量**：`MYCLAUDE_ENGINE_BACKEND=upstream` 临时覆盖（不改用户设置）。
+
+切到 upstream 后，界面正常聊天但底下跑的是原生 Claude Code 2.1.302：
+上游 stream-json 由 `src/engines/upstream-chat.js` 翻译成 MyClaude SSE 事件，
+回合文本写进 MyClaude 会话（`engine: "upstream"`），上游 sessionId 按 `--resume` 绑定。
+默认 `self` 保持自研 agent，零回归。
+
+> 前提：bun 与 `B:` 虚拟根映射（见 §9）；缺任一则上游不可用，`/api/config` 仍会显示 upstream 但回合会报错。

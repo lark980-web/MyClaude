@@ -99,6 +99,13 @@ Commands (interactive):
   /continue          load the most recent session in this directory
   /session           show the current session id and file
   /rm <id>           delete a saved session
+
+Upstream 2.1.302 parity (local subset):
+  /advisor /auto-mode-setup /autocompact /subtask /cd /color /vim /diff
+  /background /stop /focus /heapdump /keybindings /import /pause-memory
+  /reload-plugins /reload-skills /rename /statusline /tui /security-review
+  /terminal-setup /scroll-speed /usage /recap /goal /sandbox /list-agents
+  /ultrareview /upgrade /insights /artifacts /team-onboarding (cloud: degraded)
 `;
 
 function parseArgs(argv) {
@@ -176,6 +183,62 @@ function reviewPrompt(arg) {
     "3) 输出报告：按 [严重] [主要] [次要] [建议] 四级列出问题，每条包含 文件:行号、问题说明、具体修复建议；重点检查正确性、边界条件、安全（注入/秘钥/路径）、并发与性能、错误处理、命名一致性。",
     "4) 报告以一句话结论收尾：可合并 / 需修改（附理由）。全部用中文输出。"
   ].join("\n");
+}
+
+/* ------------------------------------------------------------------------ *
+ * 上游 2.1.302 内置命令面补齐（阶段 1-A）
+ *
+ * 三条口径：
+ *  - 能纯本地实现的（信息展示、配置开关、别名、静态报告）在这里真实现；
+ *  - 依赖云端 / 账号 / 订阅服务的如实降级，明确写「本机无对应服务」并给本机替代；
+ *  - 配置类一律 saveConfig() 持久化并同步到内存 config，不是只打印。
+ * ------------------------------------------------------------------------ */
+function unsupportedLocal(name, alternative) {
+  return `本机无对应服务：/${name} 依赖上游云端/账号/订阅服务，MyClaude 本机没有对应服务` +
+    (alternative ? `
+本机可用替代：${alternative}` : "");
+}
+
+/** on/off/status 型配置开关：返回值 null 表示只是查询或参数非法。 */
+function boolSetting(name, arg, config, ui, key, opts) {
+  const o = opts || {};
+  const v = String(arg || "").trim().toLowerCase();
+  if (!v || v === "status") {
+    const cur = config[key] == null ? !!o.def : !!config[key];
+    ui.info(`/${name} = ${cur ? "on" : "off"}（用法：/${name} on|off|status）`);
+    return null;
+  }
+  const on = ["on", "1", "true", "yes"].includes(v) ? true
+    : ["off", "0", "false", "no"].includes(v) ? false : null;
+  if (on === null) { ui.warn(`用法：/${name} on|off|status`); return null; }
+  config[key] = on;
+  saveConfig({ [key]: on });
+  if (typeof o.extra === "function") { o.extra(config, on); }
+  ui.success(on ? (o.onText || `/${name} 已开启`) : (o.offText || `/${name} 已关闭`));
+  return on;
+}
+
+/** 字符串 / 数值型配置：clear|off|none 清除；返回值 null 表示只是查询或非法。 */
+function valueSetting(name, arg, config, ui, key, opts) {
+  const o = opts || {};
+  const v = String(arg || "").trim();
+  if (!v || v === "status") {
+    ui.info(`/${name} = ${config[key] == null ? "(未设置)" : config[key]}
+用法：/${name} <值>|clear`);
+    return null;
+  }
+  if (["clear", "off", "none", "delete"].includes(v.toLowerCase())) {
+    delete config[key];
+    saveConfig({ [key]: null });
+    ui.success(`/${name} 已清除`);
+    return null;
+  }
+  const value = typeof o.parse === "function" ? o.parse(v) : v;
+  if (value == null) { ui.warn(o.invalid || `用法：/${name} <值>`); return null; }
+  config[key] = value;
+  saveConfig({ [key]: value });
+  ui.success(`/${name} = ${value}（已写入 config）`);
+  return value;
 }
 
 async function handleCommand(raw, ctx) {
@@ -1095,6 +1158,260 @@ case "init": {
       );
       return {};
     }
+    /* ---- 上游 2.1.302 内置命令补齐：本地可实现部分 ---- */
+    case "advisor": {
+      // 上游 /advisor 是 auto 模式下的复核模型开关；本机对应 config.autoReview
+      // （agent/auto-review.js 真正读取它），不是空壳。
+      boolSetting("advisor", arg, config, ui, "autoReview", {
+        onText: "advisor 已开启 — auto 模式下每个工具调用先经复核模型",
+        offText: "advisor 已关闭 — auto 模式不再额外复核"
+      });
+      return {};
+    }
+    case "auto-mode-setup": {
+      const v = String(arg || "").trim().toLowerCase();
+      if (!v || v === "status") {
+        ui.info([
+          "自动模式设置（本机）",
+          "  permissionMode        " + (config.permissionMode || "ask"),
+          "  advisor(autoReview)   " + (config.autoReview ? "on" : "off"),
+          "  autoRun               " + (config.autoRun ? "on" : "off"),
+          "用法：/auto-mode-setup apply（写入 permissionMode=auto + advisor=on）"
+        ].join("\n"));
+        return {};
+      }
+      if (v !== "apply" && v !== "on" && v !== "setup") {
+        ui.warn("用法：/auto-mode-setup status|apply");
+        return {};
+      }
+      config.permissionMode = "auto";
+      config.autoReview = true;
+      saveConfig({ permissionMode: "auto", autoReview: true });
+      agent.setMode?.("auto");
+      ui.success("自动模式已配置：permissionMode=auto、advisor=on（已写入 config）");
+      return {};
+    }
+    case "autocompact": {
+      // maybeCompact() 读 config.compactThreshold；关闭时把阈值抬到窗口上限。
+      const on = boolSetting("autocompact", arg, config, ui, "autoCompact", {
+        def: true,
+        onText: "自动压缩已开启（compactThreshold=0.8）",
+        offText: "自动压缩已关闭（压缩阈值设为窗口上限）",
+        extra: (c, enabled) => { c.compactThreshold = enabled ? 0.8 : 1; }
+      });
+      if (on !== null) { saveConfig({ compactThreshold: config.compactThreshold }); }
+      return {};
+    }
+    case "subtask": {
+      ui.info("子任务 / 后台代理由 Task 工具创建；下面是当前后台任务（/tasks 别名）：");
+      return handleCommand("/tasks", ctx);
+    }
+    case "cd": {
+      if (!arg) { ui.info("cwd = " + process.cwd()); return {}; }
+      try {
+        process.chdir(arg);
+        ui.success("cwd = " + process.cwd());
+      } catch (e) {
+        ui.warn("切换目录失败：" + String((e && e.message) || e));
+      }
+      return {};
+    }
+    case "color": {
+      boolSetting("color", arg, config, ui, "color", {
+        def: true,
+        onText: "终端彩色输出已开启（下次启动生效）",
+        offText: "终端彩色输出已关闭（下次启动生效）"
+      });
+      return {};
+    }
+    case "vim": {
+      // 上游 /vim 需要 raw-mode 输入框重写；这里只持久化偏好并如实说明范围。
+      boolSetting("vim", arg, config, ui, "vimMode", {
+        onText: "vimMode 偏好已开启（已写入 config；当前 Ink TUI 只有基础行编辑，不含完整 vim 键位）",
+        offText: "vimMode 偏好已关闭"
+      });
+      return {};
+    }
+    case "diff": {
+      const { execFileSync } = await import("node:child_process");
+      const args = ["diff", "HEAD"];
+      if (arg) { args.push("--", ...arg.split(/\s+/)); }
+      try {
+        const out = execFileSync("git", args, {
+          encoding: "utf8", maxBuffer: 4 * 1024 * 1024, cwd: process.cwd()
+        });
+        const text = String(out || "").trim();
+        ui.info(text ? (text.length > 8000 ? text.slice(0, 8000) + "\n…（已截断）" : text) : "(no changes)");
+      } catch (e) {
+        ui.warn("git diff 不可用：" + String((e && e.message) || e).slice(0, 160));
+      }
+      return {};
+    }
+    case "background": {
+      ui.info("后台任务（/tasks 别名）：");
+      return handleCommand("/tasks", ctx);
+    }
+    case "stop": {
+      try { await agent.abort?.(); } catch {}
+      ui.success("已请求停止当前回合");
+      return {};
+    }
+    case "focus": {
+      boolSetting("focus", arg, config, ui, "focusMode", {
+        onText: "专注模式已开启（已写入 config）",
+        offText: "专注模式已关闭"
+      });
+      return {};
+    }
+    case "heapdump": {
+      try {
+        const v8 = await import("node:v8");
+        const os = await import("node:os");
+        const file = join(os.tmpdir(), "myclaude-heap-" + Date.now() + ".heapsnapshot");
+        v8.writeHeapSnapshot(file);
+        ui.success("heap snapshot → " + file);
+      } catch (e) {
+        ui.warn("堆快照失败：" + String((e && e.message) || e));
+      }
+      return {};
+    }
+    case "keybindings": {
+      ui.info([
+        "键盘绑定（TUI）",
+        "  Enter          提交输入",
+        "  Esc            停止当前回合 / 关闭弹层",
+        "  Shift+Tab      轮转权限模式",
+        "  Ctrl+C         退出",
+        "  上下方向键     输入历史",
+        "  Esc+Esc        召回上一条消息编辑（--plain）",
+        "GUI 里用 /shortcuts 查看完整浏览器快捷键。"
+      ].join("\n"));
+      return {};
+    }
+    case "import":
+      ui.warn(unsupportedLocal("import", "/attach <路径> 或 /add-dir <目录> 可把本地文件接入上下文"));
+      return {};
+    case "pause-memory": {
+      boolSetting("pause-memory", arg, config, ui, "memoryPaused", {
+        onText: "项目记忆读取偏好已暂停（已写入 config；/memory、/reload-memory 仍可手动查看）",
+        offText: "项目记忆读取偏好已恢复"
+      });
+      return {};
+    }
+    case "reload-plugins": {
+      const list = loadPlugins(process.cwd());
+      ui.success("已重新加载插件：" + list.length + " 个" +
+        (list.length ? "\n" + pluginSummaries(process.cwd()).join("\n") : ""));
+      return {};
+    }
+    case "reload-skills": {
+      const list = loadSkills(process.cwd());
+      ui.success("已重新加载技能：" + list.length + " 个" +
+        (list.length ? "\n" + list.map((s) => "  " + s.name).join("\n") : ""));
+      return {};
+    }
+    case "rename": {
+      return handleCommand("/title" + (arg ? " " + arg : ""), ctx);
+    }
+    case "statusline": {
+      // 上游 statusline 是「配置里的外部命令」；本机无状态栏组件，只持久化
+      // statusLineCommand 并如实说明不执行脚本。
+      valueSetting("statusline", arg, config, ui, "statusLineCommand");
+      ui.info("注：本机 TUI 没有状态栏组件，仅记录该配置，不执行外部脚本。");
+      return {};
+    }
+    case "tui": {
+      ui.info("当前已是 TUI（终端界面）。\nGUI 里 /tui 无法切回终端；请用 myclaude（不带 --gui）启动。");
+      return {};
+    }
+    case "ultrareview":
+      ui.warn(unsupportedLocal("ultrareview", "/review（本机单代理代码审查）"));
+      return {};
+    case "security-review": {
+      // 上游 /security-review 是本地安全审查回合；复用 /review 的 customPrompt
+      // 通道，把安全向的审查提示词当普通回合跑。
+      const target = arg.trim();
+      const scope = target
+        ? "审查目标：工作区与 \"" + target + "\" 的差异（git diff " + target + "...HEAD）"
+        : "审查目标：当前未提交的改动（git diff HEAD；若为空再看 git show --stat HEAD）";
+      const prompt = [
+        "你是严格的安全审查者。请只报告真实可利用的安全问题，输出报告。",
+        scope,
+        "步骤：",
+        "1) 用 Bash 查看改动范围与完整 diff；改动为空时明确说明「没有待审查的改动」并结束。",
+        "2) 逐文件阅读改动及其周边上下文（Read/Grep），重点看：注入（命令/SQL/模板）、鉴权与越权、密钥与凭据硬编码、路径穿越、反序列化、不安全的加密与随机数、依赖与 SSRF、输出转义。",
+        "3) 按 [严重] [主要] [次要] [建议] 分级，每条给出 文件:行号、可利用条件、影响、具体修复方向；没有问题就说「未发现明确安全问题」。",
+        "4) 报告以一句话结论收尾：可合并 / 需修改（附理由）。全部用中文输出。"
+      ].join("\n");
+      return { customPrompt: prompt, customName: "security-review", custom: {} };
+    }
+    case "terminal-setup": {
+      ui.info([
+        "终端设置（本机）",
+        "  Shift+Tab 轮转权限模式；/mode <模式> 直接设定。",
+        "  彩色输出：/color on|off（重启 TUI 生效）。",
+        "  滚动速度：/scroll-speed <1-10>（写入 config）。",
+        "  键位一览：/keybindings；状态行：/statusline。",
+        "  终端里运行 myclaude 启动 Ink TUI；myclaude --plain 用简洁 REPL。"
+      ].join("\n"));
+      return {};
+    }
+    case "scroll-speed": {
+      valueSetting("scroll-speed", arg, config, ui, "scrollSpeed", {
+        parse: (v) => {
+          const n = Number(v);
+          return Number.isFinite(n) && n >= 1 && n <= 10 ? n : null;
+        },
+        invalid: "用法：/scroll-speed <1-10>|clear"
+      });
+      return {};
+    }
+    case "upgrade":
+      ui.warn(unsupportedLocal("upgrade", "当前 MyClaude " + VERSION + "；本机没有更新通道，请从发布页手动获取新版"));
+      return {};
+    case "usage": {
+      // 上游 /usage 是账号用量；本机没有账号体系，落到等价的本机 token 计价。
+      ui.info("本机没有账号用量服务，下列为本会话 token 用量与计价（/cost）：");
+      return handleCommand("/cost", ctx);
+    }
+    case "insights":
+      ui.warn(unsupportedLocal("insights", "/stats 与 /cost 给出本机会话统计"));
+      return {};
+    case "recap": {
+      const msgs = agent.messages || [];
+      const users = msgs.filter((m) => m.role === "user");
+      const brief = (m) => !m ? "(无)" :
+        (typeof m.content === "string" ? m.content.replace(/\s+/g, " ").slice(0, 100) : "[非文本消息]");
+      ui.info([
+        "本会话回顾（/recap）",
+        "  会话 id      " + (ctx.autoSaver?.id || "(未保存)"),
+        "  消息         " + msgs.length + " 条 · " + (agent.turnCount || 0) + " 回合",
+        "  首条请求     " + brief(users[0]),
+        "  最近请求     " + brief(users[users.length - 1]),
+        "  累计 token   输入 " + (agent.totalInputTokens || 0) + " / 输出 " + (agent.totalOutputTokens || 0)
+      ].join("\n"));
+      return {};
+    }
+    case "goal": {
+      valueSetting("goal", arg, config, ui, "goal");
+      return {};
+    }
+    case "sandbox": {
+      boolSetting("sandbox", arg, config, ui, "sandbox", {
+        onText: "沙箱偏好已开启（已写入 config；实际隔离由权限模式与 Bash 工具控制）",
+        offText: "沙箱偏好已关闭（已写入 config）"
+      });
+      return {};
+    }
+    case "list-agents": {
+      return handleCommand("/agents", ctx);
+    }
+    case "artifacts":
+      ui.warn(unsupportedLocal("artifacts", "/export 导出对话、/files 浏览工作区文件"));
+      return {};
+    case "team-onboarding":
+      ui.warn(unsupportedLocal("team-onboarding", "/help 与 /init 提供本机上手说明"));
+      return {};
     default: {
       // Not a built-in: try a user/project command file before giving up.
       const custom = findCommand(cmd, process.cwd());

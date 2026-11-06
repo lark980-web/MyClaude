@@ -26,6 +26,53 @@
   不冒用上游身份、本地命名与插值正确。
 - 全量 **546/546**、`verify-features` ✓、exe 已重打并确认关键子句已编入二进制。
 
+### Added（阶段 1 并行成果：命令面 100% + 运行时 schema 全量普查 + GUI 后端开关）
+- **命令面补齐（并行成员 cmd-porter）**：上游 133 个内置命令中**本地相关的 81 个**，
+  TUI 与 GUI 均从 46%/38% 补到 **81/81 = 100%**（`parity-metrics` 现测，
+  `tuiMissing/guiMissing` 均为空）。全量 133 口径 TUI 61% / GUI 62%（余为云侧/账号/生态命令）。
+  - TUI 新增 33 个 case（advisor 真接 autoReview、autocompact 联动 compactThreshold、cd 真 chdir、
+    heapdump 真 v8 快照、security-review 本地审查回合、statusline/vim 偏好持久化等）。
+  - GUI 同步 33 条 handler + 菜单项，另补 output-style / exit / resume / session / plan。
+  - **6 个云侧命令**（import/ultrareview/upgrade/insights/artifacts/team-onboarding）如实降级为
+    「本机无对应服务」+ 本机替代，不假实现；3 个 GUI 环境限制（cd/heapdump/plan）同样标注。
+  - 新增 `test/commands-parity.test.js`（11 项）。
+- **GUI 后端开关**：输入框内「自研 / 原生 Claude」两段切换（`.engine-backend-switch`），
+  GET `/api/config` 读 `engineBackend`、POST 回写，切换 toast 提示。
+  无头浏览器实测：开关存在、默认 self、点击可切、0 JS 异常；assets.js 已重打包进 exe。
+- **上游运行时 schema 全量普查（并行成员 runtime-census）**：新增
+  `17-extract-all-runtime.mjs`，三通道（Qt 模块导出 / getAllBaseTools 注册表 / 配置单例播种）
+  运行时拿到 **91 个**工具 schema；较静态抽取**新增 8 个**（SendMessage、TaskStop、
+  SendUserMessage、WebSearch、Projects、ArtifactComments、ArtifactData、ArtifactCheck）。
+  合并后覆盖率 **95/96 = 98.96%**（原 87/96），仅剩 1 条参数化模板占位——它本身不是具体工具。
+  文档 `docs/runtime-tool-census.md`，每条带文件+偏移。
+- **WebSearch 接入**（8 个新增里 MyClaude 有对应实现的那个）：上游用 `blocked_domains`、
+  自研用 `block_domains` 且多一个 `max_results` —— merge + 别名 + run 入口归一，
+  两套命名都到得了执行体。采用上游契约的工具 **11 → 12**。
+- **upstream 模式健壮性**：新增 `onChild` 回调 + `upstreamChildren` 表，
+  `/api/abort` 与浏览器断连时都会杀掉上游子进程（此前刷新页面会留孤儿进程）。
+- 全量 **639/639**、`verify-features` ✓、`inspect:prompt` 0 error、
+  bundle-gui 已重打、exe 已重建（20:16:49）、smoke 46 命令 0 崩溃。
+
+### Added（阶段 1 核心：执行后端统一 —— MyClaude 主对话可跑原生 Claude Code）
+- **目标**：此前 `/engine` 只是「一个命令」，MyClaude 的日常 `/api/chat` 仍跑自研 agent。
+  本轮把上游引擎接成**可切换的执行后端**，让界面正常聊天时底下就是原生 Claude Code。
+- **新增 `src/engines/upstream-chat.js`**：上游 stream-json（NDJSON）→ MyClaude SSE 事件翻译器。
+  实测事件形态：`assistant.text`→`delta`、`tool_use`→`tool_start`、
+  `user.tool_result`→`tool_end`（按 tool_use_id 回查工具名）、`result`→`assistant_end`。
+  **前端零改动** —— `delta` 自动建气泡、`tool_start` 自动建工具卡。
+- **`/api/chat` 分流**：`currentEngineBackend()` 默认 `self`（自研，零回归）；
+  `MYCLAUDE_ENGINE_BACKEND=upstream` 或 `POST /api/config {engineBackend}` 切到上游。
+  `GET /api/config` 回传 `engineBackend`；upstream 分支也占 `running` 槽位防并发。
+- **会话落盘**：上游回合的 user/assistant 文本写进 MyClaude session（`engine: "upstream"` 标记），
+  可恢复、可导出；上游 sessionId 仍按 `--resume` 绑定，跨回合上下文连续。
+- **真实端到端实测**（node 服务 + upstream 后端）：HTTP 200 / 15.3s，SSE 事件序列
+  `session, reasoning, tool_start, tool_end, delta, assistant_end, done`，
+  上游真实执行 `Read` 答出版本号，会话落盘 2 条消息。
+- **测试 5 项**：翻译器纯函数（真实事件形态夹具）、未知事件忽略、失败工具结果、
+  `/api/config` 切换、upstream 模式 `/api/chat` 全流程（假引擎，不依赖 bun/B: 映射）。
+- 新增 `docs/REPLICATION-ROADMAP.md`：定义「完全复刻」可达终点（客户端 100%）、
+  分阶段计划、每阶段验收标准、**物理不可达**的云侧/账号功能清单。
+
 ### Added（B 路线升级：原生引擎会话连续性 —— 从「每次新会话」到「共享上下文」）
 - **上游原生支持 `--resume <session-id>`**，本轮实测确认：回合 1 让引擎记住 ZEBRA77，回合 2
   用同一个 session id 续接，不提词也能答出 ZEBRA77。

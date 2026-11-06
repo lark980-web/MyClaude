@@ -150,8 +150,17 @@ export const UPSTREAM_TOOL_SCHEMAS = {
       },
       {
         "name": "WebSearch",
-        "mode": "own",
-        "reason": "upstream tool object not locatable in module exports yet; runtime schema not extracted"
+        "mode": "merge",
+        "required": [
+          "query"
+        ],
+        "properties": [
+          "query",
+          "allowed_domains",
+          "blocked_domains",
+          "block_domains",
+          "max_results"
+        ]
       },
       {
         "name": "Task",
@@ -709,6 +718,63 @@ export const UPSTREAM_TOOL_SCHEMAS = {
       },
       "searchHint": "fetch and extract content from a URL",
       "description": "Claude wants to fetch content from this URL"
+    },
+    "WebSearch": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "description": "The search query to use",
+            "type": "string"
+          },
+          "allowed_domains": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only include search results from these domains"
+          },
+          "blocked_domains": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Never include search results from these domains"
+          },
+          "block_domains": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "MyClaude 兼容别名：等同上游 blocked_domains。"
+          },
+          "max_results": {
+            "type": "number",
+            "description": "MyClaude 扩展：最多返回结果数（上游无此参数）。"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "additionalProperties": false
+      },
+      "upstreamName": null,
+      "notes": {
+        "myClaudeAliases": {
+          "block_domains": true,
+          "max_results": true
+        }
+      },
+      "source": {
+        "file": "02-modules/files/chunk-gwd0s2d1.js",
+        "line": 22,
+        "byteOffset": 42850,
+        "inputSchemaGetter": "(){return xft()?ds():ko()}",
+        "schemaBuilder": null,
+        "builderResolution": null
+      },
+      "searchHint": "search the web for current information",
+      "description": "Claude wants to search the web for: undefined"
     },
     "Task": {
       "schema": {

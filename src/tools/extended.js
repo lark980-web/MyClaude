@@ -66,7 +66,9 @@ export const webSearchTool = {
     },
     required: ["query"],
   },
-  async run({ query, allowed_domains, block_domains, max_results = 10 }) {
+  async run({ query, allowed_domains, blocked_domains, block_domains, max_results = 10 }) {
+    // 上游 2.1.302 用 blocked_domains（带 ed），自研用 block_domains —— 两套都收。
+    if (blocked_domains !== undefined && block_domains === undefined) { block_domains = blocked_domains; }
     if (!query || !String(query).trim()) return err("query is required");
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 30000);

@@ -4792,6 +4792,7 @@
   function refreshStats() {
     getJSON("/api/config").then(function (j) {
       S.config = j;
+      setEngineBackendUI(j.engineBackend || "self");
     // 深度思考按钮镜像 config.effort（与 /effort 同一设置）
     S.thinking = ["high", "medium", "low"].indexOf(S.config && S.config.effort) >= 0;
     renderThinkingButton();
@@ -6036,7 +6037,45 @@
     { k: "/init", d: "生成 MYCLAUDE.md（/init force 重生成）", fn: function () { runCommand("/init"); } },
     { k: "/clear", d: "新对话（/new 别名）", fn: function () { newChat(); } },
     { k: "/provider", d: "打开供应商设置", fn: function () { openSettings(); }  },
-    { k: "/engine", d: "原生 Claude Code 引擎（/engine <提示>）", fn: function () { runCommand("/engine"); } }
+    { k: "/engine", d: "原生 Claude Code 引擎（/engine <提示>）", fn: function () { runCommand("/engine"); } },
+    { k: "/advisor", d: "复核模型开关（auto 模式，on|off|status）", fn: function () { runCommand("/advisor"); } },
+    { k: "/auto-mode-setup", d: "自动模式本地设置（status|apply）", fn: function () { runCommand("/auto-mode-setup"); } },
+    { k: "/autocompact", d: "自动压缩开关（on|off|status）", fn: function () { runCommand("/autocompact"); } },
+    { k: "/subtask", d: "子任务与后台代理清单", fn: function () { runCommand("/subtask"); } },
+    { k: "/cd", d: "切换工作目录（仅 TUI 可用）", fn: function () { runCommand("/cd"); } },
+    { k: "/color", d: "终端彩色输出开关", fn: function () { runCommand("/color"); } },
+    { k: "/vim", d: "vim 输入偏好（本机记录配置）", fn: function () { runCommand("/vim"); } },
+    { k: "/diff", d: "查看工作区 git diff", fn: function () { runCommand("/diff"); } },
+    { k: "/background", d: "后台任务清单", fn: function () { runCommand("/background"); } },
+    { k: "/stop", d: "停止当前回合", fn: function () { runCommand("/stop"); } },
+    { k: "/focus", d: "专注模式开关", fn: function () { runCommand("/focus"); } },
+    { k: "/heapdump", d: "导出 Node 堆快照（仅 TUI 可用）", fn: function () { runCommand("/heapdump"); } },
+    { k: "/keybindings", d: "键盘绑定一览", fn: function () { runCommand("/keybindings"); } },
+    { k: "/import", d: "云端导入（本机降级提示）", fn: function () { runCommand("/import"); } },
+    { k: "/pause-memory", d: "暂停项目记忆读取偏好", fn: function () { runCommand("/pause-memory"); } },
+    { k: "/reload-plugins", d: "重新加载插件", fn: function () { runCommand("/reload-plugins"); } },
+    { k: "/reload-skills", d: "重新加载技能", fn: function () { runCommand("/reload-skills"); } },
+    { k: "/rename", d: "重命名当前会话", fn: function () { runCommand("/rename"); } },
+    { k: "/statusline", d: "状态行外部命令配置", fn: function () { runCommand("/statusline"); } },
+    { k: "/tui", d: "终端界面说明", fn: function () { runCommand("/tui"); } },
+    { k: "/ultrareview", d: "云端多代理审查（本机降级提示）", fn: function () { runCommand("/ultrareview"); } },
+    { k: "/security-review", d: "本地安全审查", fn: function () { runCommand("/security-review"); } },
+    { k: "/terminal-setup", d: "终端设置说明", fn: function () { runCommand("/terminal-setup"); } },
+    { k: "/scroll-speed", d: "滚动速度（1-10）", fn: function () { runCommand("/scroll-speed"); } },
+    { k: "/upgrade", d: "版本更新（本机降级提示）", fn: function () { runCommand("/upgrade"); } },
+    { k: "/usage", d: "token 用量与计价", fn: function () { runCommand("/usage"); } },
+    { k: "/insights", d: "云端分析（本机降级提示）", fn: function () { runCommand("/insights"); } },
+    { k: "/recap", d: "本会话回顾", fn: function () { runCommand("/recap"); } },
+    { k: "/goal", d: "会话目标（写入配置）", fn: function () { runCommand("/goal"); } },
+    { k: "/sandbox", d: "沙箱偏好开关", fn: function () { runCommand("/sandbox"); } },
+    { k: "/list-agents", d: "子代理定义清单", fn: function () { runCommand("/list-agents"); } },
+    { k: "/artifacts", d: "云端产物（本机降级提示）", fn: function () { runCommand("/artifacts"); } },
+    { k: "/team-onboarding", d: "团队引导（本机降级提示）", fn: function () { runCommand("/team-onboarding"); } },
+    { k: "/output-style", d: "输出风格列表与切换", fn: function () { runCommand("/output-style"); } },
+    { k: "/exit", d: "退出（GUI 说明）", fn: function () { runCommand("/exit"); } },
+    { k: "/resume", d: "恢复指定会话", fn: function () { runCommand("/resume"); } },
+    { k: "/session", d: "当前会话信息", fn: function () { runCommand("/session"); } },
+    { k: "/plan", d: "当前计划（GUI 说明）", fn: function () { runCommand("/plan"); } }
   ];
 
   /* ------------------------------------------------------------------
@@ -6054,6 +6093,65 @@
     return "  " + label + "  │" + new Array(fill + 1).join("█") + new Array(w - fill + 1).join("░") + "│ " + fmtK(used) + " / " + fmtK(limit);
   }
   function sessionKeyOf() { return S.sessionKey || "default"; }
+
+  /* 上游 2.1.302 命令补齐（GUI 侧）
+   * 浏览器没有 Node 文件系统 / 子进程 / v8 堆，所以：
+   *  - 配置类命令用 localStorage 做真正的本机持久化（guiSetPref），
+   *    /api/config 只白名单既有键，不改 gui-server；
+   *  - 云端 / 账号 / 订阅类命令如实降级，明确写「本机无对应服务」并给本机替代；
+   *  - 能复用现有面板 / 端点的就复用（/diff 走 /api/changes，/keybindings 走快捷键面板）。 */
+  var GUI_PREFS_KEY = "myclaude.gui.prefs.v1";
+  function guiPrefs() {
+    try { return JSON.parse(localStorage.getItem(GUI_PREFS_KEY) || "{}") || {}; }
+    catch (e) { return {}; }
+  }
+  function guiSetPref(key, value) {
+    var p = guiPrefs();
+    p[key] = value;
+    try { localStorage.setItem(GUI_PREFS_KEY, JSON.stringify(p)); } catch (e) {}
+    if (S.config) { S.config[key] = value; }
+  }
+  function guiUnsupported(name, alt) {
+    return "本机无对应服务：/" + name + " 依赖上游云端/账号/订阅服务，MyClaude 本机没有对应服务" +
+      (alt ? "\n本机可用替代：" + alt : "");
+  }
+  function guiBool(name, arg, key, opts) {
+    var o = opts || {};
+    var v = String(arg || "").trim().toLowerCase();
+    var p = guiPrefs();
+    var cur = p[key] != null ? !!p[key] :
+      (S.config && S.config[key] != null ? !!S.config[key] : !!o.def);
+    if (!v || v === "status") {
+      addNotice("/" + name + " = " + (cur ? "on" : "off") + "（用法：/" + name + " on|off|status）", "info");
+      return;
+    }
+    var on = ["on", "1", "true", "yes"].indexOf(v) >= 0 ? true :
+      ["off", "0", "false", "no"].indexOf(v) >= 0 ? false : null;
+    if (on === null) { addNotice("用法：/" + name + " on|off|status", "warn"); return; }
+    guiSetPref(key, on);
+    toast((on ? (o.onText || "/" + name + " 已开启") : (o.offText || "/" + name + " 已关闭")) +
+      "（已保存到本机 GUI 偏好）", "ok");
+  }
+  function guiValue(name, arg, key, opts) {
+    var o = opts || {};
+    var v = String(arg || "").trim();
+    var p = guiPrefs();
+    var cur = p[key] != null ? p[key] : (S.config && S.config[key] != null ? S.config[key] : null);
+    if (!v || v === "status") {
+      addNotice("/" + name + " = " + (cur == null ? "(未设置)" : cur) +
+        "\n用法：/" + name + " <值>|clear", "info");
+      return;
+    }
+    if (["clear", "off", "none", "delete"].indexOf(v.toLowerCase()) >= 0) {
+      guiSetPref(key, null);
+      toast("/" + name + " 已清除", "ok");
+      return;
+    }
+    var value = typeof o.parse === "function" ? o.parse(v) : v;
+    if (value == null) { addNotice(o.invalid || ("用法：/" + name + " <值>"), "warn"); return; }
+    guiSetPref(key, value);
+    toast("/" + name + " = " + value + "（已保存到本机 GUI 偏好）", "ok");
+  }
 
   var EXTRA_COMMANDS = {
     status: function () {
@@ -6238,7 +6336,123 @@
     branch: function () { runServerCommand("branch"); },
     init: function (arg) { runServerCommand("init", arg); },
     clear: function () { newChat(); },
-    provider: function () { openSettings(); }
+    provider: function () { openSettings(); },
+    advisor: function (arg) { guiBool("advisor", arg, "autoReview", { onText: "advisor 复核已开启", offText: "advisor 复核已关闭" }); },
+    "auto-mode-setup": function (arg) {
+      var v = String(arg || "").trim().toLowerCase();
+      if (!v || v === "status") {
+        addNotice([
+          "自动模式设置（本机）",
+          "  permissionMode        " + ((S.config || {}).permissionMode || "ask"),
+          "  advisor(autoReview)   " + ((S.config || {}).autoReview ? "on" : "off"),
+          "  autoRun               " + ((S.config || {}).autoRun ? "on" : "off"),
+          "用法：/auto-mode-setup apply（写入 permissionMode=auto + advisor=on）"
+        ].join("\n"), "info");
+        return;
+      }
+      if (v !== "apply" && v !== "on" && v !== "setup") { addNotice("用法：/auto-mode-setup status|apply", "warn"); return; }
+      postJSON("/api/config", { permissionMode: "auto" }).then(function () {
+        guiSetPref("autoReview", true);
+        if (S.config) { S.config.permissionMode = "auto"; S.config.autoReview = true; }
+        setMode("auto");
+        toast("自动模式已配置：permissionMode=auto + advisor=on（已持久化）", "ok");
+      }).catch(function (e) { addNotice("设置失败：" + e.message, "err"); });
+    },
+    autocompact: function (arg) { guiBool("autocompact", arg, "autoCompact", { def: true, onText: "自动压缩已开启", offText: "自动压缩已关闭" }); },
+    subtask: function () { addNotice("子任务与后台代理由 Task 工具创建；下面列出当前后台任务。", "info"); showTasks(); },
+    cd: function () { addNotice(guiUnsupported("cd", "GUI 会话工作目录由服务端固定；用 /files 浏览工作区"), "warn"); },
+    color: function (arg) { guiBool("color", arg, "color", { def: true, onText: "彩色输出已开启", offText: "彩色输出已关闭" }); },
+    vim: function (arg) { guiBool("vim", arg, "vimMode", { onText: "vimMode 偏好已开启（GUI 输入框不含完整 vim 键位）", offText: "vimMode 偏好已关闭" }); },
+    diff: function () {
+      getJSON("/api/changes?sessionKey=" + encodeURIComponent(sessionKeyOf()) + "&scope=turn").then(function (j) {
+        var files = j.files || j.changes || [];
+        if (!files.length) { addNotice("未检测到改动（/diff）", "info"); return; }
+        addNotice("工作区改动（" + files.length + "）\n" + files.map(function (f) {
+          return "  " + (f.path || f.file || "?") + "  +" + (f.added || f.additions || 0) + " -" + (f.deleted || f.deletions || 0);
+        }).join("\n"), "info");
+      }).catch(function (e) { addNotice("读取改动失败：" + e.message, "err"); });
+    },
+    background: function () { showTasks(); },
+    stop: function () {
+      postJSON("/api/abort", { sessionKey: sessionKeyOf() }).then(function () { toast("已请求停止当前回合", "ok"); })
+        .catch(function (e) { addNotice("停止失败：" + e.message, "err"); });
+    },
+    focus: function (arg) {
+      guiBool("focus", arg, "focusMode", { onText: "专注模式已开启", offText: "专注模式已关闭" });
+      var app = $("app");
+      if (app) { app.classList.toggle("focus-mode", !!guiPrefs().focusMode); }
+    },
+    heapdump: function () { addNotice(guiUnsupported("heapdump", "浏览器不能导出 Node 堆快照；请在 TUI 运行 /heapdump"), "warn"); },
+    keybindings: function () { openShortcutsModal(); },
+    import: function () { addNotice(guiUnsupported("import", "/attach <路径> 或 /add-dir <目录> 可把本地文件接入上下文"), "warn"); },
+    "pause-memory": function (arg) { guiBool("pause-memory", arg, "memoryPaused", { onText: "记忆读取偏好已暂停", offText: "记忆读取偏好已恢复" }); },
+    "reload-plugins": function () { runServerCommand("plugin"); },
+    "reload-skills": function () { runServerCommand("skills"); },
+    rename: function (arg) { return EXTRA_COMMANDS.title(arg); },
+    statusline: function (arg) { guiValue("statusline", arg, "statusLineCommand"); },
+    tui: function () { addNotice("当前是 GUI；/tui 需退出浏览器后用 myclaude（不带 --gui）启动终端界面。", "info"); },
+    ultrareview: function () { addNotice(guiUnsupported("ultrareview", "/review（本机单代理代码审查）"), "warn"); },
+    "security-review": function (arg) {
+      var target = String(arg || "").trim();
+      var scope = target
+        ? "审查目标：工作区与 \"" + target + "\" 的差异（git diff）"
+        : "审查目标：当前未提交的改动（git diff HEAD）";
+      var prompt = [
+        "你是严格的安全审查者。请只报告真实可利用的安全问题，输出报告。",
+        scope,
+        "步骤：",
+        "1) 用 Bash 查看改动范围与完整 diff；改动为空时明确说明「没有待审查的改动」并结束。",
+        "2) 逐文件阅读改动及其周边上下文（Read/Grep），重点看注入、鉴权与越权、密钥硬编码、路径穿越、反序列化、SSRF 与输出转义。",
+        "3) 按 [严重] [主要] [次要] [建议] 分级，每条给出 文件:行号、可利用条件、影响与修复方向；没有问题就说「未发现明确安全问题」。",
+        "4) 报告以一句话结论收尾：可合并 / 需修改（附理由）。全部用中文输出。"
+      ].join("\n");
+      if (S.busy) { toast("任务运行中，请先停止或等它结束", "warn"); return; }
+      addUserMessage(prompt, []);
+      runTurn({ message: prompt, sessionKey: S.sessionKey, attachments: [] });
+    },
+    "terminal-setup": function () {
+      addNotice([
+        "终端设置（本机）",
+        "  Shift+Tab 轮转权限模式；/mode 直接设定。",
+        "  彩色输出：/color on|off（重启 TUI 生效）。",
+        "  滚动速度：/scroll-speed <1-10>。",
+        "  键位一览：/keybindings；状态行：/statusline。",
+        "  终端里运行 myclaude 启动 Ink TUI；myclaude --plain 用简洁 REPL。"
+      ].join("\n"), "info");
+    },
+    "scroll-speed": function (arg) {
+      guiValue("scroll-speed", arg, "scrollSpeed", {
+        parse: function (v) { var n = Number(v); return Number.isFinite(n) && n >= 1 && n <= 10 ? n : null; },
+        invalid: "用法：/scroll-speed <1-10>|clear"
+      });
+    },
+    upgrade: function () { addNotice(guiUnsupported("upgrade", "当前版本见 /doctor；本机没有更新通道，请从发布页手动获取新版"), "warn"); },
+    usage: function () { return EXTRA_COMMANDS.cost(); },
+    insights: function () { addNotice(guiUnsupported("insights", "/stats 与 /cost 给出本机会话统计"), "warn"); },
+    recap: function () {
+      var s = S.stats || {};
+      addNotice([
+        "本会话回顾（/recap）",
+        "  会话 id    " + (S.sessionKey || "default"),
+        "  消息       " + (s.messages || 0) + " 条 · " + (s.turns || 0) + " 回合",
+        "  累计 token 输入 " + fmtK(s.inputTokens || 0) + " / 输出 " + fmtK(s.outputTokens || 0),
+        "  上下文     " + fmtK(s.contextUsed || 0) + " / " + fmtK(s.contextLimit || 0) + " tok"
+      ].join("\n"), "info");
+    },
+    goal: function (arg) { guiValue("goal", arg, "goal"); },
+    sandbox: function (arg) { guiBool("sandbox", arg, "sandbox", { onText: "沙箱偏好已开启", offText: "沙箱偏好已关闭" }); },
+    "list-agents": function () { runServerCommand("agents"); },
+    artifacts: function () { addNotice(guiUnsupported("artifacts", "/export 与 /files 浏览本机会话与工作区"), "warn"); },
+    "team-onboarding": function () { addNotice(guiUnsupported("team-onboarding", "/help 与 /init 提供本机上手说明"), "warn"); },
+    exit: function () { addNotice("GUI 无法退出浏览器标签页；用 /clear 开新对话，或直接关闭标签页。", "info"); },
+    resume: function (arg) { if (arg) { resumeSession(arg); } else { openSessions(); } },
+    session: function () {
+      addNotice("当前会话 id：" + (S.sessionKey || "default") +
+        "\n用 /sessions 查看历史会话，/resume <id> 恢复指定会话。", "info");
+    },
+    plan: function () {
+      addNotice("本机无对应服务：/plan 的计划文件由 TUI 读写，GUI 服务端未暴露计划接口。\n本机可用替代：/files 浏览工作区，或在 TUI 用 /plan 查看计划。", "warn");
+    }
   };
 
   /** 需要读本机文件 / 改 agent 状态的命令：走服务端白名单，返回纯文本。 */
@@ -6264,6 +6478,54 @@
     }).catch(function (e) { addNotice("命令失败：" + e.message, "err"); });
   }
 
+  /* ---------------------------------------------------------------- *
+   * GUI 后端引擎切换（契约）
+   *   GET  /api/config  -> { engineBackend: 'self' | 'upstream' }
+   *   POST /api/config  <- { engineBackend }
+   * 控件插在「权限模式」下拉旁，文案固定为「自研」/「原生 Claude」。
+   * 服务端持久化由 gui-server 负责；这里只做读取、回写与成功提示。
+   * ---------------------------------------------------------------- */
+  function engineBackendLabel(v) { return v === "upstream" ? "原生 Claude" : "自研"; }
+
+  function setEngineBackendUI(v) {
+    var host = $("engine-backend-switch");
+    var wanted = v === "upstream" ? "upstream" : "self";
+    if (S.config) { S.config.engineBackend = wanted; }
+    if (!host) { return; }
+    Array.prototype.forEach.call(host.querySelectorAll(".backend-opt"), function (b) {
+      var on = b.getAttribute("data-backend") === wanted;
+      if (on) { b.classList.add("active"); } else { b.classList.remove("active"); }
+      b.setAttribute("aria-pressed", on ? "true" : "false");
+    });
+  }
+
+  function initEngineBackendSwitch() {
+    var modeWrap = document.querySelector(".mode-select-wrap");
+    if (!modeWrap || $("engine-backend-switch")) { return; }
+    var host = el("div", "engine-backend-switch");
+    host.id = "engine-backend-switch";
+    host.setAttribute("role", "group");
+    host.setAttribute("aria-label", "回复后端引擎");
+    var states = [["self", "自研"], ["upstream", "原生 Claude"]];
+    states.forEach(function (pair) {
+      var b = el("button", "backend-opt", pair[1]);
+      b.type = "button";
+      b.setAttribute("data-backend", pair[0]);
+      b.addEventListener("click", function () {
+        var next = pair[0];
+        postJSON("/api/config", { engineBackend: next }).then(function (j) {
+          setEngineBackendUI((j && j.engineBackend) || next);
+          toast("后端已切换为「" + engineBackendLabel(next) + "」", "ok");
+        }).catch(function (e) { toast("切换后端失败：" + e.message, "err"); });
+      });
+      host.appendChild(b);
+    });
+    modeWrap.parentNode.insertBefore(host, modeWrap.nextSibling);
+    // 初始值以 GET /api/config 的 engineBackend 为准；字段暂缺时按 'self'。
+    getJSON("/api/config").then(function (j) { setEngineBackendUI(j.engineBackend || "self"); })
+      .catch(function () { setEngineBackendUI("self"); });
+  }
+
   function runCommand(text) {
     var parts = text.slice(1).split(/\s+/);
     var cmd = (parts.shift() || "").toLowerCase();
@@ -6275,7 +6537,8 @@
           "信息：/status /stats /context /cost /doctor /todos /permissions /hooks /mcp\n" +
           "操作：/title <名称> /effort high|medium|low|off /fast on|off /models /export\n" +
           "扩展：/memory /skills /plugin /agents /release-notes /add-dir /compact /rewind\n" +
-          "会话：/fork /branch /init /clear /provider /output-style /review", "info");
+          "会话：/fork /branch /init /clear /provider /output-style /review\n" +
+          "补齐：/advisor /auto-mode-setup /autocompact /subtask /cd /color /vim /diff /background /stop /focus /heapdump /keybindings /import /pause-memory /reload-plugins /reload-skills /rename /statusline /tui /ultrareview /security-review /terminal-setup /scroll-speed /upgrade /usage /insights /recap /goal /sandbox /list-agents /artifacts /team-onboarding /exit /resume /session /plan", "info");
         break;
       case "shortcuts":
         openShortcutsModal();
@@ -10838,6 +11101,7 @@ function switchInspectorTab(tab) {
     renderWelcomeCards();
     renderChatSkeleton();
     bindEvents();
+    initEngineBackendSwitch();
     if (params.get("insp") === "1") { $("app").classList.add("insp-open"); }
     if (params.get("settings") === "1") { setTimeout(openSettings, 400); }
     if (params.get("insptab") === "changes") { S.changesScope = params.get("chgscope") === "branch" ? "branch" : "turn"; setTimeout(function () { var ap = $("app"); if (ap) { ap.classList.add("insp-open"); } switchInspectorTab("changes"); }, 500); }
@@ -10854,6 +11118,7 @@ function switchInspectorTab(tab) {
       S.vision = j.vision !== false;
       if (j.routing) { S.routing = j.routing; }
       setMode(j.permissionMode || "ask");
+      setEngineBackendUI(j.engineBackend || "self");
       renderVision();
       renderUsage();
       renderInspector();

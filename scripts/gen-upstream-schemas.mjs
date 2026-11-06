@@ -61,7 +61,12 @@ const DECISIONS = {
                    } },
   // 上游 schema 是运行时分支 getter —— 静态抽不出，但 16-extract-runtime-schemas.mjs
   // 运行时访问 getter 拿到了（zod v4 → JSON Schema），所以 AskUserQuestion 已可 adopt
-  WebSearch:     { mode: "own", reason: "upstream tool object not locatable in module exports yet; runtime schema not extracted" },
+  // 上游运行时 schema 已拿到（17 号脚本）：query/allowed_domains/blocked_domains。
+  // 自研用 block_domains（无 ed）且有 max_results —— 两套命名都在，run() 入口归一。
+  WebSearch:     { mode: "merge", aliases: {
+                     block_domains: { type: "array", items: { type: "string" }, description: "MyClaude 兼容别名：等同上游 blocked_domains。" },
+                     max_results: { type: "number", description: "MyClaude 扩展：最多返回结果数（上游无此参数）。" },
+                   } },
   // 上游内部名 Agent、模型可见名 Task（init 事件自报）；MyClaude 同名 Task。
   // required [description,prompt] 与 MyClaude 完全一致；MyClaude 的 4 个消费字段全部 ⊆ 上游 10 字段
   Task:          { mode: "adopt", upstreamName: "Agent" },
