@@ -63,3 +63,13 @@ test("agent.setOutputStyle rebuilds the system prompt", () => {
   assert.doesNotMatch(agent.systemPrompt, /Output style:/);
 });
 
+const { outputStyleTurnReminder } = await import("../src/output-style.js");
+
+test("R7b: 逐回合提醒逐字（Aer/Per/Oer）+ 等待变体", () => {
+  assert.equal(outputStyleTurnReminder("proactive"), "Execute autonomously, minimize interruptions, prefer action over planning.");
+  assert.match(outputStyleTurnReminder("proactive", { waiting: true }), /Do not poll, sleep, or re-read its output/);
+  assert.equal(outputStyleTurnReminder("concise"), "Be concise: lead with the result, skip preamble and narration, keep only what the user needs.");
+  assert.equal(outputStyleTurnReminder("explanatory"), "", "无 turnReminder 的样式返回空");
+  assert.equal(outputStyleTurnReminder("learning"), "");
+  assert.equal(outputStyleTurnReminder("default"), "");
+});

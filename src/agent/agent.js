@@ -6,13 +6,14 @@ import { normalizeMode, isCommonFileCommand, isDestructiveCommand, FILE_EDIT_TOO
 import { isAutoApprovable, autoApprovalBlockerAsync } from "./command-safety.js";
 import { initUpstreamSafety } from "./upstream-safety.js";
 import { reviewToolCall } from "./auto-review.js";
-import { outputStyleFragment } from "../output-style.js";
+import { outputStyleFragment, outputStyleTurnReminder } from "../output-style.js";
 import { SYSTEM_PROMPT, AUTONOMY_SECTION } from "./prompt.js";
 import { buildUserContent, buildToolAttachmentContent, resolveAttachments } from "../attachments.js";
 import { setQuestionPresenter } from "../tools/extended.js";
 import { HookRunner } from "../hooks.js";
 import { stripReasoning } from "./think.js";
 import { CheckpointStore } from "./checkpoint.js";
+import { listTasks } from "../tools/tasks.js";
 import { skillCatalogue } from "../skills.js";
 import { contextWindowOf, maxTokensOf, supportsVision, findModel } from "../models.js";
 import { CONFIG_DIR } from "../config.js";
@@ -658,9 +659,20 @@ export class Agent {
       for (const a of bad) this.ui.warn(`attachment skipped: ${a.name} — ${a.error}`);
       const usable = resolved.filter((a) => a.kind !== "error");
 
+      // 输出样式的逐回合提醒（上游 chunk-e0x0xb6d.js turnReminder 机制）：
+      // 样式激活时每个用户回合随文注入；等待后台任务时切换 waitingTurnReminder。
+      // default 无提醒；走 [系统] 约定（prompt.js：harness 注入、非用户原文）。
+      let bgWaiting = false;
+      try { const { listTasks } = await import("../tools/tasks.js"); bgWaiting = listTasks().some((t) => t.status === "running"); } catch { bgWaiting = false; }
+      const styleReminder = outputStyleTurnReminder(this.config.outputStyle, {
+        waiting: bgWaiting,
+      });
+      const turnText = styleReminder && typeof userInput === "string"
+        ? userInput + "\n\n[系统] output-style 提醒：" + styleReminder
+        : userInput;
       this.messages.push({
         role: "user",
-        content: buildUserContent(userInput, usable, { vision: this.vision }),
+        content: buildUserContent(turnText, usable, { vision: this.vision }),
       });
     }
 

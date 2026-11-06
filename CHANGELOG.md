@@ -8,6 +8,14 @@
 
 ## [Unreleased]
 
+### Added（追加轮：输出样式逐回合提醒 turnReminder —— 夜航轮 6）
+- 上游机制（chunk-e0x0xb6d.js）：样式激活时每个用户回合注入 turnReminder；等待后台任务
+  时切换 waitingTurnReminder（Proactive 专属：Do not poll, sleep, or re-read its output）。
+- 逐字接入：Proactive（Aer/Per）、Concise（Oer）；Explanatory/Learning 上游无提醒。
+- agent 循环按 [系统] 约定随用户回合注入（prompt.js：harness 注入、非用户原文）；
+  waiting 检测走 listTasks 动态 import（避免与 tools/tasks 循环依赖）。
+- 全量 707/707 全绿。
+
 ### Added（R7：输出样式对齐上游 —— 夜航轮 5）
 - 内置输出样式从 3 个中文短片段改为上游 2.1.302 的五态逐字还原（chunk-e0x0xb6d.js l9）：
   default（无片段）、Proactive、Concise、Explanatory、Learning —— 片段含上游 tone 段、

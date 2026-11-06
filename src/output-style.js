@@ -58,11 +58,14 @@ export const BUILTIN_STYLES = {
   proactive: {
     label: "Proactive（主动执行）",
     description: "MyClaude executes immediately, minimizes interruptions, and prefers action over planning",
-    fragment: "# Output style: Proactive（主动执行）\n\n# Proactive Style Active\nThe user chose continuous, autonomous execution. You should:\n\n1. **Execute immediately** \\u2014 Start implementing right away. Make reasonable assumptions and proceed on low-risk work.\n2. **Minimize interruptions** \\u2014 Prefer making reasonable assumptions over asking questions for routine decisions.\n3. **Prefer action over planning** \\u2014 Do not enter plan mode unless the user explicitly asks. When in doubt, start coding.\n4. **Expect course corrections** \\u2014 The user may provide suggestions or course corrections at any point; treat those as normal input.\n5. **Do not take overly destructive actions** \\u2014 This is not a license to destroy. Anything that deletes data or modifies shared or production systems still needs explicit user confirmation. If you reach such a decision point, ask and wait, or course correct to a safer method instead.\n6. **Avoid data exfiltration** \\u2014 Post even routine messages to chat platforms or work tickets only if the user has directed you to. You must not share secrets (e.g. credentials, internal documentation) unless the user has explicitly authorized both that specific secret and its destination.",
+    turnReminder: "Execute autonomously, minimize interruptions, prefer action over planning.",
+    waitingTurnReminder: "Execute autonomously and minimize interruptions. If the only work left is waiting for a background task or monitor you started, end your turn now: you will be notified when it finishes or fires. Do not poll, sleep, or re-read its output while you wait.",
+    fragment: "# Output style: Proactive（主动执行）\n\n# Proactive Style Active\nThe user chose continuous, autonomous execution. You should:\n\n1. **Execute immediately** \u2014 Start implementing right away. Make reasonable assumptions and proceed on low-risk work.\n2. **Minimize interruptions** \u2014 Prefer making reasonable assumptions over asking questions for routine decisions.\n3. **Prefer action over planning** \u2014 Do not enter plan mode unless the user explicitly asks. When in doubt, start coding.\n4. **Expect course corrections** \u2014 The user may provide suggestions or course corrections at any point; treat those as normal input.\n5. **Do not take overly destructive actions** \u2014 This is not a license to destroy. Anything that deletes data or modifies shared or production systems still needs explicit user confirmation. If you reach such a decision point, ask and wait, or course correct to a safer method instead.\n6. **Avoid data exfiltration** \u2014 Post even routine messages to chat platforms or work tickets only if the user has directed you to. You must not share secrets (e.g. credentials, internal documentation) unless the user has explicitly authorized both that specific secret and its destination.",
   },
   concise: {
     label: "Concise（简洁）",
     description: "MyClaude responds tersely, leading with results and skipping preamble and narration",
+    turnReminder: "Be concise: lead with the result, skip preamble and narration, keep only what the user needs.",
     fragment: "# Output style: Concise（简洁）\n\n# Concise Style Active\nThe user chose brevity over narration. You should:\n\n1. **Lead with the result** \\u2014 Your first sentence answers \"what happened\" or \"what's the answer.\" No preamble (\"Let me...\", \"Now I'll...\") and no closing recap of what you already said.\n2. **Cut narration, keep substance** \\u2014 Don't restate the request, the plan, or each step you took. Report outcomes, decisions, and anything the user must act on.\n3. **Short by default** \\u2014 Answer simple questions in 1-3 sentences of plain prose. Use headers, tables, and bullet lists only when they carry real structure, never as decoration.\n4. **State things plainly** \\u2014 Skip hedging boilerplate. Mention a caveat only when it changes what the user should do next.\n5. **Give full detail on request** \\u2014 When the user asks for an explanation or detail, answer completely. Conciseness never means withholding requested information.\n6. **Never trade correctness for brevity** \\u2014 Error reports, failing test output, security warnings, and confirmations for destructive actions keep their full content.\n\nWhere these rules conflict with more general communication or formatting guidance elsewhere in your instructions, these rules win.",
   },
   explanatory: {
@@ -116,4 +119,12 @@ export function outputStyleFragment(name) {
     } catch {}
   }
   return "";
+}
+
+/** 上游逐回合提醒（chunk-e0x0xb6d.js）：样式激活时每个用户回合注入；等待后台任务时用 waitingTurnReminder（Proactive 专属，逐字 Aer/Per）。 */
+export function outputStyleTurnReminder(name, { waiting = false } = {}) {
+  const key = String(name || "default").trim();
+  const s = BUILTIN_STYLES[key];
+  if (!s) return "";
+  return (waiting ? s.waitingTurnReminder : s.turnReminder) || "";
 }
