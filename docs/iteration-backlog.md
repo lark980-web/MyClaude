@@ -279,7 +279,9 @@
   （renderRoutingSection；audit-ui-consistency 无漂移）。
 - [x] ~~设置中心旧视觉语言~~ ✅ 第 4 轮已统一（细线组头 / 8px / 主题感知阴影 /
   实线分隔），并顺手修了第三列裁切 BUG。
-- [ ] **提示词库 / Projects 模态框**仍是旧视觉语言，未跟进细线 + 编号体系。
+- [x] ~~提示词库 / Projects 模态框仍是旧视觉语言~~ ✅ 截图校验为已统一（shots/07-projects-modal.png、
+  shots/08-prompt-library-modal.png：细线组头/胶囊分类/8px 圆角/主题感知阴影俱全；
+  audit-ui-consistency 无漂移）。
 - [x] ~~欢迎页四张能力卡片间距~~ ✅ 第 4 轮 gap 12→10、8px 圆角、主题感知阴影。
 - [x] ~~输入框下方快捷 chips 的间距节奏~~ ✅ 第 6 轮已收敛。
 
