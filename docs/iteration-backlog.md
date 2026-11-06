@@ -89,6 +89,14 @@
 - [x] **上游工具描述词接入**（复刻轮 Q）：9/9 核心工具的描述词逐字发给模型；
   提取法是**运行时调用上游自己的 `description()`**（静态还原要复刻条件分支）；
   50/96 拿到，未拿到的 46 个是云侧/插件/MCP 与参数化模板。
+- [x] **B 路线升级为连续会话**（复刻轮 S）：上游 `--resume` 实测可用，已按 MyClaude 会话键绑定上游
+  sessionId（~/.myclaude/engine-sessions.json），GUI/TUI 自动续接，失效自动降级并标注；
+  端到端两轮实测第二轮答出第一轮记住的词；全量 623/623。
+- [x] **A 路线扩展：运行时取 schema**（复刻轮 S）：新增 zod v4→JSON Schema 转换器，
+  `Task`←上游 `Agent` 与 `AskUserQuestion` 已 adopt（采用数 9→11），`multiSelect`/`multi_select` 在 run 入口归一。
+- [x] **复刻度量脚本**（复刻轮 S）：`scripts/parity-metrics.mjs`，上游侧运行时取数、双口径报告。
+- [x] **更正错误结论**：`/vim`、`/output-style` **在上游运行时内置命令表里**（133 个），
+  此前「上游已移除、不该复刻」的判断来自文档推断，是错的。
 - [ ] 待办：剩余 skills、
   builtin-docs.md（89KB）、module-architecture.md、TUI 剩余 /statusline /vim /todo。
 

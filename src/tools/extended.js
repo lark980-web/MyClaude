@@ -294,6 +294,13 @@ export const askUserQuestionTool = {
         return { ok: false, content: "自主模式运行中：不要提问，请自行做出合理决策并继续任务。" };
       }
     if (!Array.isArray(questions) || !questions.length) return err("questions must be a non-empty array");
+    // 上游 2.1.302 的 schema 用 multiSelect（camelCase），MyClaude 的 TUI/GUI presenter
+    // 读 multi_select —— run 入口一次性归一，两边命名都能到达 presenter。
+    for (const q of questions) {
+      if (q && q.multiSelect !== undefined && q.multi_select === undefined) {
+        q.multi_select = q.multiSelect;
+      }
+    }
     if (!pendingQuestion) {
       return err("no interactive presenter available (AskUserQuestion requires a TUI or GUI session)");
     }

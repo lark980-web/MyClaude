@@ -112,3 +112,20 @@ git log --oneline -6          # 看最近做了什么
   另一个用 base64+IEX 内联跑测试，脚本被当成木马命中。
 - 检测时间（11:37:25）与 git 失效时间吻合，但**因果未证实** —— Defender 隔离区为空，
   360 恢复区里也没有 git。如实记为「时间相关，机制未知」。
+## 10. 原生引擎（/engine）与复刻度量
+
+**/engine 的连续会话**（2026-11-06 起）：
+
+- 上游原生支持 `--resume <session-id>`；引擎模块按 **MyClaude 会话键**绑定上游 sessionId，
+  存在 `~/.myclaude/engine-sessions.json`（或 `MYCLAUDE_HOME`）。
+- GUI 与 TUI 都会自动带上已有绑定 → 连续追问同一件事时上下文是连着的。
+- `/engine reset` 解绑（开新会话）。
+- 上游会话失效（报 `No conversation found with session ID`）会自动改开新回合并在结果里标注。
+
+**复刻度量**：`node scripts/parity-metrics.mjs`（加 `--json` 输出机器可读）。
+
+- 上游侧数据**运行时取**（bun 执行上游 `getBuiltinCommands()`），不用手抄清单当分母。
+- 同时报两个口径：全量 133 个内置命令 / 本地相关 81 个（排除云侧、账号、生态类）。
+- 也报工具契约采用数、上游工具条目数、上游代码规模。
+
+> 需要 bun 与 `B:` 虚拟根映射（见 §9）；缺任一则上游侧标记为不可用，脚本**不会用旧数字凑数**。

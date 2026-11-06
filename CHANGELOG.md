@@ -26,6 +26,39 @@
   不冒用上游身份、本地命名与插值正确。
 - 全量 **546/546**、`verify-features` ✓、exe 已重打并确认关键子句已编入二进制。
 
+### Added（B 路线升级：原生引擎会话连续性 —— 从「每次新会话」到「共享上下文」）
+- **上游原生支持 `--resume <session-id>`**，本轮实测确认：回合 1 让引擎记住 ZEBRA77，回合 2
+  用同一个 session id 续接，不提词也能答出 ZEBRA77。
+- **接线**：`src/engines/claude-code.js` 增 `engineSessionFor/rememberEngineSession/forgetEngineSession`，
+  上游 sessionId 按 **MyClaude 会话键**存进 `~/.myclaude/engine-sessions.json`（或 `MYCLAUDE_HOME`）；
+  GUI 命令桥与 TUI 的 `/engine` 都会自动带上已有绑定。`/engine reset` 可解绑。
+- **失效自动降级**：上游会话文件被清理时引擎报 `No conversation found with session ID`（实测特征），
+  桥会识别该特征并自动改开新回合，结果标注「原会话已失效，已开新会话」—— 不会把失效当成功。
+- **端到端实测**（经 7788 服务，两轮）：回合 1 `resumed:false` → 回合 2 `resumed:true`，
+  同一 session id `948b734c`，第二轮答出 ZEBRA77；会话表正确记录绑定。
+- **测试 7 项**：`--resume` 真的进了子进程 argv（假引擎回显验证）、会话表持久化与隔离、
+  失效降级、普通失败**不**误判为失效、真实事件流解析仍工作。全量 **623/623**。
+
+### Added（A 路线扩展：运行时拿到「静态不可还原」的工具 schema）
+- 上游工具对象的 `inputSchema` 是 **getter** —— 静态抽取器判为「不可静态还原」的那些，
+  **运行时直接访问 getter 就能拿到**。新增 `claude-re-2.1.302/tools/spec3/16-extract-runtime-schemas.mjs`，
+  内含 **zod v4 → JSON Schema** 转换器（按构造器名分发：ZodObject/ZodOptional/ZodEnum/ZodArray/ZodRecord…）。
+- **本轮接入 2 个工具**（生成器的 DECISIONS 表新增）：
+  - `Task` ← 上游内部名 `Agent`（模型可见名都是 Task）：10 个字段、required [description,prompt]
+    与 MyClaude 现有 required 完全一致，MyClaude 消费的 4 个字段全部 ⊆ 上游字段集 → **纯 adopt**；
+  - `AskUserQuestion`：4 个字段（questions/answers/annotations/metadata）。
+    **兼容处理**：上游 schema 用 `multiSelect`（camelCase），MyClaude 两个 presenter 读 `multi_select`，
+    在 run() 入口一次性归一，两边命名都到得了 presenter。
+- 采用上游契约的工具从 9 个增至 **11 个**；上游工具条目 96（带 schema 87、带描述词 50）。
+
+### Added（复刻度量脚本：数字全部现测，可复算）
+- 新增 `scripts/parity-metrics.mjs`：上游侧数据从**运行时**取（bun 执行 `getBuiltinCommands()`），
+  不再用手抄清单当分母。**同时报两个口径**（全量 133 / 本地相关 81），避免「分母自选」。
+- 实测：命令面 TUI 28% / GUI 25%（全量口径），TUI 46% / GUI 38%（本地相关口径）；
+  工具契约已接入 11 个；上游代码 2432 明文模块/45.4MB + 2429 字节码模块/92.2MB。
+- **更正上一轮的错误结论**：我曾说 `/vim`、`/output-style`「上游已移除、不该复刻」——
+  那是**从 recent-changes 文档推断**的，而运行时内置命令表里它们**都在**。backlog 的相关标注已更正。
+
 ### Investigated（上游完整权限引擎的可达性 —— 有明确结论）
 - **结论**：`checkPermissions` 与上游**实时应用状态**深度耦合，进程内无法可靠调用；
   它只能通过 **B 路线**（运行上游自己的引擎）触达 —— 而 `/engine` 已经实现。

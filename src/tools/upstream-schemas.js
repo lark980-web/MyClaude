@@ -151,12 +151,40 @@ export const UPSTREAM_TOOL_SCHEMAS = {
       {
         "name": "WebSearch",
         "mode": "own",
-        "reason": "upstream inputSchema is a runtime-branch getter; not statically reducible"
+        "reason": "upstream tool object not locatable in module exports yet; runtime schema not extracted"
+      },
+      {
+        "name": "Task",
+        "mode": "adopt",
+        "required": [
+          "description",
+          "prompt"
+        ],
+        "properties": [
+          "description",
+          "prompt",
+          "subagent_type",
+          "model",
+          "effort",
+          "run_in_background",
+          "name",
+          "team_name",
+          "mode",
+          "isolation"
+        ]
       },
       {
         "name": "AskUserQuestion",
-        "mode": "own",
-        "reason": "upstream inputSchema is a runtime-branch getter; not statically reducible"
+        "mode": "adopt",
+        "required": [
+          "questions"
+        ],
+        "properties": [
+          "questions",
+          "answers",
+          "annotations",
+          "metadata"
+        ]
       },
       {
         "name": "ExitPlanMode",
@@ -196,6 +224,7 @@ export const UPSTREAM_TOOL_SCHEMAS = {
         ],
         "additionalProperties": false
       },
+      "upstreamName": null,
       "notes": {
         "renamedProperties": {
           "[computed:[Rge]]": "allow_large"
@@ -237,6 +266,7 @@ export const UPSTREAM_TOOL_SCHEMAS = {
         ],
         "additionalProperties": false
       },
+      "upstreamName": null,
       "notes": {
         "upstreamSpreads": [
           "PK()"
@@ -282,6 +312,7 @@ export const UPSTREAM_TOOL_SCHEMAS = {
         ],
         "additionalProperties": false
       },
+      "upstreamName": null,
       "notes": {
         "upstreamSpreads": [
           "PK()"
@@ -316,6 +347,7 @@ export const UPSTREAM_TOOL_SCHEMAS = {
         ],
         "additionalProperties": false
       },
+      "upstreamName": null,
       "notes": {
         "upstreamSpreads": [
           "PK()"
@@ -431,6 +463,7 @@ export const UPSTREAM_TOOL_SCHEMAS = {
         ],
         "additionalProperties": false
       },
+      "upstreamName": null,
       "notes": {
         "myClaudeAliases": {
           "i": true,
@@ -501,6 +534,7 @@ export const UPSTREAM_TOOL_SCHEMAS = {
         ],
         "additionalProperties": false
       },
+      "upstreamName": null,
       "notes": {
         "myClaudeAliases": {
           "cwd": true,
@@ -556,6 +590,7 @@ export const UPSTREAM_TOOL_SCHEMAS = {
         ],
         "additionalProperties": false
       },
+      "upstreamName": null,
       "notes": {},
       "source": {
         "file": "02-modules/files/chunk-gwd0s2d1.js",
@@ -612,6 +647,7 @@ export const UPSTREAM_TOOL_SCHEMAS = {
         ],
         "additionalProperties": false
       },
+      "upstreamName": null,
       "notes": {
         "myClaudeAliases": {
           "cell_index": true
@@ -657,6 +693,7 @@ export const UPSTREAM_TOOL_SCHEMAS = {
         ],
         "additionalProperties": false
       },
+      "upstreamName": null,
       "notes": {
         "myClaudeAliases": {
           "max_chars": true
@@ -672,6 +709,202 @@ export const UPSTREAM_TOOL_SCHEMAS = {
       },
       "searchHint": "fetch and extract content from a URL",
       "description": "Claude wants to fetch content from this URL"
+    },
+    "Task": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "description": {
+            "description": "A short (3-5 word) description of the task",
+            "type": "string"
+          },
+          "prompt": {
+            "description": "The task for the agent to perform",
+            "type": "string"
+          },
+          "subagent_type": {
+            "type": "string",
+            "description": "The type of specialized agent to use for this task"
+          },
+          "model": {
+            "type": "string",
+            "enum": [
+              "sonnet",
+              "opus",
+              "haiku",
+              "fable"
+            ],
+            "description": "Optional model override for this agent. Takes precedence over the agent definition's model frontmatter and the configured default subagent model. If omitted, uses the agent definition's model, else the default (inherits from the parent unless a default subagent model is configured). Ignored for subagent_type: \"fork\" — forks always inherit the parent model."
+          },
+          "effort": {
+            "type": "string",
+            "enum": [
+              "low",
+              "medium",
+              "high",
+              "xhigh",
+              "max"
+            ],
+            "description": "Reasoning effort for this agent. Set this ONLY when the user, or instructions such as CLAUDE.md or a skill, explicitly ask that this agent or delegated work run at a specific effort level, never on your own judgment; otherwise omit it and the agent runs at its usual effort. Ignored for subagent_type: \"fork\": a fork runs at your own effort."
+          },
+          "run_in_background": {
+            "type": "boolean",
+            "description": "Agents run in the background by default; you will be notified when one completes. Set to false only when your very next action depends on this agent's result and nothing else could usefully happen while it runs — otherwise leave it in the background so the user can hand you other work."
+          },
+          "name": {
+            "type": "string",
+            "description": "Name for the spawned agent. Makes it addressable via SendMessage({to: name}) while running."
+          },
+          "team_name": {
+            "type": "string",
+            "description": "Deprecated; ignored. The session has a single implicit team."
+          },
+          "mode": {
+            "x-unknown-node": "ZodTransform",
+            "description": "Deprecated; ignored. Subagents inherit the parent session's permission mode; agent-definition frontmatter may override it."
+          },
+          "isolation": {
+            "type": "string",
+            "enum": [
+              "worktree",
+              "remote"
+            ],
+            "description": "Isolation mode. \"worktree\" creates a temporary git worktree so the agent works on an isolated copy of the repo. \"remote\" launches the agent in a remote cloud environment (always runs in background; availability is gated)."
+          }
+        },
+        "required": [
+          "description",
+          "prompt"
+        ],
+        "additionalProperties": false
+      },
+      "upstreamName": "Agent",
+      "notes": {},
+      "source": {
+        "file": "02-modules/files/chunk-1nry7a4r.js",
+        "line": 14,
+        "byteOffset": 45987,
+        "inputSchemaGetter": "(){return VYr()}",
+        "schemaBuilder": "VYr",
+        "builderResolution": "function"
+      },
+      "searchHint": "delegate work to a subagent",
+      "description": "Launch a new agent"
+    },
+    "AskUserQuestion": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "questions": {
+            "description": "Questions to ask the user (1-4 questions)",
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "question": {
+                  "description": "The complete question to ask the user. Should be clear, specific, and end with a question mark. Example: \"Which library should we use for date formatting?\" If multiSelect is true, phrase it accordingly, e.g. \"Which features do you want to enable?\"",
+                  "type": "string"
+                },
+                "header": {
+                  "description": "Very short label displayed as a chip/tag (max 12 chars). Examples: \"Auth method\", \"Library\", \"Approach\".",
+                  "type": "string"
+                },
+                "options": {
+                  "description": "The available choices for this question. Must have 2-4 options. Each option should be a distinct, mutually exclusive choice (unless multiSelect is enabled). There should be no 'Other' option, that will be provided automatically.",
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "label": {
+                        "description": "The display text for this option that the user will see and select. Should be concise (1-5 words) and clearly describe the choice.",
+                        "type": "string"
+                      },
+                      "description": {
+                        "description": "Explanation of what this option means or what will happen if chosen. Useful for providing context about trade-offs or implications.",
+                        "type": "string"
+                      },
+                      "preview": {
+                        "type": "string",
+                        "description": "Optional preview content rendered when this option is focused. Use for mockups, code snippets, or visual comparisons that help users compare options. See the tool description for the expected content format."
+                      }
+                    },
+                    "required": [
+                      "label",
+                      "description"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "multiSelect": {
+                  "type": "boolean",
+                  "description": "Set to true to allow the user to select multiple options instead of just one. Use when choices are not mutually exclusive.",
+                  "default": false
+                }
+              },
+              "required": [
+                "question",
+                "header",
+                "options"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "answers": {
+            "type": "object",
+            "additionalProperties": {
+              "x-unknown-node": "ZodTransform"
+            },
+            "description": "User answers collected by the permission component"
+          },
+          "annotations": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "properties": {
+                "preview": {
+                  "type": "string",
+                  "description": "The preview content of the selected option, if the question used previews."
+                },
+                "notes": {
+                  "type": "string",
+                  "description": "Free-text notes the user added to their selection."
+                }
+              },
+              "required": [],
+              "additionalProperties": false
+            },
+            "description": "Optional per-question annotations from the user (e.g., notes on preview selections). Keyed by question text."
+          },
+          "metadata": {
+            "type": "object",
+            "properties": {
+              "source": {
+                "type": "string",
+                "description": "Optional identifier for the source of this question (e.g., \"remember\" for /remember command). Used for analytics tracking."
+              }
+            },
+            "required": [],
+            "additionalProperties": false,
+            "description": "Optional metadata for tracking and analytics purposes. Not displayed to user."
+          }
+        },
+        "required": [
+          "questions"
+        ],
+        "additionalProperties": false
+      },
+      "upstreamName": null,
+      "notes": {},
+      "source": {
+        "file": "02-modules/files/chunk-4kgb9k1d.js",
+        "line": 11,
+        "byteOffset": 12918,
+        "inputSchemaGetter": "(){if(GTe())return be();return m2o()?ge():ye()}",
+        "schemaBuilder": null,
+        "builderResolution": null
+      },
+      "searchHint": "prompt the user with a multiple-choice question",
+      "description": "Asks the user multiple choice questions to gather information, clarify ambiguity, understand preferences, make decisions or offer them choices."
     }
   }
 };

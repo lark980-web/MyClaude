@@ -18,17 +18,18 @@ const upstreamList = upstreamDoc.tools || upstreamDoc;
 const upstreamByName = new Map(upstreamList.map((t) => [t.name, t]));
 
 // 采用上游契约的工具（决策表见 scripts/gen-upstream-schemas.mjs）
-const ADOPTED = ["Read", "Write", "Edit", "Glob", "Grep", "Bash", "TodoWrite", "NotebookEdit", "WebFetch"];
+const ADOPTED = ["Read", "Write", "Edit", "Glob", "Grep", "Bash", "TodoWrite", "NotebookEdit", "WebFetch", "Task", "AskUserQuestion"];
+// MyClaude 工具名 → 上游工具名（上游把委派工具叫 Agent，模型可见名仍是 Task）
+const UPSTREAM_NAME = { Task: "Agent" };
 // 明确保留自研契约的工具（附原因，避免后人误改）
 const KEPT_OWN = {
-  WebSearch: "upstream inputSchema is a runtime-branch getter",
-  AskUserQuestion: "upstream inputSchema is a runtime-branch getter",
+  WebSearch: "upstream tool object not locatable in module exports yet",
   ExitPlanMode: "upstream contract is allowedPrompts; MyClaude uses plan",
 };
 
 test("every adopted tool ships the upstream parameter contract verbatim", () => {
   for (const name of ADOPTED) {
-    const up = upstreamByName.get(name);
+    const up = upstreamByName.get(UPSTREAM_NAME[name] || name);
     assert.ok(up && up.parameters, name + ": upstream extraction must exist");
     const mine = toolInputSchema({ name, input_schema: {} });
     assert.ok(mine, name + ": MyClaude must expose an upstream schema");
@@ -137,7 +138,10 @@ test("the generated schema module is in sync with the upstream extraction", () =
   // 生成器与上游 JSON 必须一致（--check 逻辑在脚本内，此处做等价断言）
   const gen = readFileSync(new URL("../scripts/gen-upstream-schemas.mjs", import.meta.url), "utf8");
   assert.match(gen, /DECISIONS/, "generator keeps an explicit decision table");
-  for (const name of Object.keys(UPSTREAM_TOOL_SCHEMAS.tools)) {
-    assert.ok(upstreamByName.has(name), name + " must exist in the upstream extraction");
+  for (const [name, entry] of Object.entries(UPSTREAM_TOOL_SCHEMAS.tools)) {
+    const upName = entry.upstreamName || name;
+    assert.ok(upstreamByName.has(upName), name + " (upstream " + upName + ") must exist in the upstream extraction");
+    assert.ok(entry.description, name + " must carry the upstream description");
+    assert.ok(entry.schema && entry.schema.properties, name + " must carry the upstream schema");
   }
 });

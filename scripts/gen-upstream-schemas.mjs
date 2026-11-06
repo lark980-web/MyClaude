@@ -59,9 +59,13 @@ const DECISIONS = {
   WebFetch:      { mode: "merge", aliases: {
                      max_chars: { type: "number", description: "MyClaude 扩展：最多抓取字符数（上游无此参数）。" },
                    } },
-  // 上游 schema 是运行时分支 getter（(){if(f())return A();return B()}），静态抽不出单一 schema
-  WebSearch:     { mode: "own", reason: "upstream inputSchema is a runtime-branch getter; not statically reducible" },
-  AskUserQuestion:{ mode: "own", reason: "upstream inputSchema is a runtime-branch getter; not statically reducible" },
+  // 上游 schema 是运行时分支 getter —— 静态抽不出，但 16-extract-runtime-schemas.mjs
+  // 运行时访问 getter 拿到了（zod v4 → JSON Schema），所以 AskUserQuestion 已可 adopt
+  WebSearch:     { mode: "own", reason: "upstream tool object not locatable in module exports yet; runtime schema not extracted" },
+  // 上游内部名 Agent、模型可见名 Task（init 事件自报）；MyClaude 同名 Task。
+  // required [description,prompt] 与 MyClaude 完全一致；MyClaude 的 4 个消费字段全部 ⊆ 上游 10 字段
+  Task:          { mode: "adopt", upstreamName: "Agent" },
+  AskUserQuestion:{ mode: "adopt" },
   // 上游契约与 MyClaude 不同（上游 allowedPrompts vs MyClaude plan）
   ExitPlanMode:  { mode: "own", reason: "upstream contract is allowedPrompts; MyClaude uses plan" },
 };
@@ -103,6 +107,7 @@ function sanitizeProp(v) {
 }
 
 function buildSchema(entry, decision) {
+  // entry 可能来自 upstreamName 映射（例：MyClaude Task ← 上游 Agent）
   const raw = entry.parameters;
   if (!raw) return null;
   const properties = {};
@@ -135,13 +140,14 @@ function main() {
   const out = {};
   const decisions = [];
   for (const [name, d] of Object.entries(DECISIONS)) {
-    const entry = byName.get(name);
+    const entry = byName.get(d.upstreamName || name);
     if (!entry) { decisions.push({ name, mode: "own", reason: "not present in upstream extraction" }); continue; }
     if (d.mode === "own") { decisions.push({ name, mode: "own", reason: d.reason || "kept MyClaude contract" }); continue; }
     const built = buildSchema(entry, d);
     if (!built) { decisions.push({ name, mode: "own", reason: "upstream has no static parameters" }); continue; }
     out[name] = {
       schema: built.schema,
+      upstreamName: d.upstreamName || null,
       notes: built.notes,
       source: entry.source,
       searchHint: entry.searchHint || null,

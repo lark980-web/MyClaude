@@ -1,7 +1,7 @@
 import { estimateTextTokens } from "../tokens.js";
 import { createServer } from "node:http";
 import { spawnSync, exec } from "node:child_process";
-import { engineStatus, runEngineTurn } from "../engines/claude-code.js";
+import { engineStatus, runEngineTurn, engineSessionFor, rememberEngineSession, forgetEngineSession } from "../engines/claude-code.js";
 import { consoleUi } from "./console-ui.js";
 import { runWithAutoContinue } from "../agent/autorun.js";
 import { setAutonomous } from "../tools/extended.js";
@@ -1228,13 +1228,21 @@ async function searchWorkspaceFiles(query = "", limit = 40) {
               reply("原生引擎不可用：" + (st.cliOk ? "未找到 bun 运行时" : "未找到提取树入口 " + st.cli) + "。前置条件与复现见 docs/authentic-claude-code-run.md。");
               return;
             }
+            const bound = engineSessionFor(key);
             if (!arg) {
-              reply("原生引擎可用（cli: " + st.cli + "）\n用法：/engine <提示> —— 用真实 Claude Code 在当前工作区跑一个回合");
+              reply("原生引擎可用（cli: " + st.cli + "）\n用法：/engine <提示> —— 用真实 Claude Code 在当前工作区跑一个回合" +
+                (bound ? "\n当前会话已绑定上游会话 " + String(bound).slice(0, 8) + "，下一回合会自动续接它" : "\n提示：连续问同一件事，后续回合会自动带上之前的上下文"));
+              return;
+            }
+            if (arg === "reset" || arg === "new") {
+              forgetEngineSession(key);
+              reply("已解绑上游会话，下一回合将开新会话");
               return;
             }
             const r = await runEngineTurn({
               prompt: arg, model: config.model, baseUrl: config.baseUrl,
               apiKey: config.apiKey, cwd, timeoutMs: 180_000,
+              resumeSessionId: bound,
             });
             if (!r.ok) {
               sendJson(res, 200, { ok: false, error: r.timedOut
@@ -1242,11 +1250,14 @@ async function searchWorkspaceFiles(query = "", limit = 40) {
                 : "原生引擎执行失败" + (r.error ? "：" + r.error : "") + (r.stderrTail ? "｜" + String(r.stderrTail).slice(-300) : "") });
               return;
             }
+            rememberEngineSession(key, r.sessionId);
             const body = String(r.result || r.assistantTexts.join("\n\n") || "(无输出)");
             const tools = r.toolUses.length ? "\n\n工具调用  " + r.toolUses.map((t) => t.name).join(" → ") : "";
-            reply(body + tools + "\n\n— 原生 Claude Code 2.1.302 · 回合 " + (r.numTurns ?? "?") +
+            const resumedTag = r.resumedFrom ? "（续接）" : (r.recoveredFromMissingResume ? "（原会话已失效，已开新会话）" : "");
+            reply(body + tools + "\n\n— 原生 Claude Code 2.1.302" + resumedTag + " · 回合 " + (r.numTurns ?? "?") +
               " · " + (Math.round((r.durationMs || 0) / 100) / 10) + "s · session " + String(r.sessionId || "").slice(0, 8),
-              { engine: { sessionId: r.sessionId, numTurns: r.numTurns, tools: r.toolUses.map((t) => t.name) } });
+              { engine: { sessionId: r.sessionId, numTurns: r.numTurns, tools: r.toolUses.map((t) => t.name),
+                resumed: Boolean(r.resumedFrom), recovered: Boolean(r.recoveredFromMissingResume) } });
             return;
           }
           if (name === "memory") {
