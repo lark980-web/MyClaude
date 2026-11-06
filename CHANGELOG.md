@@ -8,6 +8,15 @@
 
 ## [Unreleased]
 
+### Added（追加轮 4：截图证据链 + 变更 tab 空态文案 —— 夜航轮 8）
+- scripts/shot-parity.mjs / shot-parity2.mjs：GUI 功能全景截图证据（shots/ 12 张 PNG，
+  每张先断言 DOM 标记再落盘，逐张人工校验）：vim INSERT/NORMAL/VISUAL 指示器、工具卡
+  折叠⎿预览与展开截断、消息目录、备用池空态、Projects/提示词库模态框、变更 tab、模型菜单。
+- 变更 tab 空态文案补充说明（本轮/分支两个 scope 各自的指引）。
+- 发现并记录如实差距：GUI vim 的 VISUAL 选区在 textarea 中无反色高亮（原生控件限制，
+  引擎层 selection 正确）。
+- 修正 backlog 两项视觉项（凭截图勾掉过时描述）。
+
 ### Added（追加轮 3：TUI /config 交互面板 —— 夜航轮 7）
 - 上游 /config 是 enum 交互面板（{id,label,options,type:"enum"}），MyClaude 此前是 JSON dump。
 - ink 面板：↑↓ 选行、←→/Enter 循环取值、Esc 关闭；本地相关三项——Editor mode、

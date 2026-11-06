@@ -9013,7 +9013,9 @@
       }
       if (j.truncated) { list.appendChild(el("div", "empty-note warn", "文件过多，仅显示前 500 个")); }
       if (!j.files.length) {
-        list.appendChild(el("div", "empty-note", S.changesScope === "turn" ? "本轮没有文件变更" : "暂无变更"));
+        list.appendChild(el("div", "empty-note", S.changesScope === "turn"
+          ? "本轮没有文件变更（运行一轮并修改文件后，这里会显示该轮的差异）"
+          : "暂无变更（分支上有提交差异后显示）"));
         return;
       }
       var sum = el("div", "chg-sum");
