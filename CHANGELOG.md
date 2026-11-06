@@ -8,6 +8,15 @@
 
 ## [Unreleased]
 
+### Added（R7：输出样式对齐上游 —— 夜航轮 5）
+- 内置输出样式从 3 个中文短片段改为上游 2.1.302 的五态逐字还原（chunk-e0x0xb6d.js l9）：
+  default（无片段）、Proactive、Concise、Explanatory、Learning —— 片段含上游 tone 段、
+  样式节头（# X Style Active）与完整正文（含 Learn by Doing/TODO(human) 协作流程）。
+- 本地适配如实标注（文件头注释）：persona 首段不进片段（system prompt 自带）；
+  描述词 Claude→MyClaude；上游装饰符 te.bullet/te.star 取 •/✻。
+- /output-style 与 GUI 样式清单自动扩为五态（listOutputStyles）。
+- 全量 706/706 全绿；inspect:prompt 0 error。
+
 ### Added（R4：GUI vim 输入模式 + statusline vim.mode —— 夜航轮 4）
 - bundle-gui 把 src/ui/vim.js（唯一事实源）剥 export 注入为 window.__MCVim，GUI 不复制引擎代码。
 - GUI 输入框按键接管：INSERT/NORMAL/VISUAL 全模式、指示器随模式显隐（NORMAL 隐藏 = 上游

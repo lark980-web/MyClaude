@@ -21,6 +21,22 @@ test("built-in styles expose fragments; default is empty", () => {
   assert.equal(outputStyleFragment("no-such-style"), "", "unknown style must degrade to empty, not throw");
 });
 
+test("R7: 上游四样式逐字接入（Proactive/Concise/Explanatory/Learning）", () => {
+  // 2.1.302 内置五态：default(无片段) + 四个带正文的样式（chunk-e0x0xb6d.js l9）
+  const names = Object.keys(BUILTIN_STYLES).sort();
+  assert.deepEqual(names, ["concise", "default", "explanatory", "learning", "proactive"]);
+  assert.match(outputStyleFragment("proactive"), /# Proactive Style Active/);
+  assert.match(outputStyleFragment("proactive"), /Execute immediately/);
+  assert.match(outputStyleFragment("concise"), /Lead with the result/);
+  assert.match(outputStyleFragment("explanatory"), /Insights/);
+  assert.match(outputStyleFragment("learning"), /Learn by Doing/);
+  assert.match(outputStyleFragment("learning"), /TODO\(human\)/);
+  // 描述词身份改写：不冒用 Claude（本地适配，见文件头注释）
+  for (const n of ["proactive", "concise", "explanatory", "learning"]) {
+    assert.ok(!/(^|\s)Claude\b/.test(BUILTIN_STYLES[n].description), n + " 描述词不单独引用 Claude（MyClaude 除外）");
+  }
+});
+
 test("custom styles load from output-styles/<name>.md with frontmatter stripped", () => {
   const dir = join(home, "output-styles");
   mkdirSync(dir, { recursive: true });
