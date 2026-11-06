@@ -119,3 +119,9 @@ test('statusline is wired into all three surfaces', async () => {
 });
 
 after(() => { setTimeout(() => process.exit(0), 100).unref?.(); });
+test("vim.mode 仅在传入时进入 stdin 契约（上游 chunk-e0x0xb6d vim 契约）", () => {
+  const base = buildStatusLineInput({ sessionId: "s1" });
+  assert.equal("vim" in base, false, "未启用 vim 时字段不存在");
+  const withVim = buildStatusLineInput({ sessionId: "s1", vim: { mode: "VISUAL LINE" } });
+  assert.deepEqual(withVim.vim, { mode: "VISUAL LINE" });
+});

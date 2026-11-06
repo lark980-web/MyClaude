@@ -28,7 +28,7 @@ const MAX_OUTPUT_CHARS = 2_000;
  */
 export function buildStatusLineInput({
   sessionId, sessionName, promptId, transcriptPath, cwd, model,
-  projectDir, addedDirs, gitWorktree, repo, outputStyle, contextWindow, effort,
+  projectDir, addedDirs, gitWorktree, repo, outputStyle, contextWindow, effort, vim,
 } = {}) {
   const used = contextWindow && Number(contextWindow.contextWindowSize) > 0
     ? Math.round((Number(contextWindow.totalInputTokens || 0) / Number(contextWindow.contextWindowSize)) * 100)
@@ -66,6 +66,8 @@ export function buildStatusLineInput({
       remaining_percentage: used === null ? null : Math.max(0, 100 - used),
     },
     ...(effort && effort.level ? { effort: { level: String(effort.level) } } : {}),
+    // 上游契约（chunk-e0x0xb6d.js）：仅 vim 启用时出现，mode ∈ INSERT|NORMAL|VISUAL|VISUAL LINE
+    ...(vim && vim.mode ? { vim: { mode: String(vim.mode) } } : {}),
   };
 }
 

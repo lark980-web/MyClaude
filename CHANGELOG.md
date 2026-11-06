@@ -8,6 +8,18 @@
 
 ## [Unreleased]
 
+### Added（R4：GUI vim 输入模式 + statusline vim.mode —— 夜航轮 4）
+- bundle-gui 把 src/ui/vim.js（唯一事实源）剥 export 注入为 window.__MCVim，GUI 不复制引擎代码。
+- GUI 输入框按键接管：INSERT/NORMAL/VISUAL 全模式、指示器随模式显隐（NORMAL 隐藏 = 上游
+  hideVimModeIndicator 语义）、双击 esc 清空；中文 IME（isComposing/229）与系统剪贴板键
+  直通；slash/@ 菜单打开时 vim 让位（方向键/Enter 归菜单）；粘贴等外部写入以 DOM 为准对齐
+  引擎。
+- /api/config 补 editorMode/vimMode/vimInsertModeRemaps 三个字段（此前 GUI 读不到启用状态）。
+- statusline stdin 契约补 vim.mode（上游 chunk-e0x0xb6d.js）：GUI 实时上报，服务端仅放行
+  INSERT|NORMAL|VISUAL|VISUAL LINE 四枚举，配置未启用 vim 时不放行。
+- /vim 文案更新：TUI 与 GUI 输入框均生效。
+- 新增 scripts/verify-gui-vim.mjs（无头 CDP 14 项）+ test/statusline.test.js vim 用例。
+
 ### Fixed（R3：changes-api 测试与盘根仓库环境解耦 —— 夜航轮 3）
 - 盘根 `C:\.git`（环境事实，HANDOFF §9）让任何 C: 盘临时目录都被判成「在 git 工作
   树内」，non-git 降级用例必然误分类为 git-failed —— 此前全量永远 703/704。

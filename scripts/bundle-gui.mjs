@@ -47,7 +47,18 @@ function literal(text) {
 
 const body = Object.entries(FILES)
   .map(([key, rel]) => {
-    const text = load(rel);
+    let text = load(rel);
+    if (key === "app") {
+      // GUI vim：把 src/ui/vim.js（唯一事实源）剥离 export 后注入为 window.__MCVim，
+      // app.js 通过该命名空间使用引擎 —— 不复制代码，单一事实源不分裂。
+      const vimSrc = load("src/ui/vim.js").replace(/^export\s+/gm, "");
+      text =
+        "/* == vim 编辑引擎（由 scripts/bundle-gui.mjs 从 src/ui/vim.js 注入；勿手改） == */\n" +
+        "(function () {\n" + vimSrc + "\n" +
+        "window.__MCVim = { vimEnabled, createVimSession, vimApply, resetVimSession, vimClear, " +
+        "normalizeInsertRemaps, visualSelection, vimPendingLabel, MODE_LABELS, NORMAL, INSERT, VISUAL, VLINE };\n" +
+        "})();\n\n" + text;
+    }
     if (text.includes("\u2028") || text.includes("\u2029")) {
       throw new Error(rel + ": contains a line separator that JSON.stringify escapes safely, continuing");
     }

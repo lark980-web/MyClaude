@@ -6834,3 +6834,9 @@ body.no-motion *, body.no-motion *::before, body.no-motion *::after { animation:
   flex-shrink: 0;
 }
 .turn-end.waiting .te-dot { background: var(--accent); }
+
+/* GUI vim 模式指示器（上游 hideVimModeIndicator 契约：NORMAL 隐藏） */
+.vim-indicator {
+  font-family: var(--mono); font-size: 11.5px; color: var(--warn);
+  padding: 2px 2px 0; user-select: none;
+}

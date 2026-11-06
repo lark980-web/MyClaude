@@ -824,9 +824,14 @@ async function searchWorkspaceFiles(query = "", limit = 40) {
       : Math.min(contextWindowOf(config.model), Number(config.contextWindow) || contextWindowOf(config.model)),
           modelSupportsVision: supportsVision(config.model),
   effort: config.effort ?? null,
-  autoRun: !!config.autoRun,
-  engineBackend: currentEngineBackend(),
-  fastMode: !!config.fastMode,
+          autoRun: !!config.autoRun,
+          engineBackend: currentEngineBackend(),
+          fastMode: !!config.fastMode,
+          // 编辑器模式（上游真键 editorMode ∈ normal|vim；vimMode 为兼容布尔）——
+          // GUI vim 输入模式按它启用，vimInsertModeRemaps 透传给引擎
+          editorMode: config.editorMode === "vim" ? "vim" : "normal",
+          vimMode: config.vimMode === true,
+          vimInsertModeRemaps: config.vimInsertModeRemaps || null,
           routing: agent ? agent.routingStatus?.() : null,
           tools: toolList(),
           ...statsOf(agent)
@@ -2239,6 +2244,11 @@ async function searchWorkspaceFiles(query = "", limit = 40) {
         const key = url.searchParams.get("sessionKey") || "default";
         const agent = sessions.get(key);
         const stats = agent ? statsOf(agent) : null;
+        // 上游契约：vim 启用时 stdin 带 vim.mode（仅允许四种枚举值，防注入）
+        const vimEnabledHere = config.editorMode === "vim" || config.vimMode === true;
+        const rawVim = url.searchParams.get("vimMode");
+        const vimMode = vimEnabledHere && ["INSERT", "NORMAL", "VISUAL", "VISUAL LINE"].includes(rawVim)
+          ? rawVim : null;
         const input = buildStatusLineInput({
           sessionId: key,
           sessionName: (loadSession(key) && loadSession(key).title) || null,
@@ -2250,6 +2260,7 @@ async function searchWorkspaceFiles(query = "", limit = 40) {
             totalOutputTokens: Number(stats && stats.outputTokens) || 0,
             contextWindowSize: Number(stats && stats.contextLimit) || Number(config.contextWindow) || 200000,
           },
+          ...(vimMode ? { vim: { mode: vimMode } } : {}),
         });
         const r = await runStatusLine({ command: config.statusLineCommand, input, cwd, timeoutMs: 5000 });
         sendJson(res, 200, { ok: r.ok, text: r.text, error: r.error, command: r.command || null, configured: !!config.statusLineCommand });
