@@ -8,6 +8,13 @@
 
 ## [Unreleased]
 
+### Fixed（R3：changes-api 测试与盘根仓库环境解耦 —— 夜航轮 3）
+- 盘根 `C:\.git`（环境事实，HANDOFF §9）让任何 C: 盘临时目录都被判成「在 git 工作
+  树内」，non-git 降级用例必然误分类为 git-failed —— 此前全量永远 703/704。
+- 测试进程设 `GIT_CEILING_DIRECTORIES` 把 git 向上搜索钉在临时目录根：测试与环境
+  里是否存在盘根仓库彻底无关。
+- 全量测试首次 **704/704 全绿**。
+
 ### Added（R2：工具契约 12 → 17 —— 夜航轮 2）
 - 从上游运行时抽取产物（out-all-runtime.json）逐字接入 5 个工具契约：
   EnterPlanMode（新工具：经用户确认后 agent.setMode("plan")）、ExitPlanMode（own→merge：

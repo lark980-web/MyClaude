@@ -11,6 +11,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 const home = mkdtempSync(join(tmpdir(), "myclaude-changes-"));
+// 环境事实（HANDOFF §9）：盘根 C:.git 让任何 C: 盘临时目录都被判成「在 git 工作树内」，
+// non-git 用例必然误分类。GIT_CEILING_DIRECTORIES 把 git 的向上搜索钉在临时目录根，
+// 测试从此与盘根是否存在仓库无关。
+process.env.GIT_CEILING_DIRECTORIES = tmpdir();
 process.env.MYCLAUDE_HOME = home;
 const { startGui } = await import("../src/ui/gui-server.js");
 
