@@ -91,3 +91,24 @@ git log --oneline -6          # 看最近做了什么
 3. **不做的三件事**：`/vim`（上游已移除）、`/sandbox`（有意用命令分级替代）、`isReadOnly`/工具 schema 还原（产物不可得）。
 4. **token 估算 CJK 感知**，三处共用一份口径；前端保留同公式副本并有测试锁死一致性。
 5. **所有去重按真实路径**，不按字面路径 —— Windows 大小写不敏感，`A.md` 与 `a.md` 是同一文件。
+## 9. 环境陷阱（2026-11-06 实测踩到，会咬人）
+
+**git 不在 PATH 里，但它没丢。** `HKLM\SOFTWARE\GitForWindows` 记录 `InstallPath=F:\Tools\Git`（2.47.0），
+二进制就在 `F:\Tools\Git\cmd\git.exe`。Machine PATH 里**有** `F:\Tools\Git\cmd`，但 agent 进程的
+环境快照里没有，只剩一条指向**不存在目录**的陈旧条目 `f:\Program Files\Git\cmd`。
+表现是 `git` 时好时坏 —— 一度让我以为仓库坏了。
+
+- 可靠做法：用完整路径 `F:\Tools\Git\cmd\git.exe`，或每次调用先 `$env:PATH += ';F:\Tools\Git\cmd'`。
+- 仓库 `.git` 全程完好（HEAD/refs/objects 正常）。**git 命令不可用 ≠ 数据有问题**，先查路径再下结论。
+
+**杀软会打断工具调用。** 本机同时跑 Windows Defender 与 360 全家桶
+（`360sd` / `360rp` / `360tray` / `ZhuDongFangYu`）。2026-11-06 11:37:25 Defender 记录
+`Trojan:PowerShell/Powdow.RRA!MTB`，命中对象是**命令行本身** —— 一个
+`$b64='...'; Invoke-Expression [Text.Encoding]::UTF8.GetString(...)` 的 pwsh 调用。
+（Defender 会把 CmdLine 当资源来匹配，这是它自己的检测类型。）
+
+- **教训：排查脚本要落成文件再执行**（`.mjs` / `.ps1`），不要用 base64 + `Invoke-Expression` 内联。
+  同一天两个子代理：一个把 18 个分析脚本落成 `.mjs` 文件跑，零告警；
+  另一个用 base64+IEX 内联跑测试，脚本被当成木马命中。
+- 检测时间（11:37:25）与 git 失效时间吻合，但**因果未证实** —— Defender 隔离区为空，
+  360 恢复区里也没有 git。如实记为「时间相关，机制未知」。
