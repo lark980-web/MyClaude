@@ -61,6 +61,8 @@ const NON_MUTATING_TOOLS = new Set([
   "TodoWrite",
   "AskUserQuestion",
   "ExitPlanMode",
+  "EnterPlanMode",
+  "Skill",
   "BashOutput",
   "GitStatus",
   "GitDiff",

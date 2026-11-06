@@ -1,8 +1,12 @@
 /**
- * Extended tool set: WebSearch, NotebookEdit, AskUserQuestion, ExitPlanMode.
+ * Extended tool set: WebSearch, NotebookEdit, AskUserQuestion, ExitPlanMode,
+ * EnterPlanMode, Skill.
  * These complete the Claude Code-style tool surface alongside the core
  * file/bash tools in index.js and the task tools in tasks.js.
  */
+
+import { upstreamSchema, upstreamDescription } from "./upstream-schemas.js";
+import { findSkill, skillCatalogue } from "../skills.js";
 
 function ok(content, extra = {}) {
   return { ok: true, content, ...extra };
@@ -405,10 +409,84 @@ export const notebookReadTool = {
   },
 };
 
+/* --------------------------------------------------------------- EnterPlanMode */
+
+let modeController = null;
+/** runtime 把 agent.setMode 交进来：工具自身不持有 agent 引用（与 presenter 同模式）。 */
+export function setModeController(fn) {
+  modeController = typeof fn === "function" ? fn : null;
+}
+
+export const enterPlanModeTool = {
+  name: "EnterPlanMode",
+  description:
+    upstreamDescription("EnterPlanMode") ||
+    "Requests permission to enter plan mode for complex tasks requiring exploration and design",
+  input_schema:
+    upstreamSchema("EnterPlanMode") || { type: "object", properties: {}, additionalProperties: false },
+  async run() {
+    if (!pendingQuestion) {
+      // 非交互会话没有提问通道：如实拒绝，不静默切模式。
+      return err("plan mode requires an interactive session");
+    }
+    const answer = await pendingQuestion([
+      {
+        question: "Enter plan mode?",
+        header: "Plan mode",
+        options: [
+          { label: "Enter plan mode", description: "Explore and design first; no file edits until the plan is approved" },
+          { label: "Stay", description: "Keep the current permission mode" },
+        ],
+      },
+    ]);
+    const first = Array.isArray(answer) ? answer[0] : answer;
+    if (String(first).toLowerCase().startsWith("enter")) {
+      if (modeController) { modeController("plan"); }
+      return ok("entered plan mode — explore the code, design an approach, then call ExitPlanMode");
+    }
+    return err("stayed in the current mode");
+  },
+};
+
+/* --------------------------------------------------------------- Skill */
+
+export const skillTool = {
+  name: "Skill",
+  // 上游按注册的 skill 动态生成 description（运行时抽到 "Execute skill: undefined"）；
+  // MyClaude 是单一工具 —— schema 逐字采用上游，description 用同一语义的静态形式。
+  description:
+    upstreamDescription("Skill") ||
+    "Execute a skill from the available-skills list. Do not guess names — use a name exactly as it appears in the list. Optional arguments are passed through to the skill.",
+  input_schema:
+    upstreamSchema("Skill") || {
+      type: "object",
+      properties: {
+        skill: { type: "string", description: "The name of a skill from the available-skills list. Do not guess names." },
+        args: { type: "string", description: "Optional arguments for the skill" },
+      },
+      required: ["skill"],
+      additionalProperties: false,
+    },
+  async run({ skill, args }) {
+    const name = String(skill || "").trim();
+    if (!name) { return err("skill name is required"); }
+    const s = findSkill(name);
+    if (!s) {
+      const avail = skillCatalogue().map((x) => x.name).slice(0, 15).join(", ");
+      return err("unknown skill: " + name + (avail ? " — available: " + avail : ""));
+    }
+    const header = "skill: " + s.name + (s.description ? " — " + s.description : "");
+    const tail = args ? "\n\n[skill args]: " + String(args) : "";
+    return ok(header + "\n\n" + String(s.body || "") + tail);
+  },
+};
+
 export const EXTENDED_TOOLS = [
   webSearchTool,
   notebookReadTool,
   notebookEditTool,
   askUserQuestionTool,
   exitPlanModeTool,
+  enterPlanModeTool,
+  skillTool,
 ];

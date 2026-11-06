@@ -8,6 +8,18 @@
 
 ## [Unreleased]
 
+### Added（R2：工具契约 12 → 17 —— 夜航轮 2）
+- 从上游运行时抽取产物（out-all-runtime.json）逐字接入 5 个工具契约：
+  EnterPlanMode（新工具：经用户确认后 agent.setMode("plan")）、ExitPlanMode（own→merge：
+  上游 allowedPrompts 已标 Deprecated，本地 plan 参数作为有据可查的扩展别名保留）、
+  ListMcpResources/ReadMcpResource（上游内部名 ListMcpResourcesTool/ReadMcpResourceTool，
+  参数面恰好一致）、Skill（新工具：findSkill 注入技能正文，未知名列出可用清单；
+  上游按 skill 动态生成 description，MyClaude 单工具用同语义静态形式）。
+- 接线：runtime.js setModeController（工具不持有 agent 引用，与 presenter 同模式）；
+  NON_MUTATING_TOOLS 增 EnterPlanMode/Skill。
+- 新增 test/r2-tool-contracts.test.js（5 项）：契约逐字断言 + 交互流 + 注册叠加验证。
+- 度量：adoptedInMyClaude 12 → 17。
+
 ### Added（R1：TUI Esc+Esc 编辑上一条消息 —— 夜航轮 1）
 - `agent.rewind` 加 depth：depth=1 保持 GUI 编辑重发语义（保留并替换最后一条提问）；
   depth>1 连目标提问一起撤掉，编辑后的文本由调用方重发。

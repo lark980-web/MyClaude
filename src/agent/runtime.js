@@ -10,7 +10,7 @@ import {
   toolSchemas,
   findTool,
 } from "../tools/index.js";
-import { EXTENDED_TOOLS, setQuestionPresenter, answerQuestion } from "../tools/extended.js";
+import { EXTENDED_TOOLS, setQuestionPresenter, setModeController, answerQuestion } from "../tools/extended.js";
 import { taskOutputTool } from "../tools/task-output.js";
 
 /**
@@ -36,6 +36,9 @@ export async function createAgent({ provider, config, ui, providerFactory, sessi
   if (typeof ui?.askQuestions === "function") {
     setQuestionPresenter(ui.askQuestions);
   }
+
+  // EnterPlanMode 切模式走 agent.setMode（工具自身不持有 agent 引用）。
+  setModeController((mode) => agent.setMode(mode));
 
   // Sub-agent delegation needs a provider for its own Agent instance.
   if (providerFactory) {

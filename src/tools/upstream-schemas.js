@@ -196,9 +196,50 @@ export const UPSTREAM_TOOL_SCHEMAS = {
         ]
       },
       {
+        "name": "EnterPlanMode",
+        "mode": "adopt",
+        "required": [],
+        "properties": []
+      },
+      {
         "name": "ExitPlanMode",
-        "mode": "own",
-        "reason": "upstream contract is allowedPrompts; MyClaude uses plan"
+        "mode": "merge",
+        "required": [],
+        "properties": [
+          "allowedPrompts",
+          "plan"
+        ]
+      },
+      {
+        "name": "ListMcpResources",
+        "mode": "adopt",
+        "required": [],
+        "properties": [
+          "server"
+        ]
+      },
+      {
+        "name": "ReadMcpResource",
+        "mode": "adopt",
+        "required": [
+          "server",
+          "uri"
+        ],
+        "properties": [
+          "server",
+          "uri"
+        ]
+      },
+      {
+        "name": "Skill",
+        "mode": "adopt",
+        "required": [
+          "skill"
+        ],
+        "properties": [
+          "skill",
+          "args"
+        ]
       }
     ]
   },
@@ -971,6 +1012,167 @@ export const UPSTREAM_TOOL_SCHEMAS = {
       },
       "searchHint": "prompt the user with a multiple-choice question",
       "description": "Asks the user multiple choice questions to gather information, clarify ambiguity, understand preferences, make decisions or offer them choices."
+    },
+    "EnterPlanMode": {
+      "schema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      },
+      "upstreamName": null,
+      "notes": {},
+      "source": {
+        "file": "02-modules/files/chunk-qjshqk3j.js",
+        "line": 101,
+        "byteOffset": 29670,
+        "inputSchemaGetter": "(){return He()}",
+        "schemaBuilder": "He",
+        "builderResolution": "ok"
+      },
+      "searchHint": "switch to plan mode to design an approach before coding",
+      "description": "Requests permission to enter plan mode for complex tasks requiring exploration and design"
+    },
+    "ExitPlanMode": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "allowedPrompts": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "tool": {
+                  "type": "string",
+                  "enum": [
+                    "Bash"
+                  ],
+                  "description": "The tool this prompt applies to"
+                },
+                "prompt": {
+                  "type": "string",
+                  "description": "Semantic description of the action, e.g. \"run tests\", \"install dependencies\""
+                }
+              },
+              "required": [
+                "tool",
+                "prompt"
+              ]
+            },
+            "description": "Deprecated: no longer used."
+          },
+          "plan": {
+            "type": "string",
+            "description": "MyClaude 扩展：计划的 markdown 正文（上游已弃用参数面，仅保留 allowedPrompts）。"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "upstreamName": null,
+      "notes": {
+        "myClaudeAliases": {
+          "plan": true
+        }
+      },
+      "source": {
+        "file": "02-modules/files/chunk-vkky4a9v.js",
+        "line": 36,
+        "byteOffset": 6272,
+        "inputSchemaGetter": "(){return R()}",
+        "schemaBuilder": "R",
+        "builderResolution": "ok"
+      },
+      "searchHint": "present plan for approval and start coding (plan mode only)",
+      "description": "Prompts the user to exit plan mode and start coding"
+    },
+    "ListMcpResources": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "server": {
+            "type": "string",
+            "description": "Optional server name to filter resources by"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "upstreamName": "ListMcpResourcesTool",
+      "notes": {},
+      "source": {
+        "file": "02-modules/files/chunk-s73gkqs8.js",
+        "line": 11,
+        "byteOffset": 2385,
+        "inputSchemaGetter": "(){return U()}",
+        "schemaBuilder": "U",
+        "builderResolution": "ok"
+      },
+      "searchHint": "list resources from connected MCP servers",
+      "description": "\nLists available resources from configured MCP servers.\nEach resource object includes a 'server' field indicating which server it's from.\n\nUsage examples:\n- List all resources from all servers: `listMcpResources`\n- List resources from a specific server: `listMcpResources({ server: \"myserver\" })`\n"
+    },
+    "ReadMcpResource": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "server": {
+            "type": "string",
+            "description": "The MCP server name"
+          },
+          "uri": {
+            "type": "string",
+            "description": "The resource URI to read"
+          }
+        },
+        "required": [
+          "server",
+          "uri"
+        ],
+        "additionalProperties": false
+      },
+      "upstreamName": "ReadMcpResourceTool",
+      "notes": {},
+      "source": {
+        "file": "02-modules/files/chunk-s73gkqs8.js",
+        "line": 15,
+        "byteOffset": 9352,
+        "inputSchemaGetter": "(){return G()}",
+        "schemaBuilder": "G",
+        "builderResolution": "ok"
+      },
+      "searchHint": "read a specific MCP resource by URI",
+      "description": "\nReads a specific resource from an MCP server.\n- server: The name of the MCP server to read from\n- uri: The URI of the resource to read\n\nUsage examples:\n- Read a resource from a server: `readMcpResource({ server: \"myserver\", uri: \"my-resource-uri\" })`\n"
+    },
+    "Skill": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "skill": {
+            "type": "string",
+            "description": "The name of a skill from the available-skills list. Do not guess names."
+          },
+          "args": {
+            "type": "string",
+            "description": "Optional arguments for the skill"
+          }
+        },
+        "required": [
+          "skill"
+        ],
+        "additionalProperties": false
+      },
+      "upstreamName": null,
+      "notes": {},
+      "source": {
+        "file": "02-modules/files/chunk-qjshqk3j.js",
+        "line": 11,
+        "byteOffset": 15523,
+        "inputSchemaGetter": "(){return xe()}",
+        "schemaBuilder": "xe",
+        "builderResolution": "ok"
+      },
+      "searchHint": "invoke a slash-command skill",
+      "description": "Execute skill: undefined"
     }
   }
 };

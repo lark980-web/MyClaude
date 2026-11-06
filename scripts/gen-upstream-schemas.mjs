@@ -71,8 +71,18 @@ const DECISIONS = {
   // required [description,prompt] 与 MyClaude 完全一致；MyClaude 的 4 个消费字段全部 ⊆ 上游 10 字段
   Task:          { mode: "adopt", upstreamName: "Agent" },
   AskUserQuestion:{ mode: "adopt" },
-  // 上游契约与 MyClaude 不同（上游 allowedPrompts vs MyClaude plan）
-  ExitPlanMode:  { mode: "own", reason: "upstream contract is allowedPrompts; MyClaude uses plan" },
+  EnterPlanMode: { mode: "adopt" },
+  // 上游 2.1.302 的 ExitPlanMode 参数面收敛为 allowedPrompts（且已标 Deprecated）；
+  // MyClaude 保留 plan 参数承载计划正文，作为有据可查的本地扩展。
+  ExitPlanMode:  { mode: "merge", aliases: {
+                     plan: { type: "string", description: "MyClaude 扩展：计划的 markdown 正文（上游已弃用参数面，仅保留 allowedPrompts）。" },
+                   } },
+  // 本地工具名无 Tool 后缀；上游内部名 ListMcpResourcesTool / ReadMcpResourceTool
+  ListMcpResources: { mode: "adopt", upstreamName: "ListMcpResourcesTool" },
+  ReadMcpResource:  { mode: "adopt", upstreamName: "ReadMcpResourceTool" },
+  // 上游按注册的 skill 动态生成 description（运行时抽到 "Execute skill: undefined"）；
+  // MyClaude 是单一工具 —— schema 逐字采用，description 用同一语义的静态形式。
+  Skill:         { mode: "adopt" },
 };
 
 /** 上游抽取器留下的元数据键，不属于 JSON Schema，透传给模型会污染契约。 */

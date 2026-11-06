@@ -18,13 +18,18 @@ const upstreamList = upstreamDoc.tools || upstreamDoc;
 const upstreamByName = new Map(upstreamList.map((t) => [t.name, t]));
 
 // 采用上游契约的工具（决策表见 scripts/gen-upstream-schemas.mjs）
-const ADOPTED = ["Read", "Write", "Edit", "Glob", "Grep", "Bash", "TodoWrite", "NotebookEdit", "WebFetch", "Task", "AskUserQuestion", "WebSearch"];
-// MyClaude 工具名 → 上游工具名（上游把委派工具叫 Agent，模型可见名仍是 Task）
-const UPSTREAM_NAME = { Task: "Agent" };
+const ADOPTED = [
+  "Read", "Write", "Edit", "Glob", "Grep", "Bash", "TodoWrite", "NotebookEdit",
+  "WebFetch", "Task", "AskUserQuestion", "WebSearch",
+  "EnterPlanMode", "ExitPlanMode", "ListMcpResources", "ReadMcpResource", "Skill",
+];
+// MyClaude 工具名 → 上游工具名（上游把委派工具叫 Agent，模型可见名仍是 Task；
+// MCP 资源工具上游内部名带 Tool 后缀）
+const UPSTREAM_NAME = { Task: "Agent", ListMcpResources: "ListMcpResourcesTool", ReadMcpResource: "ReadMcpResourceTool" };
 // 明确保留自研契约的工具（附原因，避免后人误改）
-const KEPT_OWN = {
-  ExitPlanMode: "upstream contract is allowedPrompts; MyClaude uses plan",
-};
+// R2 起 ExitPlanMode 已 merge：上游参数面收敛为 allowedPrompts（且标 Deprecated），
+// 本地 plan 参数作为有据可查的扩展别名并入（见 gen-upstream-schemas.mjs DECISIONS）。
+const KEPT_OWN = {};
 
 test("every adopted tool ships the upstream parameter contract verbatim", () => {
   for (const name of ADOPTED) {
