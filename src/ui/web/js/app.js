@@ -6203,6 +6203,93 @@
     try { localStorage.setItem(GUI_PREFS_KEY, JSON.stringify(p)); } catch (e) {}
     if (S.config) { S.config[key] = value; }
   }
+
+  /* ---- GUI vim（R4）：复用 src/ui/vim.js 引擎（bundle 时注入为 window.__MCVim）----
+     上游契约：editorMode==="vim" 启用；模式指示 -- INSERT -- / -- VISUAL --（NORMAL 隐藏，
+     见上游 statusLine.hideVimModeIndicator 描述）；双击 esc 清空输入。
+     中文 IME（isComposing/229）与系统剪贴板键直通，不接管。
+     机器码在 IIFE 顶层：状态行刷新（另一函数）也要读 vimSt，块级声明会炸 boot 链。 */
+  var V = window.__MCVim || null;
+  var vimSt = null; // { enabled, session }
+  function vimEnabledNow() {
+    if (!V) { return false; }
+    var prefs = guiPrefs();
+    var cfg = S.config || {};
+    return V.vimEnabled({ editorMode: cfg.editorMode, vimMode: prefs.vimMode != null ? !!prefs.vimMode : !!cfg.vimMode });
+  }
+  function vimEnsure() {
+    var on = vimEnabledNow();
+    if (!vimSt || vimSt.enabled !== on) {
+      var inEl = $("in");
+      vimSt = {
+        enabled: on,
+        session: on ? V.createVimSession({
+          text: inEl ? inEl.value : "",
+          cursor: inEl ? inEl.value.length : 0,
+          insertRemaps: V.normalizeInsertRemaps((S.config && S.config.vimInsertModeRemaps) || null),
+        }) : null,
+      };
+    }
+    return vimSt.enabled ? vimSt.session : null;
+  }
+  function vimIndicator() { return $("vim-indicator"); }
+  function renderVimIndicator() {
+    var elx = vimIndicator();
+    if (!elx) { return; }
+    var st = vimSt && vimSt.enabled ? vimSt.session : null;
+    if (!st || st.mode === V.NORMAL) { elx.hidden = true; elx.textContent = ""; return; }
+    elx.hidden = false;
+    var label = V.MODE_LABELS[st.mode] || "";
+    var pending = V.vimPendingLabel(st);
+    elx.textContent = pending ? label + "  " + pending : label;
+  }
+  function vimSyncTextarea() {
+    var inEl = $("in");
+    var st = vimSt.session;
+    inEl.value = st.text;
+    try { inEl.setSelectionRange(st.cursor, st.cursor); } catch (e2) {}
+    autoGrow(inEl);
+    updateSlashMenu(inEl.value);
+    saveDraftSoon(inEl.value);
+    renderVimIndicator();
+  }
+  /** 把 DOM KeyboardEvent 翻译成引擎键；接管返回 true。 */
+  function vimHandleKey(e) {
+    var inEl = $("in");
+    var st0 = vimEnsure();
+    if (!st0) { renderVimIndicator(); return false; }
+    // 外部写入（粘贴、菜单补全）以 DOM 为准对齐引擎，防双写错位
+    if (st0.text !== inEl.value) {
+      st0.text = inEl.value;
+      st0.cursor = inEl.selectionStart != null ? inEl.selectionStart : inEl.value.length;
+    }
+    // 中文 IME 组合中：完全直通（GUI 的硬可用性边界）
+    if (e.isComposing || e.keyCode === 229) { return false; }
+    // 系统剪贴板/全选/撤销重做交给浏览器（GUI 与 TUI 的差异，如实保留）
+    if (e.ctrlKey || e.metaKey) {
+      var k = String(e.key || "").toLowerCase();
+      if (["c", "v", "x", "a", "z", "y"].indexOf(k) >= 0) { return false; }
+    }
+    var ch = null;
+    var key = {};
+    if (e.key === "Escape") { key.escape = true; }
+    else if (e.key === "Enter") { key.return = true; }
+    else if (e.key === "Backspace") { key.backspace = true; }
+    else if (e.key === "Delete") { key.delete = true; }
+    else if (e.key === "ArrowLeft") { key.leftArrow = true; }
+    else if (e.key === "ArrowRight") { key.rightArrow = true; }
+    else if (e.key === "ArrowUp") { key.upArrow = true; }
+    else if (e.key === "ArrowDown") { key.downArrow = true; }
+    else if (e.key === "Tab") { key.tab = true; }
+    else if (e.ctrlKey || e.metaKey) { ch = String(e.key || "").toLowerCase(); key.ctrl = true; }
+    else if (e.key && e.key.length === 1) { ch = e.key; }
+    else { return false; } // Home/Fn 等不接管
+    var r = V.vimApply(st0, ch, key);
+    vimSyncTextarea();
+    if (r.submit) { sendMessage(); }
+    e.preventDefault();
+    return true;
+  }
   function guiUnsupported(name, alt) {
     return "本机无对应服务：/" + name + " 依赖上游云端/账号/订阅服务，MyClaude 本机没有对应服务" +
       (alt ? "\n本机可用替代：" + alt : "");
@@ -6870,88 +6957,6 @@
         updateAtMenu(ta);
         saveDraftSoon(ta.value);
       });
-      /* ---- GUI vim（R4）：复用 src/ui/vim.js 引擎（bundle 时注入为 window.__MCVim）----
-         上游契约：editorMode==="vim" 启用；模式指示 -- INSERT -- / -- VISUAL --（NORMAL 隐藏，
-         见上游 statusLine.hideVimModeIndicator 描述）；双击 esc 清空输入。
-         中文 IME（isComposing/229）与系统剪贴板键直通，不接管。 */
-      var V = window.__MCVim || null;
-      var vimSt = null; // { enabled, session }
-      function vimEnabledNow() {
-        if (!V) { return false; }
-        var prefs = guiPrefs();
-        var cfg = S.config || {};
-        return V.vimEnabled({ editorMode: cfg.editorMode, vimMode: prefs.vimMode != null ? !!prefs.vimMode : !!cfg.vimMode });
-      }
-      function vimEnsure() {
-        var on = vimEnabledNow();
-        if (!vimSt || vimSt.enabled !== on) {
-          vimSt = {
-            enabled: on,
-            session: on ? V.createVimSession({
-              text: ta.value,
-              cursor: ta.value.length,
-              insertRemaps: V.normalizeInsertRemaps((S.config && S.config.vimInsertModeRemaps) || null),
-            }) : null,
-          };
-        }
-        return vimSt.enabled ? vimSt.session : null;
-      }
-      function vimIndicator() { return $("vim-indicator"); }
-      function renderVimIndicator() {
-        var elx = vimIndicator();
-        if (!elx) { return; }
-        var st = vimSt && vimSt.enabled ? vimSt.session : null;
-        if (!st || st.mode === V.NORMAL) { elx.hidden = true; elx.textContent = ""; return; }
-        elx.hidden = false;
-        var label = V.MODE_LABELS[st.mode] || "";
-        var pending = V.vimPendingLabel(st);
-        elx.textContent = pending ? label + "  " + pending : label;
-      }
-      function vimSyncTextarea() {
-        var st = vimSt.session;
-        ta.value = st.text;
-        try { ta.setSelectionRange(st.cursor, st.cursor); } catch (e2) {}
-        autoGrow(ta);
-        updateSlashMenu(ta.value);
-        saveDraftSoon(ta.value);
-        renderVimIndicator();
-      }
-      /** 把 DOM KeyboardEvent 翻译成引擎键；接管返回 true。 */
-      function vimHandleKey(e) {
-        var st0 = vimEnsure();
-        if (!st0) { renderVimIndicator(); return false; }
-        // 外部写入（粘贴、菜单补全）以 DOM 为准对齐引擎，防双写错位
-        if (st0.text !== ta.value) {
-          st0.text = ta.value;
-          st0.cursor = ta.selectionStart != null ? ta.selectionStart : ta.value.length;
-        }
-        // 中文 IME 组合中：完全直通（GUI 的硬可用性边界）
-        if (e.isComposing || e.keyCode === 229) { return false; }
-        // 系统剪贴板/全选/撤销重做交给浏览器（GUI 与 TUI 的差异，如实保留）
-        if (e.ctrlKey || e.metaKey) {
-          var k = String(e.key || "").toLowerCase();
-          if (["c", "v", "x", "a", "z", "y"].indexOf(k) >= 0) { return false; }
-        }
-        var ch = null;
-        var key = {};
-        if (e.key === "Escape") { key.escape = true; }
-        else if (e.key === "Enter") { key.return = true; }
-        else if (e.key === "Backspace") { key.backspace = true; }
-        else if (e.key === "Delete") { key.delete = true; }
-        else if (e.key === "ArrowLeft") { key.leftArrow = true; }
-        else if (e.key === "ArrowRight") { key.rightArrow = true; }
-        else if (e.key === "ArrowUp") { key.upArrow = true; }
-        else if (e.key === "ArrowDown") { key.downArrow = true; }
-        else if (e.key === "Tab") { key.tab = true; }
-        else if (e.ctrlKey || e.metaKey) { ch = String(e.key || "").toLowerCase(); key.ctrl = true; }
-        else if (e.key && e.key.length === 1) { ch = e.key; }
-        else { return false; } // Home/Fn 等不接管
-        var r = V.vimApply(st0, ch, key);
-        vimSyncTextarea();
-        if (r.submit) { sendMessage(); }
-        e.preventDefault();
-        return true;
-      }
       ta.addEventListener("keydown", function (e) {
         if (vimEnabledNow()) { vimEnsure(); }
         // slash/@ 菜单打开时不接管：方向键导航与 Enter 选中归菜单（vim 键位让位）

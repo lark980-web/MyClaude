@@ -103,7 +103,7 @@ try {
   ws.on("message", (raw) => {
     const m = JSON.parse(raw.toString());
     if (m.id && pending.has(m.id)) { pending.get(m.id)(m); pending.delete(m.id); return; }
-    if (m.method === "Runtime.exceptionThrown") { jsErrors++; }
+    if (m.method === "Runtime.exceptionThrown") { jsErrors++; console.error("PAGE-EXC:", JSON.stringify(m.params.exceptionDetails.exception?.description || m.params.exceptionDetails.text || "?").slice(0, 400)); }
   });
   await send("Runtime.enable");
   await send("Page.enable");
@@ -190,6 +190,10 @@ try {
 } catch (e) {
   failures.push("harness: " + e.message);
   console.error("harness error:", e.message);
+  try {
+    const diag = await evalJs('(function(){ return { url: location.href, ls: localStorage.getItem("myclaude.session"), msgs: document.querySelectorAll(".msg").length, tools: document.querySelectorAll(".tool").length, users: document.querySelectorAll(".msg-user").length, rail: document.querySelectorAll(".rail-section, section").length, tocRows: document.querySelectorAll(".toc-row").length, bodyLen: document.body.innerHTML.length, resumeDbg: window.__resumeDbg || null, notices: (function(){ var n = document.querySelectorAll(".notice"); return Array.prototype.map.call(n, function (x) { return (x.textContent || "").slice(0, 80); }); })() }; })()');
+    console.error("DIAG:", JSON.stringify(diag));
+  } catch (e2) { console.error("diag failed:", e2.message); }
 } finally {
   try { ws && ws.close(); } catch {}
   try { chrome && chrome.kill(); } catch {}
