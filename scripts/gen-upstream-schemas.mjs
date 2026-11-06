@@ -140,7 +140,14 @@ function main() {
     if (d.mode === "own") { decisions.push({ name, mode: "own", reason: d.reason || "kept MyClaude contract" }); continue; }
     const built = buildSchema(entry, d);
     if (!built) { decisions.push({ name, mode: "own", reason: "upstream has no static parameters" }); continue; }
-    out[name] = { schema: built.schema, notes: built.notes, source: entry.source, searchHint: entry.searchHint || null };
+    out[name] = {
+      schema: built.schema,
+      notes: built.notes,
+      source: entry.source,
+      searchHint: entry.searchHint || null,
+      // 工具级描述词：上游运行时真实取值（见 docs/tool-schemas-2.1.302.json 的 _meta.descriptions）
+      description: entry.description || null,
+    };
     decisions.push({ name, mode: d.mode, required: built.schema.required, properties: Object.keys(built.schema.properties) });
   }
   const payload = {
@@ -163,6 +170,12 @@ function main() {
     "export function upstreamSchema(name) {",
     "  const e = UPSTREAM_TOOL_SCHEMAS.tools[name];",
     "  return e ? e.schema : null;",
+    "}",
+    "",
+    "/** 取某工具的上游描述词；没有则返回 null（调用方保留自研描述词）。 */",
+    "export function upstreamDescription(name) {",
+    "  const e = UPSTREAM_TOOL_SCHEMAS.tools[name];",
+    "  return e && e.description ? e.description : null;",
     "}",
     "",
     "/** 该工具是否采用/合并了上游契约。 */",

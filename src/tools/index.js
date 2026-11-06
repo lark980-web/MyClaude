@@ -6,7 +6,7 @@ import { createRequire } from "node:module";
 import { startBackground, killTask, readTaskOutput, waitTask, taskSummaries, adoptProcess,
 } from "./tasks.js";
 import { todoWriteTool, webFetchTool } from "./extra.js";
-import { upstreamSchema } from "./upstream-schemas.js";
+import { upstreamSchema, upstreamDescription } from "./upstream-schemas.js";
 import { GIT_TOOLS } from "./git.js";
 import { tmpdir } from "node:os";
 
@@ -939,13 +939,25 @@ export function toolInputSchema(t) {
   return upstreamSchema(t.name) || t.input_schema;
 }
 
+/**
+ * 工具描述词：优先用上游 Claude Code 2.1.302 的真实取值。
+ *
+ * 描述词直接决定模型怎么选工具、用什么参数 —— 上游的文案里有可执行的指引
+ * （例：Grep 说「ALWAYS use Grep for search tasks. NEVER invoke `grep` or `rg` as a Bash command」，
+ * Glob 说「open ended search 请改用 Agent 工具」），自研的一两句概括给不出这些。
+ * 上游没有该工具、或描述词未提取到时，保留 MyClaude 自研描述词。
+ */
+export function toolDescription(t) {
+  return upstreamDescription(t.name) || t.description;
+}
+
 export function toolSchemas(tools) {
   const list = tools || allRegisteredTools();
   return list.map((t) => ({
     type: "function",
     function: {
       name: t.name,
-      description: t.description,
+      description: toolDescription(t),
       parameters: toolInputSchema(t),
     },
   }));
