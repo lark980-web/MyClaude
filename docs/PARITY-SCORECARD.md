@@ -17,9 +17,13 @@
 | 引擎会话连续性 | **✓** | /engine --resume 绑定 + 失效降级 |
 | 编辑器模式 | **✓** | editorMode normal/vim：TUI（ink）与 GUI（textarea）双面；remaps；指示器；双击 esc |
 | 会话面 | **✓** | resume/fork/branch/title/compact/rewind(depth)/checkpoints |
-| 验证基建 | **707/707 单测 + CDP 双回归 27 项 + smoke 46** | 每轮固定六闸门 |
+| 验证基建 | **708/708 单测 + CDP 双回归 27 项 + 真 TTY + smoke 46** | 七闸门（六闸门 + 真 TTY） |
 
 ## 2. 本轮（夜航）增量
+追加轮（时间盒内继续）：turnReminder 逐回合提醒（上游 Aer/Per/Oer 逐字 + waiting 变体）、
+TUI /config 交互面板（enum 循环取值：Editor mode/Output style/autoCompact）、
+真 TTY 验证闸门（winpty）。
+
 
 R1 Esc+Esc 编辑上一条消息（TUI 选择器 + depth rewind）／
 R2 工具契约 12→17（EnterPlanMode/Skill 新工具 + MCP 资源 + ExitPlanMode merge）／

@@ -124,6 +124,9 @@ marketplace、遥测、远程会话）。本机只有前者。所以：
 | R7 输出样式 | ✅ 五态逐字还原（default/Proactive/Concise/Explanatory/Learning） | 15c18e5 |
 | 追加修复 | ✅ vim 机器码作用域 bug（状态行刷新炸 boot 链，会话恢复/目录全挂） | 31c635e |
 
-**最终闸门**：全量 706/706 全绿；CDP 双回归（目录/工具卡 13 项 + GUI vim 14 项）全过；
+**最终闸门（含追加轮）**：全量 708/708 全绿；
+追加轮：turnReminder 逐回合提醒（f4b637c）、真 TTY 闸门（d0226e3）、
+TUI /config 交互面板（8d9d983）—— 上游 /config 本地可达枚举（Editor mode）已全覆盖。
+CDP 双回归（目录/工具卡 13 项 + GUI vim 14 项）全过；
 smoke 46 命令 0 崩溃；verify-features ✓；inspect:prompt 0 error；
 度量：命令面本地相关 100%（TUI+GUI）、工具契约 17。
