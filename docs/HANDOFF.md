@@ -8,7 +8,7 @@
 | 项 | 值 | 怎么核实 |
 |---|---|---|
 | HEAD | 见 `git log --oneline -1` | `git rev-parse --short HEAD` |
-| 测试 | **686** 项（685 绿 + 1 环境性失败，见 §9 的 `C:\.git` 条目） | `npm test` |
+| 测试 | **694** 项（693 绿 + 1 环境性失败，见 §9 的 `C:\.git` 条目） | `npm test` |
 | 提示词 | SYSTEM_PROMPT 13,147 / AUTONOMY_SECTION 3,161 字符（autoRun 时实际 21,773） | `npm run inspect:prompt` |
 | 内置技能 | verify 正文 10,412 字符 | `node -e "import('./src/skills-builtin.js').then(m=>console.log(m.BUILTIN_SKILLS[0].body.length))"` |
 | exe | 构建时间见 `dist\myclaude.exe` | `git status` 与源文件 mtime 比对 |

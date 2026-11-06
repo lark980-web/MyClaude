@@ -8,6 +8,24 @@
 
 ## [Unreleased]
 
+### Fixed（消息目录边缘情况 + 工具卡渲染 —— 阶段 2 第三/四项）
+- **消息目录三个真 bug**（无头 CDP 真浏览器实测证实后修复）：
+  1. `newChat()` 清了 DOM 但不清 `S._replayMsgs`/`S._replayStart` —— 新对话的
+     目录仍列旧会话提问，点击还会经 `loadUntilRendered` 把旧消息**注入新对话**；
+  2. 恢复会话后新发的消息不进目录（全库无 `_replayMsgs.push`），目录冻结在恢复
+     时刻 —— 现在 `addUserMessage` 的 live 路径写入目录数据源并打 `dataset.srcIdx`；
+  3. 「加载更早」走的 `renderReplayRange` 不在 `replayingHistory` 期内，与 live
+     push 相互污染（重复条目 + srcIdx 覆写）—— 重放渲染全程置位标志。
+  另：目录跳过无文本提问（无可渲染气泡的死行）。
+- **工具卡输出截断**（此前全量塞 DOM，长输出把主线程和滚动卡爆）：
+  折叠态加 `⎿` 预览——≤3 行全显、否则 3 行 + `… (+N lines)`（上游
+  `chunk-3qs3b8zt.js` 口径）；展开态正文上限 30000 字符并标注
+  （上游 `BASH_MAX_OUTPUT_LENGTH` 默认值，`chunk-1wyh415r.js DCr=30000`）；
+  卡片展开后预览隐藏、由正文接管。
+- 新增 `test/gui-catalog-toolcard.test.js`（7 项源码断言）+
+  `scripts/verify-catalog-toolcard.mjs`（无头 CDP 端到端 13 项：
+  目录完整性/未加载跳转+闪烁/预览行数与省略文案/30000 截断/新消息进目录/0 JS 异常）。
+
 ### Added（/vim TUI vim 键位 —— 阶段 2 第二项）
 - 新增 `src/ui/vim.js`：vim 编辑引擎纯状态机（无 React/Ink 依赖），语义从上游
   Claude Code 2.1.302 提取还原（`chunk-2n177qz0.js` 状态机与 mn/wn 两张动作表、

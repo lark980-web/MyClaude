@@ -7,12 +7,15 @@ const css = readFileSync(new URL("../src/ui/web/css/styles.css", import.meta.url
 
 // 会话恢复只渐进渲染最后 REPLAY_CHUNK 条；目录若按 DOM 取列表就只剩那一小截。
 // 回归：目录必须按 S._replayMsgs 的数据构建，并为未渲染条目提供加载路径。
+// （live 会话的数据源由 addUserMessage 追加 —— 见 gui-catalog-toolcard.test.js）
 test("the message TOC is built from the full message data, not the rendered DOM", () => {
-  const i = app.indexOf("消息目录");
+  // 锚点用目录构建处的完整注释 ——「消息目录」四字也出现在 addUserMessage 的
+  // live-push 注释里，裸 indexOf 会锚错位置。
+  const i = app.indexOf("消息目录：长对话");
   assert.ok(i > 0, "TOC block present");
-  const block = app.slice(i, i + 2000);
+  const block = app.slice(i, i + 2400);
   assert.ok(block.includes("S._replayMsgs"), "TOC reads the full message array");
-  assert.ok(block.includes(".msg-user"), "still falls back to DOM for live sessions");
+  assert.ok(block.includes(".msg-user"), "still falls back to DOM when no data yet");
 });
 
 test("rendered user nodes carry their source index so the TOC can find them", () => {

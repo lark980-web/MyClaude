@@ -958,6 +958,19 @@ pre.code.wrap { white-space: pre-wrap; overflow-wrap: anywhere; }
 .tool-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--good); flex: none; margin: 0 1px; }
 .tool.failed .tool-dot { background: var(--crit); }
 .tool.failed .tool-time { color: var(--crit); }
+/* 折叠态输出预览（对齐上游 ⎿ 3 行 + "(+N lines)"）；展开后由 .tool-body 全量接管 */
+.tool-preview {
+  display: flex; flex-direction: column; gap: 1px;
+  padding: 1px 14px 6px 27px;
+  cursor: default;
+}
+.tool.open .tool-preview { display: none; }
+.tool-preview-line {
+  font-family: var(--mono); font-size: 12px; line-height: 1.5;
+  color: var(--fg-3);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.tool-preview-line.is-more { color: var(--fg-4); font-style: italic; }
 .tool-body { display: none; border-top: 1px solid var(--line); background: var(--code-bg); }
 .tool.open .tool-body { display: block; animation: fade 180ms var(--ease) both; }
 .tool-sec + .tool-sec { border-top: 1px solid var(--line); }

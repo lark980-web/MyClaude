@@ -477,6 +477,14 @@
     renderUserActions();
     wrap.appendChild(actions);
     root.appendChild(wrap);
+    // 消息目录的数据源：恢复过会话后新发的提问也要进目录，否则目录冻结在恢复时刻
+    // （此前全库没有 _replayMsgs.push，恢复后目录只列旧消息）。重放路径
+    // （renderReplayRange）自带 srcIdx 且在 replayingHistory 期内，这里跳过。
+    if (!S.replayingHistory) {
+      if (!S._replayMsgs) { S._replayMsgs = []; }
+      S._replayMsgs.push({ role: "user", content: text });
+      wrap.dataset.srcIdx = String(S._replayMsgs.length - 1);
+    }
     scrollStream(true);
     return wrap;
   }
@@ -706,8 +714,11 @@
     secOut.appendChild(diffHost);
     bodyDiv.appendChild(secOut);
 
+    // 折叠态输出预览（对齐上游 ⎿ 预览：≤3 行 + "… (+N lines)"），展开后由 .tool-body 接管
+    var preview = el("div", "tool-preview");
     head.addEventListener("click", function () { box.classList.toggle("open"); });
     box.appendChild(head);
+    box.appendChild(preview);
     box.appendChild(bodyDiv);
 
     // Claude 风格连续工具聚合：若前一个兄弟节点已是工具或工具组，自动归入可折叠的「连续操作组」
@@ -728,7 +739,7 @@
     }
 
     scrollStream();
-    return { box: box, time: time, secOut: secOut, preOut: preOut, diffHost: diffHost, name: name, args: args };
+    return { box: box, time: time, secOut: secOut, preOut: preOut, diffHost: diffHost, preview: preview, name: name, args: args };
   }
 
   function createToolGroup(openByDefault) {
@@ -778,6 +789,25 @@
     }
   }
 
+  /** 折叠态预览行：≤3 行全显，否则前 3 行 + 省略数（上游 chunk-3qs3b8zt.js 口径）。 */
+  function toolPreviewLines(text) {
+    var lines = String(text == null ? "" : text).split("\n");
+    if (lines.length <= 3) { return { lines: lines, more: 0 }; }
+    return { lines: lines.slice(0, 3), more: lines.length - 3 };
+  }
+
+  function renderToolPreview(card, text) {
+    if (!card || !card.preview) { return; }
+    clear(card.preview);
+    var p = toolPreviewLines(text);
+    p.lines.forEach(function (l) {
+      card.preview.appendChild(el("div", "tool-preview-line", "⎿ " + l));
+    });
+    if (p.more > 0) {
+      card.preview.appendChild(el("div", "tool-preview-line is-more", "⎿ … (+" + p.more + " lines)"));
+    }
+  }
+
   function finishToolCard(card, ok, elapsed, output, data) {
       if (!card) { return; }
       card.box.classList.remove("running");
@@ -792,7 +822,15 @@
       }
       card.time.textContent = (ok ? "" : "失败 ") + elapsed + "ms";
       var text = String(output == null ? "" : output);
-      card.preOut.textContent = text;
+      renderToolPreview(card, text);
+      // 展开态上限：上游 BASH_MAX_OUTPUT_LENGTH 默认 30000 字符（chunk-1wyh415r.js DCr=30000）。
+      // 服务端发全量、上下文也在服务端裁——这里只管「显示不撑爆 DOM」。
+      var TOOL_OUT_CAP = 30000;
+      var shown = text;
+      if (text.length > TOOL_OUT_CAP) {
+        shown = text.slice(0, TOOL_OUT_CAP) + "\n…（输出共 " + text.length + " 字符，已截断显示前 " + TOOL_OUT_CAP + " 字符）";
+      }
+      card.preOut.textContent = shown;
       card.secOut.style.display = "";
       // 有结构化 diff 时用着色视图替换纯文本
       if (card.diffHost && data && Array.isArray(data.diff) && data.diff.length) {
@@ -3279,6 +3317,7 @@
         if (Array.isArray(m.content)) {
           m.content.forEach(function (pt) { if (pt && pt.type === "text") { raw += (raw ? "\n" : "") + pt.text; } });
         }
+        if (!raw.trim()) { return; } // 无文本无图的提问没有可渲染气泡，目录列了也点不到（死行）
         tocEntries.push({ idx: i, text: raw.replace(/\s+/g, " ").trim().slice(0, 60) });
       });
     } else {
@@ -4522,6 +4561,19 @@
 
   /** 渲染 [from, to) 区间的历史消息，prepend 到当前内容之前。 */
   function renderReplayRange(from, to) {
+    // 全程视为重放：loadEarlierReplay 也会走到这里，而它不在 replayingHistory
+    // 期内 —— 不挡住的话 addUserMessage 会把重放消息重复 push 进 _replayMsgs
+    // 并覆写 srcIdx（目录错乱 + 重复条目）。
+    var prevReplaying = S.replayingHistory;
+    S.replayingHistory = true;
+    try {
+      renderReplayRangeInner(from, to);
+    } finally {
+      S.replayingHistory = prevReplaying;
+    }
+  }
+
+  function renderReplayRangeInner(from, to) {
     var msgs = S._replayMsgs || [];
     var root = $("log");
     // 锚点 = 第一个真实内容节点（.notice 的「加载更早」卡保持在最顶上）
@@ -4793,6 +4845,10 @@
     if (taNow && taNow.value && S.sessionKey) { saveDraftNow(taNow.value); }
     postJSON("/api/reset", {}).then(function () {
       msgSeqCounter = 0;
+      // 重放状态必须跟着清：残留的 _replayMsgs 会让新对话的目录列出旧会话的提问，
+      // 点击还会经 loadUntilRendered 把旧消息注入新对话。
+      S._replayMsgs = [];
+      S._replayStart = 0;
       S.sessionKey = null;
       S.titleOverride = null;
       S.todos = [];

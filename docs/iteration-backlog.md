@@ -261,10 +261,13 @@
   仅剩 `/statusline` 需要新功能。
 - [ ] Esc+Esc 编辑上一条消息（TUI，parity-targets #1）；GUI 等价物（右栏消息编辑，
   parity-targets 末行）。`agent.rewind(text)` 已存在，可复用。
-- [ ] `/statusline` 自定义状态行（TUI，parity-targets #2）—— 首次实现有挂起问题已回滚，
-  需 TTY 交互调试，风险高，排后面。
-- [ ] `/vim` TUI 输入模式（parity-targets #4，低优先、工作量大）。
-- [ ] 消息目录只列出「已渐进渲染」的消息（会话恢复首屏 60 条），长对话目录不完整。
+- [x] ~~`/statusline` 自定义状态行~~ ✅ `1f2d305`：上游 stdin 契约实测 + 真执行外部
+  命令 + 三面接线（TUI/GUI/API）。
+- [x] ~~`/vim` TUI 输入模式~~ ✅ `6179c76`：`src/ui/vim.js` 上游语义还原 + ink-app
+  接线（NORMAL/INSERT/VISUAL、操作符/运动/文本对象/寄存器/撤销/remaps）。
+- [x] ~~消息目录只列出「已渐进渲染」的消息~~ ✅ `111ac9e` 按数据构建；后续轮次
+  清掉边缘情况（newChat 残留重放状态、恢复后新消息不进目录、「加载更早」重复
+  push、无文本死行）——见 `scripts/verify-catalog-toolcard.mjs`。
 
 ### B. 代码质量 / 潜在 BUG
 - [x] ~~app.js 17 个孤立 CR~~ ✅ 第 3 轮统一为 CRLF，实测 bare CR = 0。
