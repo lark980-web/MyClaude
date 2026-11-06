@@ -27,7 +27,8 @@
 ### Added（追加轮 2：真 TTY 验证闸门 —— winpty）
 - ink TUI 此前从未在真实终端验证过（管道回落 plain UI）。新 scripts/verify-tui-tty.mjs
   用 winpty 代理 pty 真渲染：欢迎屏/插入指示器/状态行 vim 标记/真实回合全部确认。
-- 六闸门补全为七项（+真 TTY）。
+- 六闸门补全为七项（+真 TTY）。真 TTY 下 /config 面板帧证据（cfgPanelSeen）——
+  顺带修复 ink-ui.js 漏传 onConfigOpen/onConfigApply（面板在 TTY 中打不开）)。
 
 ### Added（追加轮：输出样式逐回合提醒 turnReminder —— 夜航轮 6）
 - 上游机制（chunk-e0x0xb6d.js）：样式激活时每个用户回合注入 turnReminder；等待后台任务

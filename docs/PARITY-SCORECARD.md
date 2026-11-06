@@ -43,7 +43,7 @@ vim 机器码作用域（boot 链炸）、消息目录三 bug、工具卡截断�
 ## 4. 已知残余差异（如实清单，均为「结构已对齐、细节未深挖」）
 
 1. diff 视图的 TUI 端深层细节（上游逐 hunk 渲染参数）——结构已对齐，待专项抽取。
-2. vim：无宏/搜索/redo（上游动作表未见对应实现）；GUI 输入框 vim 与系统剪贴板键并存。
+2. vim：无宏/搜索/redo（上游动作表未见对应实现）；GUI 输入框 vim 与系统剪贴板键并存；VISUAL 选区高亮已用原生 setSelectionRange 实现（截图 shots/10）。
 3. TaskCreate/TaskGet/TaskUpdate/TaskList（上游跨代理任务列表系统）——本地无对应系统，契约未接入（不假装）。
 4. 输出样式 turnReminder 的 waiting 判定按「有 running 后台任务」近似上游语义。
 

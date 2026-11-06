@@ -1,4 +1,4 @@
-{"welcome":true,"sawTyped":true,"cleanExit":true}
+{"welcome":true,"sawTyped":true,"cfgPanelSeen":true,"cleanExit":true}
 --- tail ---
      "message": "Request not allowed"
    }

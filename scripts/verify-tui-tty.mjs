@@ -43,11 +43,17 @@ try {
   const textAfterX = out.includes("h") && !out.includes("hi");
   // Enter 提交 → 死 provider 快速失败
   await w("\r", 1500);
-  await sleep(1500);
+  await sleep(4000); // 等 busy 释放（busy 时 /config 面板守卫不开）
+  // /config 面板帧证据（↑↓/←→ 循环的 enum 面板）—— 逐字符写（多字符+回车同块会被吞）
+  for (const c of "/config") await w(c, 60);
+  await w("\r", 1500);
+  await sleep(800);
+  const cfgPanelSeen = out.includes("Editor mode");
+  await w("\x1b", 400); // 关面板
   await w("/exit\r", 1200);
   await sleep(800);
   const clean = out.replace(/\x1b\[[0-9;]*[A-Za-z]/g, "");
-  console.log(JSON.stringify({ welcome, sawTyped: clean.includes("hi"), cleanExit: true }));
+  console.log(JSON.stringify({ welcome, sawTyped: clean.includes("hi"), cfgPanelSeen, cleanExit: true }));
   console.log("--- tail ---");
   console.log(clean.split("\n").filter((l) => l.trim()).slice(-10).join("\n").slice(0, 600));
 } finally {
