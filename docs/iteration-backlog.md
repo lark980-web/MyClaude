@@ -82,6 +82,13 @@
 - [x] **中文 token 低估修复**（复刻轮 O）：新增 `src/tokens.js` 统一 CJK 感知估算，
   `agent.js` / `gui-server.js` / `app.js` 三处接入，前端 6 处 + 后端 5 处裸 `chars/4` 清零；
   实测卡片 36 → 123 tok；6 项测试；全量 588/588。
+- [x] **上游权限引擎可达性已查清**（复刻轮 P）：`checkPermissions` 需上游实时 app state
+  （`getAppState().toolPermissionContext` + `permissionLayers`），进程内重建不可靠；
+  **经 B 路线（`/engine`）可达**，实测上游权限层真的拦下了 `rm -rf` 并给出理由。
+  进程内可调的只有只读分类器，已接入。结论见 `docs/upstream-permission-engine.md`。
+- [x] **上游工具描述词接入**（复刻轮 Q）：9/9 核心工具的描述词逐字发给模型；
+  提取法是**运行时调用上游自己的 `description()`**（静态还原要复刻条件分支）；
+  50/96 拿到，未拿到的 46 个是云侧/插件/MCP 与参数化模板。
 - [ ] 待办：剩余 skills、
   builtin-docs.md（89KB）、module-architecture.md、TUI 剩余 /statusline /vim /todo。
 

@@ -26,6 +26,38 @@
   不冒用上游身份、本地命名与插值正确。
 - 全量 **546/546**、`verify-features` ✓、exe 已重打并确认关键子句已编入二进制。
 
+### Investigated（上游完整权限引擎的可达性 —— 有明确结论）
+- **结论**：`checkPermissions` 与上游**实时应用状态**深度耦合，进程内无法可靠调用；
+  它只能通过 **B 路线**（运行上游自己的引擎）触达 —— 而 `/engine` 已经实现。
+- **实测调用链**：`checkPermissions` → `Dhr` → `gje` → `le` → `e.getAppState()`，
+  缺的是 `toolPermissionContext`（含 `permissionLayers` 层序与 `pollEventDeliveryGuard` 改写规则集）。
+  用假上下文能跑通，但判定不等于上游真实行为 —— 拿不可信的判定替换已有逻辑比不改更糟。
+- **B 路线实测验证**：上游引擎在 `--print --permission-mode default` 下，权限层真的拦下命令并给出理由：
+  「blocked by the permission layer before it ran — PowerShell's static validator rejected `rm -rf`」；
+  同一会话里无害命令正常执行。⇒ **MyClaude 的 `/engine` 继承上游完整权限语义**。
+- 分层结论与证据见 `docs/upstream-permission-engine.md`。
+
+### Added（代码层复刻 A 片段第二片：上游工具描述词逐字接入）
+- **上游的工具级描述词**（区别于已接入的属性级）已提取并接入。描述词直接决定模型怎么选工具、
+  传什么参数 —— 自研的一两句概括给不出上游文案里的可执行指引。
+- **方法：运行时调用，不是静态推导。** 上游描述词是程序化构造的（Glob 是 `return cAo(void 0)`，
+  `cAo` 内部还有 `cB()==="default"?ol:er` 分支），静态还原要复刻整套分支语义；
+  **直接调上游自己的 `async description()`** 拿到的是运行时真实取值。
+  新增 `claude-re-2.1.302/tools/spec3/15-extract-descriptions.mjs`（需 Bun）。
+- **还原率**：96 个工具请求 → **50 个拿到**；**本地编码 agent 用到的核心工具 9/9 全拿到**
+  （Read/Write/Edit/Glob/Grep/Bash/TodoWrite/NotebookEdit/WebFetch）。
+  未拿到的 46 个多为云侧/插件/MCP 工具与参数化模板 —— 本机没有对应服务，
+  原因已在 `docs/upstream-tool-descriptions.md` 逐条列明。
+- **9 个工具的描述词现在逐字发给模型**，例：Grep 那 881 字符包含
+  「ALWAYS use Grep for search tasks. NEVER invoke `grep` or `rg` as a Bash command」、
+  「跨行匹配请用 `multiline: true`」；Glob 386 字符含「open ended search 请改用 Agent 工具」。
+- **踩到的坑**：上游工具对象带 **getter 陷阱** —— 读 `.description` 会触发上游权限探针并抛
+  `TelemetrySafeError`（上游在防工具对象被窥探），提取器必须逐属性 try/catch，否则整个脚本崩；
+  常量可能是逗号分隔声明里的一项（`,_o="..."`）；工具对象常在某个 chunk 却由**桶文件**再导出，
+  要反查「谁 import 了它」。
+- 新增 `docs/upstream-tool-descriptions.md`（方法/还原率/未提取原因/复算命令）、
+  `test/upstream-descriptions.test.js`（5 项）；全量 **616/616**、exe 已重打。
+
 ### Added（代码层复刻 A3：上游真实代码参与安全判定）
 - **核心**：MyClaude 的 Bash 权限判定现在会**调用上游 Claude Code 的真实代码** —— 上游 Bash 工具对象
   （`chunk-e0x0xb6d.js` 导出的 `Li`）的 `isReadOnly(input, sessionEnvVarKeys)` 与
