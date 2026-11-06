@@ -8,6 +8,23 @@
 
 ## [Unreleased]
 
+### Added（R1：TUI Esc+Esc 编辑上一条消息 —— 夜航轮 1）
+- `agent.rewind` 加 depth：depth=1 保持 GUI 编辑重发语义（保留并替换最后一条提问）；
+  depth>1 连目标提问一起撤掉，编辑后的文本由调用方重发。
+- `ink-app.js`：双 esc 唤起「编辑上一条消息」选择器（最新在前、↑/↓ 选、Enter 编辑、
+  Esc 取消，busy 时不开）；编辑模式提示行，Enter 重发（展示区同步截断）、Esc 取消。
+- vim 模式：空输入下双 esc 同样唤起选择器（非空时双 esc 仍是上游语义的清空输入）。
+- `main.js` runTui 接 onEditMessage：depth=1 走 reuseLastUser 重放（与 GUI retry 同
+  语义），depth>1 回退后按新提问重跑。
+- **顺带修复两个既有缺陷**：① TUI 从不调用 bridge.user —— 用户消息从未进
+  transcript（上游会显示），Esc+Esc 选择器也无数据可选；② ink-app.js 里 18 处裸
+  `dimColor` 简写（相当于引用未定义变量）—— 真 TTY 下 ink TUI 一渲染就崩，
+  TUI 从未真正工作过。
+- 新增 `test/ink-tui.test.js`：ink 真渲染测试座架（mock stdin/stdout + setRawMode/ref
+  桩 + write 捕获），4 项端到端：双 esc 开选择器/取消与重开/busy 守卫/vim 模式编辑。
+- 已知细节：管道驱动 exe 时 stdin 无 raw mode，ink 拒绝并回落 plain UI —— 管道
+  e2e 测不到 ink 组件，故以本座架为准。
+
 ### Fixed（消息目录边缘情况 + 工具卡渲染 —— 阶段 2 第三/四项）
 - **消息目录三个真 bug**（无头 CDP 真浏览器实测证实后修复）：
   1. `newChat()` 清了 DOM 但不清 `S._replayMsgs`/`S._replayStart` —— 新对话的

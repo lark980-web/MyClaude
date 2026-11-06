@@ -118,7 +118,7 @@ marketplace、遥测、远程会话）。本机只有前者。所以：
 
 | 轮 | 内容 | 验收 |
 |---|---|---|
-| R1 | TUI Esc+Esc 编辑上一条消息（GUI 等价物已存在：内联编辑=分支重跑）。agent.rewind 加 depth；ink-app 加选择器（↑/↓ 选、Enter 进编辑、Esc 取消）；main.js 接 onEditMessage | 引擎单测 + TUI 管道 e2e（选择→编辑→重发） |
+| R1 ✅ | TUI Esc+Esc 编辑上一条消息（GUI 等价物已存在：内联编辑=分支重跑）。agent.rewind 加 depth；ink-app 加选择器（↑/↓ 选、Enter 进编辑、Esc 取消）；main.js 接 onEditMessage | 引擎单测 + TUI 管道 e2e（选择→编辑→重发） |
 | R2 | 工具契约扩容（本地相关 12 → 目标 ~20）：EnterPlanMode/ExitPlanMode、TaskCreate/Get/Update/List、TaskStop、ListMcpResources*/ReadMcpResource*、Skill —— 逐字契约来自 docs/tool-schemas-2.1.302.json，仅接入本地**真实存在**的工具；无本地实现的（LSP/Worktree/Cron/PowerShell）如实不接 | parity-metrics adopted 数上升 + 单测 |
 | R3 | changes-api 测试环境加固：GIT_CEILING_DIRECTORIES 隔离盘根 C:\.git → 全量 694/694 全绿 | npm test 全绿 |
 | R4 | GUI vim 输入模式：复用 src/ui/vim.js（bundle 进 GUI），textarea 键位接线，/vim 在 GUI 真生效；statusline stdin 补上游契约字段 vim.mode | CDP 端到端（NORMAL/INSERT 指示、esc 语义、提交） |

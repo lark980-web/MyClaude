@@ -486,3 +486,43 @@ test("stats report context usage so the UI can draw the ring", async () => {
     await stop(ctx);
   }
 });
+
+// ---- Esc+Esc 编辑上一条消息：rewind 的 depth 语义（R1）----
+// GUI 编辑重发（/api/chat retry）依赖 depth=1 的「保留并替换」语义；
+// TUI 选择更早的消息用 depth>1 的「连目标一起撤掉」语义 —— 调用方重发新文本。
+test("agent.rewind depth: 1 = replace last user, 2+ = drop target too", async () => {
+  const { mkdtempSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  process.env.MYCLAUDE_HOME = process.env.MYCLAUDE_HOME || mkdtempSync(join(tmpdir(), "mc-rewind-"));
+  const { Agent } = await import("../src/agent/agent.js");
+  const a = Object.create(Agent.prototype);
+  a.messages = [
+    { role: "user", content: "q1" },
+    { role: "assistant", content: "a1" },
+    { role: "user", content: "q2" },
+    { role: "assistant", content: "a2" },
+  ];
+  // depth=1：保留最后一条提问并替换文本（GUI retry 语义）
+  const r1 = a.rewind("q2-edited");
+  assert.equal(r1.rewound, 1);
+  assert.deepEqual(a.messages, [
+    { role: "user", content: "q1" },
+    { role: "assistant", content: "a1" },
+    { role: "user", content: "q2-edited" },
+  ]);
+  // depth=2：q1 也被撤掉（重发由调用方负责）
+  a.messages = [
+    { role: "user", content: "q1" },
+    { role: "assistant", content: "a1" },
+    { role: "user", content: "q2" },
+    { role: "assistant", content: "a2" },
+  ];
+  const r2 = a.rewind(undefined, { depth: 2 });
+  assert.equal(r2.rewound, 4, 'q1 在索引 0，连它带后面共 4 条全撤');
+  assert.deepEqual(a.messages, []);
+  // depth 超界：安全返回不动作
+  const r3 = a.rewind(undefined, { depth: 9 });
+  assert.equal(r3.rewound, 0);
+  assert.equal(a.messages.length, 0);
+});

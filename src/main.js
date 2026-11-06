@@ -1525,6 +1525,9 @@ async function runTui({ config, provider, agent, autoSaver }) {
     config,
     getStats: () => ({ turns: agent.turnCount, messages: agent.messages.length }),
     onSubmit: async (text) => {
+      // 上游 TUI 会把用户消息显示在 transcript 里（此前从未进 bridge，
+      // 用户输入提交后就从界面消失；Esc+Esc 选择器也依赖它）。
+      bridge.user(text);
       agent.ui = bridgeUi;
       bridge.setBusy(true);
       const files = pendingAttachments.splice(0);
@@ -1542,6 +1545,7 @@ async function runTui({ config, provider, agent, autoSaver }) {
       }
     },
     onCommand: async (text) => {
+      bridge.user(text); // 命令回显也进 transcript（与上游一致）
       agent.ui = bridgeUi;
       const r = await handleCommand(text, { agent, config, provider, ui: bridgeUi, pendingAttachments, autoSaver });
       bridge.setAttachments(pendingAttachments);
@@ -1568,6 +1572,33 @@ async function runTui({ config, provider, agent, autoSaver }) {
           bridge.setBusy(false);
           bridge.setMode(agent.mode ?? config.permissionMode);
         }
+      }
+    },
+    onEditMessage: async (depth, text) => {
+      // Esc+Esc 编辑重发（上游 parity-targets #1）。depth=1 走 GUI 编辑重发的
+      // 同一语义（保留并替换最后一条提问，重放循环）；depth>1 连目标一起撤掉，
+      // 编辑后的文本作为新提问发来。
+      agent.ui = bridgeUi;
+      bridge.setBusy(true);
+      try {
+        if (depth === 1) {
+          agent.rewind(text);
+          await (config.autoRun
+            ? runWithAutoContinue(agent, { message: "", attachments: [], reuseLastUser: true }, { ui })
+            : agent.run("", { attachments: [], reuseLastUser: true }));
+        } else {
+          const r = agent.rewind(undefined, { depth });
+          bridge.info(`已回退 ${r.rewound} 条消息`);
+          await (config.autoRun
+            ? runWithAutoContinue(agent, { message: text, attachments: [] }, { ui })
+            : agent.run(text, { attachments: [] }));
+        }
+        const compact = await agent.maybeCompact();
+        if (compact) bridge.info(`context compacted (dropped ${compact.dropped} messages)`);
+      } finally {
+        autoSaver?.save();
+        bridge.setBusy(false);
+        bridge.setMode(agent.mode ?? config.permissionMode);
       }
     },
     onExit: () => {

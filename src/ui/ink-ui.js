@@ -5,7 +5,7 @@ import { TuiBridge } from "./tui-bridge.js";
 
 const h = React.createElement;
 
-export function startTui({ config, onSubmit, onCommand, onExit, getStats }) {
+export function startTui({ config, onSubmit, onCommand, onExit, getStats, onEditMessage }) {
   const bridge = new TuiBridge({ config });
 
   const instance = render(
@@ -15,6 +15,7 @@ export function startTui({ config, onSubmit, onCommand, onExit, getStats }) {
       onSubmit,
       onCommand,
       getStats,
+      onEditMessage,
       onExit: () => {
         onExit?.();
         instance.unmount();

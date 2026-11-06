@@ -354,23 +354,39 @@ export class Agent {
    * back. Without that, rewinding left the workspace holding whichever edits
    * the discarded turns had already made.
    */
-  rewind(text, { restoreFiles = false } = {}) {
+  rewind(text, { restoreFiles = false, depth = 1 } = {}) {
     let files = null;
     if (restoreFiles) {
       try { files = this.checkpoints.restoreAll(); } catch { files = null; }
     }
 
-    let lastUser = -1;
+    // 第 depth 条（从最后往前数）用户消息；depth=1 即最后一条。
+    let target = -1;
+    let seen = 0;
     for (let i = this.messages.length - 1; i >= 0; i--) {
-      if (this.messages[i].role === "user") { lastUser = i; break; }
+      if (this.messages[i].role === "user") {
+        seen++;
+        if (seen === depth) { target = i; break; }
+      }
     }
-    if (lastUser < 0) return { rewound: 0, lastUser: null, files };
-    const dropped = this.messages.length - lastUser - 1;
-    this.messages = this.messages.slice(0, lastUser + 1);
-    if (typeof text === "string" && text.trim()) {
-      this.messages[lastUser] = { role: "user", content: text };
+    if (target < 0) return { rewound: 0, lastUser: null, files };
+
+    if (depth === 1) {
+      // 原语义（/rewind 与 GUI 编辑重发共用）：撤掉该提问之后的回合，
+      // 并就地替换提问文本 —— 随后 run("", { reuseLastUser: true }) 重放循环。
+      const dropped = this.messages.length - target - 1;
+      this.messages = this.messages.slice(0, target + 1);
+      if (typeof text === "string" && text.trim()) {
+        this.messages[target] = { role: "user", content: text };
+      }
+      return { rewound: dropped, lastUser: this.messages[target], files };
     }
-    return { rewound: dropped, lastUser: this.messages[lastUser], files };
+
+    // depth > 1（Esc+Esc 选更早的消息）：连这条提问一起撤掉，
+    // 编辑后的文本由调用方作为新提问重新发来，不产生重复。
+    const dropped = this.messages.length - target;
+    this.messages = this.messages.slice(0, target);
+    return { rewound: dropped, lastUser: null, files };
   }
 
   /**

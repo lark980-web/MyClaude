@@ -10,7 +10,7 @@ import { VERSION } from "../version.js";
 import {
   vimEnabled, createVimSession, vimApply, resetVimSession, vimClear,
   normalizeInsertRemaps, visualSelection, vimPendingLabel, MODE_LABELS,
-  NORMAL,
+  NORMAL, INSERT,
 } from "./vim.js";
 
 function ToolArgs({ args, max = 3, width = 72 }) {
@@ -48,8 +48,8 @@ function Welcome({ config }) {
       h(Text, { color: CLAUDE, bold: true }, "Welcome to MyClaude "),
       h(Text, { color: "gray" }, `v${VERSION}`)
     ),
-    h(Text, { color: "gray", dimColor }, `model ${config.model} · mode ${config.permissionMode} · ${process.cwd()}`),
-    h(Text, { color: "gray", dimColor }, "/help for commands, ? for shortcuts")
+    h(Text, { color: "gray", dimColor: true }, `model ${config.model} · mode ${config.permissionMode} · ${process.cwd()}`),
+    h(Text, { color: "gray", dimColor: true }, "/help for commands, ? for shortcuts")
   );
 }
 
@@ -61,7 +61,7 @@ function TodoList({ todos }) {
   return h(
     Box,
     { flexDirection: "column", marginY: 1 },
-    h(Text, { color: "gray", dimColor }, `Todos (${done}/${todos.length})`),
+    h(Text, { color: "gray", dimColor: true }, `Todos (${done}/${todos.length})`),
     ...todos.map((t, i) =>
       h(
         Box,
@@ -111,10 +111,10 @@ function ToolItem({ item, expanded }) {
           Box,
           { flexDirection: "column", paddingLeft: 2 },
           ...shown.map((l, i) =>
-            h(Text, { key: i, color: "gray", dimColor }, `⎿  ${l.length > 160 ? l.slice(0, 157) + "..." : l}`)
+            h(Text, { key: i, color: "gray", dimColor: true }, `⎿  ${l.length > 160 ? l.slice(0, 157) + "..." : l}`)
           ),
           lines.length > shown.length
-            ? h(Text, { color: "gray", dimColor }, `⎿  … +${lines.length - shown.length} lines (ctrl+o)`)
+            ? h(Text, { color: "gray", dimColor: true }, `⎿  … +${lines.length - shown.length} lines (ctrl+o)`)
             : null
         )
       : null
@@ -141,7 +141,7 @@ function Item({ item, expanded }) {
     case "success":
       return h(Text, { color: CLAUDE }, item.text);
     case "info":
-      return h(Text, { color: "gray", dimColor }, item.text);
+      return h(Text, { color: "gray", dimColor: true }, item.text);
     default:
       return h(Text, null, String(item.text ?? ""));
   }
@@ -153,17 +153,17 @@ function StatusLine({ config, busy, stats }) {
   return h(
     Box,
     null,
-    h(Text, { color: "gray", dimColor }, "  "),
+    h(Text, { color: "gray", dimColor: true }, "  "),
     h(Text, { color: "gray" }, config.model),
-    h(Text, { color: "gray", dimColor }, "  ·  "),
+    h(Text, { color: "gray", dimColor: true }, "  ·  "),
     h(Text, { color: modeColor }, mode),
-    h(Text, { color: "gray", dimColor }, "  ·  "),
+    h(Text, { color: "gray", dimColor: true }, "  ·  "),
     h(Text, { color: "gray" }, config.provider),
     vimEnabled(config) ? h(Text, { color: "magenta", dimColor: true }, "  ·  vim") : null,
-    stats?.turns ? h(Text, { color: "gray", dimColor }, `  ·  turn ${stats.turns}`) : null,
-    stats?.messages ? h(Text, { color: "gray", dimColor }, `  ·  ${stats.messages} msg`) : null,
+    stats?.turns ? h(Text, { color: "gray", dimColor: true }, `  ·  turn ${stats.turns}`) : null,
+    stats?.messages ? h(Text, { color: "gray", dimColor: true }, `  ·  ${stats.messages} msg`) : null,
     busy ? h(Text, { color: "yellow" }, "  ·  working…") : null,
-    h(Text, { color: "gray", dimColor }, "  ·  ? for shortcuts")
+    h(Text, { color: "gray", dimColor: true }, "  ·  ? for shortcuts")
   );
 }
 
@@ -190,7 +190,7 @@ function HelpPanel() {
         Box,
         { key: k },
         h(Box, { width: 18 }, h(Text, { color: "gray" }, k)),
-        h(Text, { color: "gray", dimColor }, d)
+        h(Text, { color: "gray", dimColor: true }, d)
       )
     )
   );
@@ -209,7 +209,7 @@ function QuestionPanel({ pending, answer, setAnswer, onSubmit }) {
       Box,
       null,
       h(Text, { bold: true, color: CLAUDE }, `${pending.questions.length > 1 ? `Q${pending.index + 1}/${pending.questions.length} · ` : ""}${q.header}`),
-      h(Text, { color: "gray", dimColor }, "  esc to skip")
+      h(Text, { color: "gray", dimColor: true }, "  esc to skip")
     ),
     h(Box, { marginBottom: 1 }, h(Text, null, q.question)),
     ...opts.map((o, i) => {
@@ -219,13 +219,13 @@ function QuestionPanel({ pending, answer, setAnswer, onSubmit }) {
         { key: i },
         h(Text, { color: picked ? CLAUDE : "gray" }, `${picked ? "●" : "○"} ${i + 1}. `),
         h(Text, { bold: picked }, o.label),
-        h(Text, { color: "gray", dimColor }, ` — ${o.description}`)
+        h(Text, { color: "gray", dimColor: true }, ` — ${o.description}`)
       );
     }),
     h(
       Box,
       { marginTop: 1 },
-      h(Text, { color: "gray", dimColor }, multi ? "comma-separated numbers: " : "number (or text): "),
+      h(Text, { color: "gray", dimColor: true }, multi ? "comma-separated numbers: " : "number (or text): "),
       h(TextInput, {
         value: answer.text || "",
         onChange: (v) => setAnswer({ text: v, selections: [] }),
@@ -240,14 +240,14 @@ function AttachmentBar({ attachments }) {
   return h(
     Box,
     { flexDirection: "column", marginTop: 1 },
-    h(Text, { color: "gray", dimColor }, `Attachments (${attachments.length}) — sent with the next message, /detach to clear`),
+    h(Text, { color: "gray", dimColor: true }, `Attachments (${attachments.length}) — sent with the next message, /detach to clear`),
     ...attachments.map((a, i) =>
       h(
         Box,
         { key: i, paddingLeft: 1 },
         h(Text, { color: CLAUDE }, "● "),
         h(Text, null, a.name || a.path || "file"),
-        h(Text, { color: "gray", dimColor }, `  ${a.kind || "file"}${a.size ? ` · ${Math.max(1, Math.round(a.size / 1024))}KB` : ""}`)
+        h(Text, { color: "gray", dimColor: true }, `  ${a.kind || "file"}${a.size ? ` · ${Math.max(1, Math.round(a.size / 1024))}KB` : ""}`)
       )
     )
   );
@@ -304,7 +304,7 @@ function VimInputView({ text, view, busy }) {
   );
 }
 
-export function App({ bridge, config, onSubmit, onCommand, onExit, getStats, getTodos }) {
+export function App({ bridge, config, onSubmit, onCommand, onExit, getStats, getTodos, onEditMessage }) {
   const { exit } = useApp();
   const [, forceRender] = useState(0);
   const [input, setInput] = useState("");
@@ -319,6 +319,23 @@ export function App({ bridge, config, onSubmit, onCommand, onExit, getStats, get
   const vimOn = vimEnabled(config);
   const vimRef = useRef(null);
   const [vimView, setVimView] = useState({ cursor: 0, mode: "INSERT", pending: "", sel: [] });
+  // Esc+Esc 编辑上一条消息（上游 parity-targets #1）：双 esc 唤起选择器，
+  // 选中后进入编辑模式，Enter 重发（截断其后回合并重跑），Esc 取消。
+  const [picker, setPicker] = useState(null); // { list: [{text, itemIdx, depth}], idx }
+  const [editing, setEditing] = useState(null); // { depth }
+  const escArmRef = useRef(0);
+
+  const openPicker = useCallback(() => {
+    if (bridge.state.busy) return;
+    const users = [];
+    bridge.state.items.forEach((it, i) => {
+      if (it.type === "user" && (it.text || "").trim()) { users.push({ text: it.text, itemIdx: i }); }
+    });
+    if (!users.length) { bridge.info("还没有可编辑的提问"); return; }
+    const list = users.slice(-8).reverse().map((u, k) => ({ ...u, depth: k + 1 }));
+    setEditing(null);
+    setPicker({ list, idx: 0 });
+  }, [bridge]);
 
   useEffect(() => {
     const unsub = bridge.subscribe(() => forceRender((n) => n + 1));
@@ -373,6 +390,30 @@ export function App({ bridge, config, onSubmit, onCommand, onExit, getStats, get
       }
       return;
     }
+    if (picker) {
+      if (key.escape) { setPicker(null); return; }
+      if (key.upArrow) { setPicker((p) => ({ ...p, idx: Math.max(0, p.idx - 1) })); return; }
+      if (key.downArrow) { setPicker((p) => ({ ...p, idx: Math.min(p.list.length - 1, p.idx + 1) })); return; }
+      if (key.return) {
+        const sel = picker.list[picker.idx];
+        setPicker(null);
+        setEditing({ depth: sel.depth });
+        // 展示区截断：被选提问之后的内容随重发由新回合重建
+        bridge.state.items = bridge.state.items.slice(0, sel.itemIdx);
+        bridge.emit();
+        if (vimRef.current) {
+          const st = vimRef.current;
+          st.text = sel.text;
+          st.cursor = st.text.length;
+          st.mode = INSERT;
+          st.count = ""; st.op = null; st.pending = null; st.kind = "v"; st.anchor = st.cursor; st.remapBuf = "";
+          setVimView({ cursor: st.cursor, mode: st.mode, pending: "", sel: [] });
+        }
+        setInput(sel.text);
+        return;
+      }
+      return;
+    }
     if (key.ctrl && ch === "c") {
       if (state.busy) bridge.abort?.();
       else {
@@ -389,6 +430,13 @@ export function App({ bridge, config, onSubmit, onCommand, onExit, getStats, get
     }
     if (key.ctrl && ch === "o") {
       setExpandAll((v) => !v);
+      return;
+    }
+    if (editing && key.escape) {
+      // 编辑模式 Esc = 取消：恢复空输入，回到原模式
+      setEditing(null);
+      if (vimRef.current) { vimRef.current.text = ""; vimRef.current.cursor = 0; }
+      setInput("");
       return;
     }
     if (vimOn) {
@@ -432,12 +480,33 @@ export function App({ bridge, config, onSubmit, onCommand, onExit, getStats, get
       }
       const r = vimApply(st, ch, key);
       paint();
+      // vim NORMAL 且输入为空时，双 esc 打开「编辑上一条消息」选择器；
+      // 输入非空时双 esc 仍是上游语义的清空输入。
+      if (key.escape) {
+        const now = Date.now();
+        if (now - escArmRef.current < 1000 && !st.text) {
+          escArmRef.current = 0;
+          openPicker();
+          return;
+        }
+        escArmRef.current = now;
+      }
       if (r.submit) {
         const value = st.text;
         resetVimSession(st, { text: "", cursor: 0 });
         setVimView({ cursor: 0, mode: st.mode, pending: "", sel: [] });
         setInput("");
         handleSubmit(value);
+      }
+      return;
+    }
+    if (key.escape) {
+      const now = Date.now();
+      if (now - escArmRef.current < 1000) {
+        escArmRef.current = 0;
+        openPicker();
+      } else {
+        escArmRef.current = now;
       }
       return;
     }
@@ -469,6 +538,16 @@ export function App({ bridge, config, onSubmit, onCommand, onExit, getStats, get
     async (value) => {
       const text = value.trim();
       if (!text) return;
+      if (editing) {
+        // Esc+Esc 编辑重发：截断后的历史由 onEditMessage 回退，文本重跑
+        const e = editing;
+        setEditing(null);
+        setInput("");
+        setShowWelcome(false);
+        setShowHelp(false);
+        await onEditMessage?.(e.depth, text);
+        return;
+      }
       setHistory((hh) => [...hh, text]);
       setHistIdx(-1);
       setInput("");
@@ -477,7 +556,7 @@ export function App({ bridge, config, onSubmit, onCommand, onExit, getStats, get
       if (text.startsWith("/")) await onCommand(text);
       else await onSubmit(text);
     },
-    [onCommand, onSubmit]
+    [onCommand, onSubmit, editing, onEditMessage]
   );
 
   const visible = state.items.slice(-80);
@@ -532,6 +611,24 @@ export function App({ bridge, config, onSubmit, onCommand, onExit, getStats, get
       : null,
     question ? h(QuestionPanel, { pending: question, answer: qAnswer, setAnswer: setQAnswer, onSubmit: submitQuestion }) : null,
     showHelp ? h(HelpPanel) : null,
+    picker
+      ? h(
+          Box,
+          { borderStyle: "round", borderColor: CLAUDE, paddingX: 1, marginTop: 1, flexDirection: "column" },
+          h(Text, { bold: true, color: CLAUDE }, "编辑上一条消息（↑/↓ 选择 · Enter 编辑 · Esc 取消）"),
+          ...picker.list.map((it, i) =>
+            h(
+              Box,
+              { key: it.itemIdx },
+              h(Text, { color: i === picker.idx ? CLAUDE : "gray" }, `${i === picker.idx ? "❯ " : "  "}${String(picker.list.length - i).padStart(2, "0")} `),
+              h(Text, { dimColor: i !== picker.idx }, it.text.length > 70 ? it.text.slice(0, 67) + "..." : it.text)
+            )
+          )
+        )
+      : null,
+    editing
+      ? h(Box, null, h(Text, { color: "magenta" }, `  正在编辑倒数第 ${editing.depth} 条提问 — Enter 重发 · Esc 取消`))
+      : null,
     h(
       Box,
       { borderStyle: "round", borderColor: state.busy ? "yellow" : "gray", paddingX: 1, marginTop: 1 },
