@@ -3,7 +3,8 @@ import { findTool, toolSchemas } from "../tools/index.js";
 import { ProviderRouter } from "../providers/router.js";
 import { PermissionEngine, loadMemory } from "./permissions.js";
 import { normalizeMode, isCommonFileCommand, isDestructiveCommand, FILE_EDIT_TOOLS } from "./modes.js";
-import { isAutoApprovable } from "./command-safety.js";
+import { isAutoApprovable, autoApprovalBlockerAsync } from "./command-safety.js";
+import { initUpstreamSafety } from "./upstream-safety.js";
 import { reviewToolCall } from "./auto-review.js";
 import { outputStyleFragment } from "../output-style.js";
 import { SYSTEM_PROMPT, AUTONOMY_SECTION } from "./prompt.js";
@@ -100,6 +101,9 @@ function summarizeTurn(messages) {
 
 export class Agent {
   constructor({ provider, config, ui, tools = toolSchemas(), permissions, sessionKey }) {
+    // 上游判定桥要加载 2433 模块的提取树（首次约 2-4 秒），在构造期就预热，
+    // 免得第一次 Bash 权限判定时用户干等。失败也不影响：桥会退回自研启发式。
+    initUpstreamSafety().catch(() => {});
     this.provider = provider;
     // Wrap the provider so a failing endpoint can fall back to another model.
     // The router owns the active provider; `this.provider` stays the entry point
@@ -488,7 +492,8 @@ export class Agent {
       // a force push, a subshell, an encoded payload, a write into .git.
       // Claude gates the same decision on a shell AST (chunk-41tke5jp.js);
       if (FILE_EDIT_TOOLS.has(toolName)) return true;
-      if (toolName === "Bash" && isAutoApprovable(args && args.command)) return true;
+      // 上游 Claude Code 的真实判定 + MyClaude 自研闸，取更紧的一道（见 command-safety.js）
+      if (toolName === "Bash" && (await autoApprovalBlockerAsync(args && args.command)) === null) return true;
     }
 
     // "auto" is the user saying "do not ask me". A destructive command still

@@ -26,6 +26,28 @@
   不冒用上游身份、本地命名与插值正确。
 - 全量 **546/546**、`verify-features` ✓、exe 已重打并确认关键子句已编入二进制。
 
+### Added（代码层复刻 A3：上游真实代码参与安全判定）
+- **核心**：MyClaude 的 Bash 权限判定现在会**调用上游 Claude Code 的真实代码** —— 上游 Bash 工具对象
+  （`chunk-e0x0xb6d.js` 导出的 `Li`）的 `isReadOnly(input, sessionEnvVarKeys)` 与
+  `notReadOnlyReason(...)`。不再是纯自研正则近似。
+- **为什么走进程内**：提取树是 `bun build --compile` 产物，模块间用 Bun 专有的
+  `import.meta.require(...)` 同步加载 ESM，**Node 26 没有该 API**（实测 `typeof import.meta.require`
+  在 Node 是 undefined、在 Bun 是 function）。所以：
+  - **Bun 运行时（= 打好的 exe，产品实际运行环境）**：进程内直接 import，零额外进程；
+  - **Node（开发模式）**：上游不可用 → 退回自研启发式，并如实标明，不假装上游可用。
+- **踩过的坑（已放弃的方案）**：先做的是「常驻 sidecar + NDJSON」。但实测 stdio 管道句柄
+  **无论怎么 unref 都吊住父进程**（三种 unref 组合各测 5 秒，进程均不退出）—— 会让测试与 CLI
+  永远无法结束。sidecar 因此降级为**测试辅助**（测试自己 spawn/kill），生产路径不用子进程。
+- **语义边界（重要）**：上游 `isReadOnly` 回答的是「有无副作用」，MyClaude 的 acceptEdits 回答的是
+  「在这套模式语义下能否免询问执行」—— **两个不同的问题**。直接拿上游当闸会让 `npm test`、
+  `echo hi > out.txt` 开始弹窗，那是行为回归不是行为对齐。所以默认：自研启发式决定放行与否，
+  **上游判定用于给理由补上权威说法**（附上游原话与具体片段）；
+  想要上游语义原样可设 `MYCLAUDE_UPSTREAM_STRICT=1`。
+- **开关**：`MYCLAUDE_UPSTREAM_SAFETY=off` 关闭上游判定；`MYCLAUDE_UPSTREAM_STRICT=1` 启用严格模式。
+- 新增 `src/agent/upstream-safety.js`、`scripts/upstream-safety-sidecar.mjs`（测试辅助）、
+  `test/upstream-safety-parity.test.js`（7 项，含上游判定的真实断言）。
+- 全量 **611/611**；exe 已重打并在 Bun 下验证上游桥可用。
+
 ### Added（代码层复刻 A 片段：上游工具契约逐字接入）
 - **新增 `scripts/gen-upstream-schemas.mjs` + `src/tools/upstream-schemas.js`**：把上游 2.1.302 的
   工具 `input_schema`（含属性级描述词，AST 级抽取的 85/92）按**逐工具决策表**接入 MyClaude。
