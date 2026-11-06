@@ -1,6 +1,7 @@
 import { estimateTextTokens } from "../tokens.js";
 import { createServer } from "node:http";
 import { spawnSync, exec } from "node:child_process";
+import { engineStatus, runEngineTurn } from "../engines/claude-code.js";
 import { consoleUi } from "./console-ui.js";
 import { runWithAutoContinue } from "../agent/autorun.js";
 import { setAutonomous } from "../tools/extended.js";
@@ -1217,6 +1218,37 @@ async function searchWorkspaceFiles(query = "", limit = 40) {
         const agent = sessions.get(key);
         const reply = (t, extra) => sendJson(res, 200, { ok: true, text: t, ...(extra || {}) });
         try {
+          if (name === "engine") {
+            // 原生 Claude Code 2.1.302 引擎回合：完整 agent（自带工具与会话），
+            // 不是 provider，所以走命令桥而不是 providers/。长跑可达数分钟，
+            // fetch 会一直等；服务端 180s 兜底必须保留——引擎遇上游 5xx 会
+            // 无限重试、自己不会放弃（docs/authentic-claude-code-run.md G6）。
+            const st = engineStatus();
+            if (!st.available) {
+              reply("原生引擎不可用：" + (st.cliOk ? "未找到 bun 运行时" : "未找到提取树入口 " + st.cli) + "。前置条件与复现见 docs/authentic-claude-code-run.md。");
+              return;
+            }
+            if (!arg) {
+              reply("原生引擎可用（cli: " + st.cli + "）\n用法：/engine <提示> —— 用真实 Claude Code 在当前工作区跑一个回合");
+              return;
+            }
+            const r = await runEngineTurn({
+              prompt: arg, model: config.model, baseUrl: config.baseUrl,
+              apiKey: config.apiKey, cwd, timeoutMs: 180_000,
+            });
+            if (!r.ok) {
+              sendJson(res, 200, { ok: false, error: r.timedOut
+                ? "原生引擎超时（180 秒）已终止"
+                : "原生引擎执行失败" + (r.error ? "：" + r.error : "") + (r.stderrTail ? "｜" + String(r.stderrTail).slice(-300) : "") });
+              return;
+            }
+            const body = String(r.result || r.assistantTexts.join("\n\n") || "(无输出)");
+            const tools = r.toolUses.length ? "\n\n工具调用  " + r.toolUses.map((t) => t.name).join(" → ") : "";
+            reply(body + tools + "\n\n— 原生 Claude Code 2.1.302 · 回合 " + (r.numTurns ?? "?") +
+              " · " + (Math.round((r.durationMs || 0) / 100) / 10) + "s · session " + String(r.sessionId || "").slice(0, 8),
+              { engine: { sessionId: r.sessionId, numTurns: r.numTurns, tools: r.toolUses.map((t) => t.name) } });
+            return;
+          }
           if (name === "memory") {
             const sub = (arg.split(/\s+/)[0] || "").toLowerCase();
             if (sub === "add") {

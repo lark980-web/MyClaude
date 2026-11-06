@@ -844,6 +844,33 @@ case "init": {
       ui.info("project memory reloaded");
       return {};
     }
+    case "engine": {
+      // 原生 Claude Code 2.1.302 引擎回合：与内置 agent 并列的另一条执行路径，
+      // 完整 agent 循环（工具/会话/权限都在引擎里），不是 provider。
+      const { engineStatus, runEngineTurn } = await import("./engines/claude-code.js");
+      const st = engineStatus();
+      if (!st.available) {
+        ui.warn("原生引擎不可用：" + (st.cliOk ? "未找到 bun 运行时" : "未找到提取树入口 " + st.cli) + "（docs/authentic-claude-code-run.md）");
+        return {};
+      }
+      if (!arg) {
+        ui.info("原生引擎可用（cli: " + st.cli + "）\n用法：/engine <提示> —— 在当前工作区跑一个真实 Claude Code 回合");
+        return {};
+      }
+      ui.info("原生引擎执行中…（最长 180 秒）");
+      const r = await runEngineTurn({
+        prompt: arg, model: config.model, baseUrl: config.baseUrl,
+        apiKey: config.apiKey, cwd: process.cwd(), timeoutMs: 180_000,
+      });
+      if (!r.ok) {
+        ui.warn(r.timedOut ? "原生引擎超时（180 秒）已终止" : "原生引擎执行失败" + (r.error ? "：" + r.error : ""));
+        return {};
+      }
+      const tools = r.toolUses.length ? "\n工具调用: " + r.toolUses.map((t) => t.name).join(" → ") : "";
+      ui.info(String(r.result || r.assistantTexts.join("\n\n") || "(无输出)") + tools);
+      ui.success("— 原生 Claude Code 2.1.302 · 回合 " + (r.numTurns ?? "?") + " · " + (Math.round((r.durationMs || 0) / 100) / 10) + "s");
+      return {};
+    }
     case "export": {
       // Dump the conversation as Markdown so it can be pasted into a doc or an
       // issue. The GUI has its own export; this is the terminal equivalent.

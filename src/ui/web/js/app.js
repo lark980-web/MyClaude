@@ -6035,7 +6035,8 @@
     { k: "/branch", d: "分叉会话（/fork 别名）", fn: function () { runCommand("/branch"); } },
     { k: "/init", d: "生成 MYCLAUDE.md（/init force 重生成）", fn: function () { runCommand("/init"); } },
     { k: "/clear", d: "新对话（/new 别名）", fn: function () { newChat(); } },
-    { k: "/provider", d: "打开供应商设置", fn: function () { openSettings(); } }
+    { k: "/provider", d: "打开供应商设置", fn: function () { openSettings(); }  },
+    { k: "/engine", d: "原生 Claude Code 引擎（/engine <提示>）", fn: function () { runCommand("/engine"); } }
   ];
 
   /* ------------------------------------------------------------------
@@ -6212,6 +6213,12 @@
     "add-dir": function (arg) { runServerCommand("add-dir", arg); },
     compact: function () { runServerCommand("compact"); },
     rewind: function (arg) { runServerCommand("rewind", arg); },
+    engine: function (arg) {
+      if (!arg) { runServerCommand("engine"); return; }
+      // 引擎回合最长 180 秒，先给一条状态，结果由命令桥回传后显示。
+      addNotice("原生引擎执行中…（最长 180 秒，完成后显示结果）", "info");
+      runServerCommand("engine", arg);
+    },
     fast: function (arg) {
       var v = String(arg || "").trim().toLowerCase();
       var cur = !!(S.config && S.config.fastMode);

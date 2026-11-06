@@ -26,6 +26,24 @@
   不冒用上游身份、本地命名与插值正确。
 - 全量 **546/546**、`verify-features` ✓、exe 已重打并确认关键子句已编入二进制。
 
+### Added（代码层复刻 B 路线落地：原生 Claude Code 引擎并入）
+- **新增 `src/engines/claude-code.js`**：把 claude-re-2.1.302 提取的 2433 模块明文树当作
+  「另一个 agent 内核」驱动 —— spawn `bun B:/~BUN/root/cli` 子进程、prompt 走 stdin
+  （argv 会被 shell 拆错，实测结论）、解析 stream-json 事件流（system/init、assistant、
+  result 三类）、180s 兜底超时（引擎遇上游 5xx 会无限重试，必须外层杀）。
+  它不是 provider：provider 是单轮 LLM 调用，这是一个完整 agent 循环（自带工具/会话/权限），
+  所以接入点是命令桥而非 providers/。
+- **三面接入 `/engine`**：`/api/command` 桥（gui-server，配 config.baseUrl/apiKey/model）、
+  GUI 斜杠命令 + 菜单项（输入区直接 `/engine <提示>`）、TUI 同名命令。
+  环境探测：`MYCLAUDE_ENGINE_BUN` / `MYCLAUDE_ENGINE_CLI` 可覆盖，默认 `~/.bun/bin/bun.exe`
+  + `B:/~BUN/root/cli`（subst 映射）；缺任一则报「引擎不可用」并指向复现文档，不误报为程序错误。
+- **实测（通过 7788 服务）**：`/engine` 回合真实执行 —— 引擎自调 `Read` 工具读 package.json，
+  答「This project is called myclaude version 0.19.0.」、2 回合、自有 session id 回传、HTTP 14.8s。
+- **测试 8 项**：真实事件流夹具解析（今天实际捕获）、假引擎全链路（不依赖 B: 盘）、
+  超时击杀、空 prompt 拒绝、env 修正、三面注册、真引擎 e2e（缺 B:/bun/网关自动跳过）。
+- 全量 **596/596**；期间 11 个 git 工具测试失败，查明为 PATH 环境问题（git 实际在
+  `F:\Tools\Git\cmd`，被陈旧条目挡住），修正 PATH 后全绿 —— 环境事实已记入 HANDOFF §9。
+
 ### Verified（收尾总体检：五道闸门 + 端到端实测全绿）
 - `npm test` **588/588**、`verify-features` ✓、`inspect:prompt` **0 error**、
   `npm run test:smoke` **46 命令 0 崩溃**、exe 比所有源文件新、工作树 0 未提交。
