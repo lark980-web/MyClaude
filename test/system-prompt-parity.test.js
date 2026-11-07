@@ -48,6 +48,8 @@ test("R3 migrated gated sections are present verbatim (upstream plain variants)"
     ["tool_param_json", "must be a single JSON value"],
     ["context_management", "you don't need to wrap up early or hand off mid-task"],
     ["delivering_work", "don't quietly narrow, widen, or transform"],
+    ["pronouns", "never infer pronouns from a name"],
+    ["overcorrection", "Avoid unnecessary or excessive self-correction"],
   ];
   for (const [name, clause] of clauses) {
     assert.ok(SYSTEM_PROMPT.includes(clause), "missing " + name + " clause: " + clause);
