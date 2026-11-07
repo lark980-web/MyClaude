@@ -11,7 +11,7 @@
 |---|---|---|
 | HEAD | 见 `git log --oneline -1` | `git rev-parse --short HEAD` |
 | 测试 | **717** 项，全绿（测于 2026-11-07 via `npm run gate:fast`；高水位基线在 test/gate-metrics.json） | `npm run gate:fast` |
-| 提示词 | SYSTEM_PROMPT 19,783 常量（迁移 5 段后）；组装现测 autoRun=false **22,919** / autoRun=true **26,082**，18/19 段，0 error | `npm run inspect:prompt`（测于 2026-11-07） |
+| 提示词 | SYSTEM_PROMPT 21,391 常量（7 段全部迁移）；组装现测 autoRun=false **24,527** / autoRun=true **27,690**，19/20 段，0 error | `npm run inspect:prompt`（测于 2026-11-07） |
 | 内置技能 | verify 正文 10,412 字符 | `node -e "import('./src/skills-builtin.js').then(m=>console.log(m.BUILTIN_SKILLS[0].body.length))"` |
 | exe | 构建时间见 `dist\myclaude.exe` | `git status` 与源文件 mtime 比对 |
 | 服务 | `--gui --no-open` 在 7788 | `Get-NetTCPConnection -LocalPort 7788` |
