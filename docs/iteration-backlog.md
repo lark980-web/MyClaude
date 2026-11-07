@@ -1,5 +1,12 @@
 # 迭代待办清单（长目标：逐一修正 BUG / 未完成功能 / 样式）
 
+## 基建轮 R1（2026-11-07）：闸门接线（已完成，详录见 docs/adr.md）
+
+- [x] `npm run gate:fast` 三链（单测[高水位]→提示词→marker），基线 **717** 落 test/gate-metrics.json。
+- [x] `npm run gate:full` 链接线：build 在 smoke 前；catalog/vim CDP + 真 TTY（winpty PATH 由 gate.mjs 注入，单测反验证 9/9）。
+- [x] 命令覆盖唯一名口径：133 注册→108 唯一/本地 62/排除 46；SCORECARD、HANDOFF 数字已换现测值。
+- [ ] **新发现（不属 R1，下轮处置）**：`verify-catalog-toolcard.mjs` 14/14 检查全 ok 但收尾 `rmSync` 临时 Chrome 目录遇 EPERM（杀软锁）exit 1 → gate:full 在本机必红。修法：清理加 retry/maxRetries 或容忍失败（属该脚本内部逻辑，未动）。
+
 > 目标：继续迭代，逐一修正「功能不完善、有 BUG、功能未完成、样式设计不合理」。
 > 本文件每轮更新：新增发现、划掉已完成、记录验证证据。
 > 起始：2026-11-05 00:30（Asia/Shanghai），计划约 07:00 收尾。

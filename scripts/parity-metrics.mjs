@@ -2,7 +2,8 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { pathToFileURL } from "node:url";
+import { pathToFileURL, fileURLToPath } from "node:url";
+import { commandCoverage } from "./command-coverage.mjs";
 
 /**
  * 复刻度���度量 —— 数字全部现测，不手抄。
@@ -45,7 +46,7 @@ function upstreamBuiltinCommands() {
   }
 }
 
-const ROOT = new URL("..", import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1");
+const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const read = (p) => readFileSync(join(ROOT, p), "utf8");
 
 const main = read("src/main.js");
@@ -64,27 +65,7 @@ const out = {};
 out.upstream = { available: false };
 const builtin = upstreamBuiltinCommands();
 if (builtin && builtin.length) {
-  const local = builtin.filter((c) => !CLOUD.has(c));
-  const tuiHit = local.filter((c) => tuiSet.has(c));
-  const guiHit = local.filter((c) => guiSet.has(c));
-  const tuiAll = builtin.filter((c) => tuiSet.has(c));
-  const guiAll = builtin.filter((c) => guiSet.has(c));
-  out.upstream = {
-    available: true,
-    builtinCommands: builtin.length,
-    localCommands: local.length,
-    excluded: builtin.filter((c) => CLOUD.has(c)),
-    tuiCovered: tuiHit.length,
-    guiCovered: guiHit.length,
-    tuiPct: Math.round((tuiHit.length / local.length) * 100),
-    guiPct: Math.round((guiHit.length / local.length) * 100),
-    tuiAllCovered: tuiAll.length,
-    guiAllCovered: guiAll.length,
-    tuiAllPct: Math.round((tuiAll.length / builtin.length) * 100),
-    guiAllPct: Math.round((guiAll.length / builtin.length) * 100),
-    tuiMissing: local.filter((c) => !tuiSet.has(c)),
-    guiMissing: local.filter((c) => !guiSet.has(c)),
-  };
+  out.upstream = commandCoverage(builtin, CLOUD, tuiSet, guiSet);
 }
 
 // 工具契约

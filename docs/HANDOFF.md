@@ -3,20 +3,21 @@
 > 目的：让任何新的会话（或换了模型之后的会话）能在 5 分钟内准确接手，
 > 不重复已做的事、不误判当前状态。**本文档中的所有状态都标注了核实方式。**
 
+> **接手先读 `docs/EXECUTION-PLAN.md`（v2 轮次制）**：五条铁律 → §1.1 六步启动仪式 → §8 状态行取任务 → 按轮次卡执行。每卡自包含（目标/输入锚/步骤/验收/禁止），gate 定红绿，状态 = §8 行 + git + gate-metrics，不依赖任何会话记忆——换模型不影响执行。
+
 ## 1. 现在是什么状态
 
 | 项 | 值 | 怎么核实 |
 |---|---|---|
 | HEAD | 见 `git log --oneline -1` | `git rev-parse --short HEAD` |
-| 测试 | **704** 项，全绿（R3 起 changes-api 已与盘根 `C:\.git` 解耦） | `npm test` |
+| 测试 | **717** 项，全绿（测于 2026-11-07 via `npm run gate:fast`；高水位基线在 test/gate-metrics.json） | `npm run gate:fast` |
 | 提示词 | SYSTEM_PROMPT 13,147 / AUTONOMY_SECTION 3,161 字符（autoRun 时实际 21,773） | `npm run inspect:prompt` |
 | 内置技能 | verify 正文 10,412 字符 | `node -e "import('./src/skills-builtin.js').then(m=>console.log(m.BUILTIN_SKILLS[0].body.length))"` |
 | exe | 构建时间见 `dist\myclaude.exe` | `git status` 与源文件 mtime 比对 |
 | 服务 | `--gui --no-open` 在 7788 | `Get-NetTCPConnection -LocalPort 7788` |
 | 端到端 | 真发一条消息能答（实测「2+3」→「5」） | 浏览器里发一句话 |
 
-**每次改动后必须做的三件事**：`npm test` → `node scripts/inspect-prompt.mjs` → `node scripts/build-exe.mjs`。
-exe 不重打，双击启动的还是旧代码。
+**每次改动后**：`npm run gate:fast`（单测[趋势断言] + 提示词体检 + 功能 marker，一条跑完）；改了 src/ 再 `npm run build:exe`——exe 不重打，双击启动的还是旧代码；轮末涉 UI/构建跑 `npm run gate:full`。
 
 ## 2. 已经做完的（有提交可查）
 
@@ -74,17 +75,17 @@ git log --oneline -6          # 看最近做了什么
 ```
 
 然后读 `docs/iteration-backlog.md` 的最后一节（最新轮次在最上面），按其中未打勾项继续。
-## 7. 五道验证闸门（收尾时全绿）
+## 7. 验证闸门（R1 起一条链）
 
-| 闸门 | 命令 | 通过标准 |
+| 闸门 | 命令 | 内容 |
 |---|---|---|
-| 单元/集成测试 | `npm test` | 588/588 |
-| 产物完整性 | `node scripts/verify-features.mjs` | 输出「功能完整性 ✓」 |
-| 提示词体检 | `npm run inspect:prompt` | 0 error（七类检查） |
-| 构建产物闸门 | `npm run test:smoke` | 46 条命令 0 崩溃（`/exit` 无输出属预期） |
-| 端到端 | 浏览器发一句话 | 有回复、无错误条、busy 释放 |
+| **gate:fast**（每轮必经） | `npm run gate:fast` | 单测（高水位断言，回退即红）→ 提示词体检（errors=0）→ verify-features marker |
+| **gate:full**（轮末，涉 UI/构建时） | `npm run gate:full` | fast + build:embed/exe → smoke → 目录/工具卡 CDP → GUI vim CDP → 真 TTY |
 
-**注意**：`npm test` 的 glob 是 `test/*.test.js`，`*.smoke.js` 需要单独跑 —— 那条曾经写了却从没执行过。
+- 证据：每次运行全量日志落 `.local/gate/<runId>/`；基线 `test/gate-metrics.json` 随仓库提交。
+- **跳过 gate = 必须改 package.json**——跳过本身留下证据。
+- 反向验证由 test/gate.test.js 锁死：marker 缺失/测试数回退/基线损坏/缺脚本/prompt error 全部红。
+- 注意：TTY 步依赖 winpty（Git Bash 自带，当前不在 PATH——需从 Git 的 usr\bin 目录运行或补 PATH）。
 
 ## 8. 这一系列改动留下的设计决定
 
