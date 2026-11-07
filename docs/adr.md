@@ -22,3 +22,9 @@
 - vim-cdp 未执行到（链在 catalog 处停）；单跑留待修完 catalog 清理后。
 - **TTY 单独验证通过**：winpty 在 F:/Tools/Git/usr/bin（不在 PATH），gate.mjs 已按 `MYCLAUDE_GATE_WINPTY_DIR` 或默认路径为 tty 步注入 PATH；真 pty 四项 {welcome:true, sawTyped:true, cfgPanelSeen:true, cleanExit:true}。注意 TTY 脚本自身全 false 也 exit 0——gate.mjs 的行为断言补住了这个洞（不改脚本内部逻辑）。
 - **已知竞态**：gate:full 先 build-exe 再 TTY，杀软可能瞬时锁新 exe（实测发生一次，重试即过）——full 链偶发红属环境，重跑前先确认无 myclaude 进程残留。
+
+## R1 补遗 + R2（2026-11-07）
+
+- **R1 补遗**：package.json 的 gate:fast/gate:full 在首次提交后被并发进程还原（HEAD 与磁盘均无），`npm run gate:fast` 一度不存在。已补回并单独提交（1890042），npm 实测三步绿。教训再证 HANDOFF §4.7：改完尽快 commit，多文件拆两次提交也要每次立即提交。
+- **R2 完成**：锚验通过（v2-full 030d9f7e4ed0 / dynamic-sections c042647072e2）；从 _assembly-fn.txt 枚举 24 个 mm() 注册 − 7 实验段 = 17 行为段注册（ffr 与 env_info 段名全为插值/变量，拆分后 18 行）写入 docs/prompt-gated-eval.md；system-prompt-parity.test.js 删除过期 10,707 数字密度断言的旧锚（改为区间断言），新增两条：①v2-full sha256 前 12 位锚（上游一动即红，红=重跑 R2）②评估表 18 行无空白机检。parity 12/12、gate:fast 全绿。
+- **R2 判定结果**：迁移 5（task_continuity / tool_param_json / context_management / act_dont_rederive / delivering_work_max）+ 部分 1（session_guidance 静态子句）+ 不迁移 8 + 不可得 4。R3 依此落地，先补抽 delivering_work_max 的 plain 变体 Hfr。

@@ -4,6 +4,8 @@ import { SYSTEM_PROMPT, AUTONOMY_SECTION } from "../src/agent/prompt.js";
 import { Agent } from "../src/agent/agent.js";
 import { toolSchemas } from "../src/tools/index.js";
 import { readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync } from "node:fs";
 
 test("system prompt follows the upstream six-section structure", () => {
   for (const h of ["# System", "# Doing tasks", "# Executing actions with care", "# Using your tools", "# Tone and style"]) {
@@ -15,7 +17,26 @@ test("system prompt follows the upstream six-section structure", () => {
   assert.ok(SYSTEM_PROMPT.includes("# Delegating with Task"), "delegation guidance, adapted from the orchestrator prompt");
 });
 
-test("prompt density matches upstream (10707 chars)", () => {
+test("ground truth anchor: upstream v2-full prompt unchanged since R2 evaluation", () => {
+  const p = "E:/WorkSpaces/Test09/claude-re-2.1.302/04-prompts/system-prompt-v2-full.md";
+  if (!existsSync(p)) return; // upstream tree absent (e.g. CI) — anchor unverifiable, skip silently
+  const h = createHash("sha256").update(readFileSync(p)).digest("hex").slice(0, 12);
+  assert.equal(h, "030d9f7e4ed0", "upstream ground truth changed — re-run R2 evaluation (docs/prompt-gated-eval.md)");
+});
+
+test("gated-section evaluation table is complete (18 rows, no blanks)", () => {
+  const p = new URL("../docs/prompt-gated-eval.md", import.meta.url);
+  if (!existsSync(p)) return;
+  const md = readFileSync(p, "utf8");
+  const rows = md.match(/^\| \d+ \|/gm) || [];
+  assert.equal(rows.length, 18, "eval table must have exactly 18 numbered rows, got " + rows.length);
+  for (const verdict of ["迁移", "不迁移", "不可得", "部分迁移"]) {
+    assert.ok(md.includes(verdict), "verdict vocabulary present: " + verdict);
+  }
+  assert.ok(!/\| {5,}\|/.test(md), "eval table has blank cells");
+});
+
+test("prompt density in a band around the upstream six-section core", () => {
   assert.ok(SYSTEM_PROMPT.length >= 9000, "too thin: " + SYSTEM_PROMPT.length);
   assert.ok(SYSTEM_PROMPT.length <= 14000, "bloated: " + SYSTEM_PROMPT.length);
 });
