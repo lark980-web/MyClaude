@@ -7,8 +7,8 @@
 
 | 维度 | 占比 | 口径 |
 |---|---|---|
-| 命令面（TUI） | **100%** | 唯一名口径：上游 133 注册 → 108 唯一命令，本地相关 62，TUI 62/62（测于 2026-11-07，`node scripts/parity-metrics.mjs --json`） |
-| 命令面（GUI） | **100%** | 同口径，GUI 62/62 |
+| 命令面（TUI） | **97%** | R4 分母重推后真数：本地相关 64（回收 restart/theme），TUI 62/64，缺 /theme /restart（测于 2026-11-07 via node scripts/parity-metrics.mjs --json；判定依据 docs/command-denominator.md） |
+| 命令面（GUI） | **98%** | 同口径，GUI 63/64，缺 /restart（GUI 已有 /theme） |
 | 工具契约 | **17/17 可对齐项 = 100%** | 上游 96 条目中 79 个为云侧/生态/模板（不可达）；本地 17 个工具全部逐字采用上游 description+schema |
 | 输出样式 | **5/5 = 100%** | default/Proactive/Concise/Explanatory/Learning 逐字（含 turnReminder/waitingTurnReminder） |
 | 系统提示词 | **六段结构 ✓** | 13,147 字符；高价值子句逐字对照（system-prompt-parity 测试锁定） |
@@ -36,7 +36,7 @@ vim 机器码作用域（boot 链炸）、消息目录三 bug、工具卡截断�
 
 ## 3. 物理不可达（不计入分母，逐项有据）
 
-- 命令 46 个（唯一名；旧口径 52 含 6 个重复注册）：云侧/账号/生态（login/remote-env/plugins-market/usage-credits 等）——本机无服务端。**46 个判定本身待 R4 重推。**
+- 命令 44 个（R4 重推：回收 restart/theme 为本地可实现；brief 改判上游实验门控默认关闭；feedback/bug/stickers 维持排除，理由修正。逐条证据见 docs/command-denominator.md）。
 - 工具 79 个：云侧/模板/stub（RemoteTrigger/DesignSync/self_hosted_runner_* 等）。
 - 上游服务端行为：遥测、远端会话、marketplace 分发。
 

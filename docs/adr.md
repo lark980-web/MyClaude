@@ -37,3 +37,12 @@
 - **验收**：inspect:prompt 0 error（size 预算 24,000→28,000，因迁移后 autoRun 组装 26,082 与上游 v2-full 24,476 同量级）；parity 新增 5 条逐字子句断言 + 密度区间 12,000–22,000；gate:fast 三步全绿。
 - **并发观察**：迁移脚本首跑锚点失配——R3 开头读到的 prompt.js 是并发会话的瞬时状态（Using your tools 长版），git 对照后以 HEAD 为准重跑成功。再证：**锚定写入前先 git status 校验基线**。
 - **延期项**：pronouns(357B) / overcorrection(1245B) 已定位未迁移（一轮一任务），下一轮落地。
+
+## R4 分母重推（2026-11-07，测于 via node scripts/parity-metrics.mjs --json）
+
+- **六疑点逐条判定**（证据全部来自上游源码 chunk+偏移，见 docs/command-denominator.md）：**restart 回收**（纯本地：重启进程保留会话，TTY 门控是环境检测非云侧）；**theme 回收**（纯本地 TUI 主题；MyClaude GUI 已实现 /theme，TUI 缺——真实缺口此前被排除名单掩盖）；brief 维持排除但理由修正（上游实验门控 tengu_kairos_brief_config 默认关闭，非云侧）；feedback/bug/stickers 维持排除（理由修正为准确表述）。
+- **真数**：本地相关 62→64，排除 46→44；TUI 62/64=**97%**、GUI 63/64=**98%**。**headline 从虚高的 100% 降为真数——降下来的这天起才可信。**
+- **防回退**：test/command-denominator.test.js 断言 restart/theme 不得回到排除集 + 六疑点行齐全。
+- **暴露的真实缺口**：TUI /restart、TUI /theme、GUI /restart——实现属后续轮次，不在度量轮内。
+- **执行事故（小）**：回收 theme 时两次 edit 锚错（多行假设错、相邻项猜错），grep 实际文本后修正——再证写入前先读实际文本。
+- **gate 环境噪音（R4 验收期间两次）**：第 1 次红在 fork.test.js（EPERM rename 临时文件，杀软锁）；第 2 次红在 anthropic-provider-e2e（exitCode 0xC0000409 原生层崩溃）；**两案单独跑均绿**，第 3 次全量 gate 全绿。判定：环境瞬时问题（HANDOFF §4.2 已知模式），非代码回归。处置规则：gate 红且怀疑环境噪音时，先单跑失败用例复验，单跑绿 + 重跑全量绿 = 通过（全程留 .local/gate 日志为证）。**gate 本身不加 skip——环境噪音靠复验处置，不靠放宽闸门。**

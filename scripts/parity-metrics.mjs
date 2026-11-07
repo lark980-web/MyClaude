@@ -58,8 +58,9 @@ const eEnd = app.indexOf("function runServerCommand");
 const guiExtra = new Set([...app.slice(eStart, eEnd).matchAll(/^\s{4}"?([a-z][a-z0-9-]*)"?\s*:\s*function/gm)].map((m) => m[1]));
 const guiSet = new Set([...guiMenu, ...guiExtra]);
 
-// 上游云侧/账号/生态类命令 —— 本机没有对应服务，不计入「本地相关」分母
-const CLOUD = new Set(["install-github-app","install-slack-app","login","logout","setup-bedrock","setup-vertex","claim-credit","chrome","desktop","mobile","radio","stickers","theme","powerup","passes","pro-trial-expired","usage-credits","extra-usage","limit-reset","rate-limit-options","privacy-settings","remote-control","remote-env","web-setup","cloud-plugins","design-login","design-consent","design-revoke","feedback","bug","ide","wellbeing","breaks","downtime","low-priority","brief","btw","autofix-pr","copy","restart","teleport","ultraplan","voice","ios","android","__remote-workflow","workflow-launch-exec","workflows","loops","schedule"]);
+// 分母排除表（R4 重推后 44 项）：云侧/账号/生态 + 上游实验门控默认关闭的命令。
+// restart/theme 已于 R4 回收（本地可实现，见 docs/command-denominator.md）；brief 维持排除但理由修正为实验门控。
+const CLOUD = new Set(["install-github-app","install-slack-app","login","logout","setup-bedrock","setup-vertex","claim-credit","chrome","desktop","mobile","radio","stickers","powerup","passes","pro-trial-expired","usage-credits","extra-usage","limit-reset","rate-limit-options","privacy-settings","remote-control","remote-env","web-setup","cloud-plugins","design-login","design-consent","design-revoke","feedback","bug","ide","wellbeing","breaks","downtime","low-priority","brief","btw","autofix-pr","copy","teleport","ultraplan","voice","ios","android","__remote-workflow","workflow-launch-exec","workflows","loops","schedule"]);
 
 const out = {};
 out.upstream = { available: false };
