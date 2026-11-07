@@ -2,15 +2,15 @@
   "schemaVersion": 1,
   "baseline": {
     "testCount": 722,
-    "commit": "5d3888ec8832c1ce845963f2ea3230be2ce8c202",
-    "at": "2026-11-07T07:40:42.083Z"
+    "commit": "344ef877a01afae8fdf6170b2f4e33bf9d2b76ba",
+    "at": "2026-11-07T08:02:53.415Z"
   },
   "latest": {
-    "runId": "2026-11-07T07-39-31-083Z",
+    "runId": "2026-11-07T08-01-30-855Z",
     "mode": "fast",
-    "startedAt": "2026-11-07T07:39:31.086Z",
-    "commit": "5d3888ec8832c1ce845963f2ea3230be2ce8c202",
-    "dirty": "M docs/EXECUTION-PLAN.md\n M docs/adr.md",
+    "startedAt": "2026-11-07T08:01:30.860Z",
+    "commit": "344ef877a01afae8fdf6170b2f4e33bf9d2b76ba",
+    "dirty": "M docs/EXECUTION-PLAN.md\n M docs/adr.md\n M scripts/gate.mjs\n M test/gate-metrics.json\n M test/subagent-parallel.test.js",
     "status": "passed",
     "steps": [
       {
@@ -18,11 +18,13 @@
         "args": [
           "--test",
           "--test-reporter=tap",
+          "--test-concurrency",
+          "4",
           "test/*.test.js"
         ],
         "exitCode": 0,
         "signal": null,
-        "logPath": "E:\\WorkSpaces\\Test09\\MyClaude\\.local\\gate\\2026-11-07T07-39-31-083Z\\tests.log"
+        "logPath": "E:\\WorkSpaces\\Test09\\MyClaude\\.local\\gate\\2026-11-07T08-01-30-855Z\\tests.log"
       },
       {
         "name": "prompt",
@@ -32,7 +34,7 @@
         ],
         "exitCode": 0,
         "signal": null,
-        "logPath": "E:\\WorkSpaces\\Test09\\MyClaude\\.local\\gate\\2026-11-07T07-39-31-083Z\\prompt.log"
+        "logPath": "E:\\WorkSpaces\\Test09\\MyClaude\\.local\\gate\\2026-11-07T08-01-30-855Z\\prompt.log"
       },
       {
         "name": "features",
@@ -41,10 +43,10 @@
         ],
         "exitCode": 0,
         "signal": null,
-        "logPath": "E:\\WorkSpaces\\Test09\\MyClaude\\.local\\gate\\2026-11-07T07-39-31-083Z\\features.log"
+        "logPath": "E:\\WorkSpaces\\Test09\\MyClaude\\.local\\gate\\2026-11-07T08-01-30-855Z\\features.log"
       }
     ],
     "testCount": 722,
-    "finishedAt": "2026-11-07T07:40:42.083Z"
+    "finishedAt": "2026-11-07T08:02:53.415Z"
   }
 }

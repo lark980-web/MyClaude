@@ -19,7 +19,7 @@ export function checkCount(count, baseline) {
 }
 export function gateSteps(full) {
   const steps = [
-    ['tests', ['--test','--test-reporter=tap','test/*.test.js']],
+    ['tests', ['--test','--test-reporter=tap','--test-concurrency', String(process.env.MYCLAUDE_GATE_TEST_CONCURRENCY || 4), 'test/*.test.js']],
     ['prompt', ['scripts/inspect-prompt.mjs','--json']],
     ['features', ['scripts/verify-features.mjs']],
   ];

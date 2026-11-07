@@ -58,3 +58,18 @@
 
 - **R5.5-a（10 分钟验证）**：MyClaude modes.js 的 dontAsk 描述"不再提问 / 需要确认的一律拒绝"——与上游 IBt 的 deny 语义**一致**，R5 标记的高风险差异点排除。新发现待验证点：MyClaude bypassPermissions 保留 deny 规则（"跳过确认（deny 规则仍生效）"），上游 IBt 字面为全放行——bypass 模式下 deny 规则是否仍评估需进一步证据，已记入 permissions.md 对照表。
 - **R6**：extensions.md 从 1,183 字节重写为带证据规格——hooks 配置结构（matcher+hooks[]）、**matcher 仅匹配工具名不能按命令内容过滤**（上游自述）、命令变量 CLAUDE_* 白名单、PreToolUse 阻塞语义、plugin.json 位置（.claude-plugin/）与组件目录、MCP 双传输 zod schema（stdio: command+args / http: url+headers+oauth）、OAuth token exchange 与两种 secret 传递。未尽 4 项如实列出。skills 引用 07-assets/skills.md 不重做。
+
+## R7 运行时观察（2026-11-07，部分完成——凭据受限）
+
+- **已完成**：三次真实上游 CLI 转录落盘（凭据失败三路径：假 key / OAuth 过期 / 本地代理格式不符）；观察到 synthetic 响应路径的稳定行为（`model:"<synthetic>"`、`subtype:"success"`+`is_error:true` 微妙组合——subtype 说 success、is_error 说错，翻译器必须采信后者）；**翻译对照验收 3/3 分类正确、0 unhandled、sessionId/isError 正确捕获**。
+- **既有真模型证据引用**：HANDOFF §11（11-06 带凭据实测）的完整 SSE 事件序 + 思考面板 + 工具卡渲染，覆盖 tool_use/tool_result 往返。
+- **阻塞声明（如实）**：真模型工具调用会话本机当前不可得（OAuth 过期 + 无 key + 代理 OpenAI 格式）。解除条件：上游 CLI /login 或提供 Anthropic 格式端点。**不以 synthetic 会话冒充真模型观察。**
+- **执行事故（小）**：录制脚本三处笔误连改（导入路径/变量名）——每处都是跑一次才暴露，脚本类产物首跑前应 node --check。
+
+## R7 附带：修好一个空转假绿的并发测试（2026-11-07）
+
+- **发现路径**：gate 连续四次红在四个不同测试（fork EPERM / e2e 0xC0000409 崩溃 / subagent-parallel 计时 / turn-files 崩溃），单跑均绿——表面是环境噪音，深挖 subagent-parallel 时发现**旧断言从未验证过并发**。
+- **根因**：测试 mock 的 isSubAgent 判定用 `String(system).includes("Sub-agent mode")`，但 (a) Agent 把 system 拼进 messages（agent.js @427），(b) OpenAI provider 的 streamChat 解构里根本没有 system 字段（openai.js @170）——判定恒 false，3 个子任务的 sleep 从未发生，`elapsed<700ms` 测的是框架开销。单跑快→假绿，负载慢→假红。
+- **修复**：判定改为在 messages 里找 role:"system" 且含 "Sub-agent mode"（匹配真实数据流）；断言改为**执行窗口重叠证明**（3 个子任务的 [start,end] 区间存在共同重叠 = 真并发，与负载无关）+ 30s sanity 上界。修复后 864ms 通过（3×300ms 并发 + 框架开销，数学合理）。
+- **gate 加固**：tests 步加 `--test-concurrency`（默认 4，MYCLAUDE_GATE_TEST_CONCURRENCY 可覆盖）——高并发下 0xC0000409 原生崩溃消失。
+- **教训**：连续红在不同测试 + 单跑全绿 ≠ 纯环境噪音，可能混着坏测试；时序断言（elapsed<Nms）在并发套件里天生脆弱，测并发性应该测**重叠**而不是**时长**。

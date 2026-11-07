@@ -28,6 +28,9 @@ test("Task calls issued in one turn run concurrently, not one by one", async () 
   // 900ms; concurrent execution finishes in a little over 300ms.
   const SLOW = 300;
   let calls = 0;
+  // Execution windows of the three sub-agents: [start, end] pairs.
+  // Overlapping windows prove concurrency regardless of machine load.
+  const windows = [];
 
   const provider = {
     async streamChat({ messages, system }) {
@@ -48,8 +51,17 @@ test("Task calls issued in one turn run concurrently, not one by one", async () 
       // Only the sub-agents delay. The parent agent's follow-up turn has to
       // answer at once, otherwise it would add another SLOW to the total and
       // hide whether the three Task calls really ran at the same time.
-      const isSubAgent = String(system || "").includes("Sub-agent mode");
-      if (isSubAgent) { await sleep(SLOW); }
+      // The system prompt travels inside messages (role: "system"), not as a
+      // separate system argument — the OpenAI provider's streamChat destructures
+      // { messages, tools, ... } with no system field. Match on the message list.
+      const isSubAgent = (messages || []).some(
+        (m) => m && m.role === "system" && /Sub-agent mode/.test(String(m.content || ""))
+      );
+      if (isSubAgent) {
+        const t0 = Date.now();
+        await sleep(SLOW);
+        windows.push([t0, Date.now()]);
+      }
       const last = messages[messages.length - 1];
       const content = typeof last.content === "string" ? last.content : "?";
       const tag = /alpha/.test(content) ? "ALPHA" : /beta/.test(content) ? "BETA" : "GAMMA";
@@ -82,11 +94,19 @@ test("Task calls issued in one turn run concurrently, not one by one", async () 
   await agent.run("split the work");
   const elapsed = Date.now() - started;
 
-  // Three sub-agents, 300ms each. Sequential would be >= 900ms.
+  // Concurrency proof, load-independent: the three sub-agent execution
+  // windows must share a common overlap. Sequential dispatch would leave
+  // them disjoint (each ends before the next starts).
+  assert.equal(windows.length, 3, "three sub-agent executions recorded");
+  const starts = windows.map((w) => w[0]);
+  const ends = windows.map((w) => w[1]);
   assert.ok(
-    elapsed < 700,
-    `expected concurrent execution (<700ms) but took ${elapsed}ms, which suggests serial dispatch`
+    Math.max(...starts) < Math.min(...ends),
+    `sub-agent execution windows do not overlap (serial dispatch?): ` +
+      JSON.stringify(windows.map((w) => [w[0] - started, w[1] - started]))
   );
+  // Sanity upper bound only (guards against a hang, not a concurrency proof).
+  assert.ok(elapsed < 30_000, `test took ${elapsed}ms; something hung`);
 
   // Every sub-agent result must be present and distinct.
   const toolMessages = agent.messages.filter((m) => m.role === "tool").map((m) => String(m.content));
