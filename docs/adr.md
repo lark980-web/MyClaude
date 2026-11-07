@@ -53,3 +53,8 @@
 - **最重要发现**：上游 dontAsk 的判定结果是 **deny**（不问即拒），不是静默允许——若 MyClaude 语义相反则是对齐缺陷（已列入对照表待验证，不在本卡改代码）。
 - **纪律执行**：未尽项 5 条（allow/deny 数组 schema、规则匹配器内部、Bash 危险命令清单、sandbox 本体、tF 语义）有搜索入口但无定义级证据，**全部如实列为 R5.5 候选，未猜测填写**。
 - **证伪轮铁律执行**：全程未读 MyClaude 的 docs/PERMISSION-MODEL.md（被告不参与判决）；对照表仅声明"待验证"。
+
+## R5.5-a dontAsk 语义对照 + R6 扩展体系（2026-11-07）
+
+- **R5.5-a（10 分钟验证）**：MyClaude modes.js 的 dontAsk 描述"不再提问 / 需要确认的一律拒绝"——与上游 IBt 的 deny 语义**一致**，R5 标记的高风险差异点排除。新发现待验证点：MyClaude bypassPermissions 保留 deny 规则（"跳过确认（deny 规则仍生效）"），上游 IBt 字面为全放行——bypass 模式下 deny 规则是否仍评估需进一步证据，已记入 permissions.md 对照表。
+- **R6**：extensions.md 从 1,183 字节重写为带证据规格——hooks 配置结构（matcher+hooks[]）、**matcher 仅匹配工具名不能按命令内容过滤**（上游自述）、命令变量 CLAUDE_* 白名单、PreToolUse 阻塞语义、plugin.json 位置（.claude-plugin/）与组件目录、MCP 双传输 zod schema（stdio: command+args / http: url+headers+oauth）、OAuth token exchange 与两种 secret 传递。未尽 4 项如实列出。skills 引用 07-assets/skills.md 不重做。
