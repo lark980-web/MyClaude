@@ -2,15 +2,15 @@
   "schemaVersion": 1,
   "baseline": {
     "testCount": 722,
-    "commit": "b4e624f774e74acfcedfe84352d9fe0aa0b1c98c",
-    "at": "2026-11-07T07:31:07.872Z"
+    "commit": "8fe7575ddbc47bc09f683a880b98b0573a448b1d",
+    "at": "2026-11-07T07:36:38.288Z"
   },
   "latest": {
-    "runId": "2026-11-07T07-28-47-419Z",
+    "runId": "2026-11-07T07-35-33-928Z",
     "mode": "fast",
-    "startedAt": "2026-11-07T07:28:47.422Z",
-    "commit": "b4e624f774e74acfcedfe84352d9fe0aa0b1c98c",
-    "dirty": "M docs/EXECUTION-PLAN.md\n M docs/PARITY-SCORECARD.md\n M docs/adr.md\n M scripts/parity-metrics.mjs\n M test/gate-metrics.json",
+    "startedAt": "2026-11-07T07:35:33.931Z",
+    "commit": "8fe7575ddbc47bc09f683a880b98b0573a448b1d",
+    "dirty": "M docs/EXECUTION-PLAN.md\n M docs/adr.md",
     "status": "passed",
     "steps": [
       {
@@ -22,7 +22,7 @@
         ],
         "exitCode": 0,
         "signal": null,
-        "logPath": "E:\\WorkSpaces\\Test09\\MyClaude\\.local\\gate\\2026-11-07T07-28-47-419Z\\tests.log"
+        "logPath": "E:\\WorkSpaces\\Test09\\MyClaude\\.local\\gate\\2026-11-07T07-35-33-928Z\\tests.log"
       },
       {
         "name": "prompt",
@@ -32,7 +32,7 @@
         ],
         "exitCode": 0,
         "signal": null,
-        "logPath": "E:\\WorkSpaces\\Test09\\MyClaude\\.local\\gate\\2026-11-07T07-28-47-419Z\\prompt.log"
+        "logPath": "E:\\WorkSpaces\\Test09\\MyClaude\\.local\\gate\\2026-11-07T07-35-33-928Z\\prompt.log"
       },
       {
         "name": "features",
@@ -41,10 +41,10 @@
         ],
         "exitCode": 0,
         "signal": null,
-        "logPath": "E:\\WorkSpaces\\Test09\\MyClaude\\.local\\gate\\2026-11-07T07-28-47-419Z\\features.log"
+        "logPath": "E:\\WorkSpaces\\Test09\\MyClaude\\.local\\gate\\2026-11-07T07-35-33-928Z\\features.log"
       }
     ],
     "testCount": 722,
-    "finishedAt": "2026-11-07T07:31:07.872Z"
+    "finishedAt": "2026-11-07T07:36:38.288Z"
   }
 }

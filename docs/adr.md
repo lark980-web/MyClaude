@@ -46,3 +46,10 @@
 - **暴露的真实缺口**：TUI /restart、TUI /theme、GUI /restart——实现属后续轮次，不在度量轮内。
 - **执行事故（小）**：回收 theme 时两次 edit 锚错（多行假设错、相邻项猜错），grep 实际文本后修正——再证写入前先读实际文本。
 - **gate 环境噪音（R4 验收期间两次）**：第 1 次红在 fork.test.js（EPERM rename 临时文件，杀软锁）；第 2 次红在 anthropic-provider-e2e（exitCode 0xC0000409 原生层崩溃）；**两案单独跑均绿**，第 3 次全量 gate 全绿。判定：环境瞬时问题（HANDOFF §4.2 已知模式），非代码回归。处置规则：gate 红且怀疑环境噪音时，先单跑失败用例复验，单跑绿 + 重跑全量绿 = 通过（全程留 .local/gate 日志为证）。**gate 本身不加 skip——环境噪音靠复验处置，不靠放宽闸门。**
+
+## R5 权限模型抽取（证伪轮，2026-11-07）
+
+- **产物**：claude-re-2.1.302/03-features/permissions.md——6 模式枚举、模式→判定映射（auto→classify / bypass→allow / **dontAsk→deny** / 其他→ask）、bypass 三重门、settings 两键（defaultMode / disableBypassPermissionsMode:"disable"）、规则语法（Bash(git *) 形式 + 运行时剥离清单）、dangerouslyDisableSandbox 参数级语义、子进程 env scrub 联动。全部带 chunk+偏移。
+- **最重要发现**：上游 dontAsk 的判定结果是 **deny**（不问即拒），不是静默允许——若 MyClaude 语义相反则是对齐缺陷（已列入对照表待验证，不在本卡改代码）。
+- **纪律执行**：未尽项 5 条（allow/deny 数组 schema、规则匹配器内部、Bash 危险命令清单、sandbox 本体、tF 语义）有搜索入口但无定义级证据，**全部如实列为 R5.5 候选，未猜测填写**。
+- **证伪轮铁律执行**：全程未读 MyClaude 的 docs/PERMISSION-MODEL.md（被告不参与判决）；对照表仅声明"待验证"。
