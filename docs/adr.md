@@ -73,3 +73,10 @@
 - **修复**：判定改为在 messages 里找 role:"system" 且含 "Sub-agent mode"（匹配真实数据流）；断言改为**执行窗口重叠证明**（3 个子任务的 [start,end] 区间存在共同重叠 = 真并发，与负载无关）+ 30s sanity 上界。修复后 864ms 通过（3×300ms 并发 + 框架开销，数学合理）。
 - **gate 加固**：tests 步加 `--test-concurrency`（默认 4，MYCLAUDE_GATE_TEST_CONCURRENCY 可覆盖）——高并发下 0xC0000409 原生崩溃消失。
 - **教训**：连续红在不同测试 + 单跑全绿 ≠ 纯环境噪音，可能混着坏测试；时序断言（elapsed<Nms）在并发套件里天生脆弱，测并发性应该测**重叠**而不是**时长**。
+
+## R8 trailer 哈希：正式放弃（2026-11-07）
+
+- **尝试**：7 种哈希函数（djb2/fnv1a/sdbm/murmur3/md5/sha1/sha256）× 名字/内容 × 多变体，全部 0 命中。分布分析排除偏移/长度编码（值不等于任何 contentLen/contentOff/bcOff/bcLen；升降序 ≈ 随机）。与注册表 hash 字段不同源（交集 1/2423）。
+- **阻塞**：Bun 源码不可达（GitHub raw 5 路径全 404；web_search API key 失效）。
+- **放弃理由**：无源码无法确证算法，猜测被计划规则禁止。值域上限 ~16.7M 暗示可能是 wyhash/xxhash 截断或 Bun 自定义哈希——但这是推断不是结论。
+- **保留**：原始字节 trailer.bin + 分段结构（payload-forensics.md）+ 尝试脚本（.local/r8-*.mjs）。详见 claude-re-2.1.302/01-artifact/trailer-hash.md。
