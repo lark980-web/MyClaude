@@ -1,16 +1,16 @@
 {
   "schemaVersion": 1,
   "baseline": {
-    "testCount": 719,
-    "commit": "189004284ced89c62171eb7b6fe92eb21be6f297",
-    "at": "2026-11-07T06:54:47.035Z"
+    "testCount": 720,
+    "commit": "5257e02429dcfc2ea3d35b7caa8d4f4ff4f7cd4f",
+    "at": "2026-11-07T07:05:56.788Z"
   },
   "latest": {
-    "runId": "2026-11-07T06-53-08-870Z",
+    "runId": "2026-11-07T07-04-35-657Z",
     "mode": "fast",
-    "startedAt": "2026-11-07T06:53:08.874Z",
-    "commit": "189004284ced89c62171eb7b6fe92eb21be6f297",
-    "dirty": "M test/gate-metrics.json\n M test/system-prompt-parity.test.js",
+    "startedAt": "2026-11-07T07:04:35.673Z",
+    "commit": "5257e02429dcfc2ea3d35b7caa8d4f4ff4f7cd4f",
+    "dirty": "M docs/prompt-gated-eval.md\n M scripts/inspect-prompt.mjs\n M src/agent/prompt.js\n M test/system-prompt-parity.test.js",
     "status": "passed",
     "steps": [
       {
@@ -22,7 +22,7 @@
         ],
         "exitCode": 0,
         "signal": null,
-        "logPath": "E:\\WorkSpaces\\Test09\\MyClaude\\.local\\gate\\2026-11-07T06-53-08-870Z\\tests.log"
+        "logPath": "E:\\WorkSpaces\\Test09\\MyClaude\\.local\\gate\\2026-11-07T07-04-35-657Z\\tests.log"
       },
       {
         "name": "prompt",
@@ -32,7 +32,7 @@
         ],
         "exitCode": 0,
         "signal": null,
-        "logPath": "E:\\WorkSpaces\\Test09\\MyClaude\\.local\\gate\\2026-11-07T06-53-08-870Z\\prompt.log"
+        "logPath": "E:\\WorkSpaces\\Test09\\MyClaude\\.local\\gate\\2026-11-07T07-04-35-657Z\\prompt.log"
       },
       {
         "name": "features",
@@ -41,10 +41,10 @@
         ],
         "exitCode": 0,
         "signal": null,
-        "logPath": "E:\\WorkSpaces\\Test09\\MyClaude\\.local\\gate\\2026-11-07T06-53-08-870Z\\features.log"
+        "logPath": "E:\\WorkSpaces\\Test09\\MyClaude\\.local\\gate\\2026-11-07T07-04-35-657Z\\features.log"
       }
     ],
-    "testCount": 719,
-    "finishedAt": "2026-11-07T06:54:47.035Z"
+    "testCount": 720,
+    "finishedAt": "2026-11-07T07:05:56.788Z"
   }
 }

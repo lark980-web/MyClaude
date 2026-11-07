@@ -27,7 +27,7 @@ const REQUIRED_SECTIONS = [
   "# Environment",
 ];
 
-const SIZE_BUDGET = 24000;
+const SIZE_BUDGET = 28000; // R3 迁移 5 段后调：autoRun 组装 26082（上游 v2-full 24476 同量级）
 
 const STUB = { streamChat: async () => ({ text: "", toolCalls: [], finishReason: "stop", usage: null }) };
 const QUIET_UI = { streamText() {}, endStream() {}, info() {}, warn() {}, error() {}, success() {}, toolStart() {}, toolEnd() {} };

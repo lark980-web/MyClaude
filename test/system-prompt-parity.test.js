@@ -30,15 +30,28 @@ test("gated-section evaluation table is complete (18 rows, no blanks)", () => {
   const md = readFileSync(p, "utf8");
   const rows = md.match(/^\| \d+ \|/gm) || [];
   assert.equal(rows.length, 18, "eval table must have exactly 18 numbered rows, got " + rows.length);
-  for (const verdict of ["迁移", "不迁移", "不可得", "部分迁移"]) {
+  for (const verdict of ["迁移", "不迁移", "不可得"]) {
     assert.ok(md.includes(verdict), "verdict vocabulary present: " + verdict);
   }
   assert.ok(!/\| {5,}\|/.test(md), "eval table has blank cells");
 });
 
-test("prompt density in a band around the upstream six-section core", () => {
-  assert.ok(SYSTEM_PROMPT.length >= 9000, "too thin: " + SYSTEM_PROMPT.length);
-  assert.ok(SYSTEM_PROMPT.length <= 14000, "bloated: " + SYSTEM_PROMPT.length);
+test("prompt density in a band around the migrated upstream core", () => {
+  assert.ok(SYSTEM_PROMPT.length >= 12000, "too thin: " + SYSTEM_PROMPT.length);
+  assert.ok(SYSTEM_PROMPT.length <= 22000, "bloated: " + SYSTEM_PROMPT.length);
+});
+
+test("R3 migrated gated sections are present verbatim (upstream plain variants)", () => {
+  const clauses = [
+    ["task_continuity", "the approval covers it end to end"],
+    ["act_dont_rederive", "Do not re-derive facts already established"],
+    ["tool_param_json", "must be a single JSON value"],
+    ["context_management", "you don't need to wrap up early or hand off mid-task"],
+    ["delivering_work", "don't quietly narrow, widen, or transform"],
+  ];
+  for (const [name, clause] of clauses) {
+    assert.ok(SYSTEM_PROMPT.includes(clause), "missing " + name + " clause: " + clause);
+  }
 });
 
 test("keeps the high-value upstream clauses", () => {

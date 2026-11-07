@@ -28,3 +28,12 @@
 - **R1 补遗**：package.json 的 gate:fast/gate:full 在首次提交后被并发进程还原（HEAD 与磁盘均无），`npm run gate:fast` 一度不存在。已补回并单独提交（1890042），npm 实测三步绿。教训再证 HANDOFF §4.7：改完尽快 commit，多文件拆两次提交也要每次立即提交。
 - **R2 完成**：锚验通过（v2-full 030d9f7e4ed0 / dynamic-sections c042647072e2）；从 _assembly-fn.txt 枚举 24 个 mm() 注册 − 7 实验段 = 17 行为段注册（ffr 与 env_info 段名全为插值/变量，拆分后 18 行）写入 docs/prompt-gated-eval.md；system-prompt-parity.test.js 删除过期 10,707 数字密度断言的旧锚（改为区间断言），新增两条：①v2-full sha256 前 12 位锚（上游一动即红，红=重跑 R2）②评估表 18 行无空白机检。parity 12/12、gate:fast 全绿。
 - **R2 判定结果**：迁移 5（task_continuity / tool_param_json / context_management / act_dont_rederive / delivering_work_max）+ 部分 1（session_guidance 静态子句）+ 不迁移 8 + 不可得 4。R3 依此落地，先补抽 delivering_work_max 的 plain 变体 Hfr。
+
+## R3 迁移落地（2026-11-07，测于 via npm run inspect:prompt + gate:fast）
+
+- **证据勘误（重要）**：R2 的字面量长度有 3 处污染值——非贪婪正则把 minified 源码里**逗号续声明**（`var a="…",b=`…``）的相邻变量连带。转义感知扫描器修正：tool_param_json 496→**117B**、act_dont_rederive 3742→**277B**、delivering_work_max plain 未定位→**2017B**；并意外定位了 R2 判"不可得"的 pronouns(357B) 与 overcorrection(1245B)。评估表已勘误。教训：**长度数字必须来自转义感知的精确扫描**。
+- **session_guidance 改判不迁移**：静态子句依赖上游 `!` 输入框前缀机制（会话内执行 shell 并回灌输出），实测 MyClaude 无对应（grep src 零命中）——照搬会教模型建议不存在的功能。
+- **迁移 5 段**（plain 变体、逐字、无上游专属引用需本地化）：task_continuity(457B) 与 act_dont_rederive(277B) 进 # Doing tasks bullets；tool_param_json(117B) 进 # Using your tools；context_management(280B) 与 delivering_work_max(2017B) 为独立段。SYSTEM_PROMPT 16,619→19,783 常量；组装现测 22,919（autoRun=false）/ 26,082（autoRun=true）。
+- **验收**：inspect:prompt 0 error（size 预算 24,000→28,000，因迁移后 autoRun 组装 26,082 与上游 v2-full 24,476 同量级）；parity 新增 5 条逐字子句断言 + 密度区间 12,000–22,000；gate:fast 三步全绿。
+- **并发观察**：迁移脚本首跑锚点失配——R3 开头读到的 prompt.js 是并发会话的瞬时状态（Using your tools 长版），git 对照后以 HEAD 为准重跑成功。再证：**锚定写入前先 git status 校验基线**。
+- **延期项**：pronouns(357B) / overcorrection(1245B) 已定位未迁移（一轮一任务），下一轮落地。
