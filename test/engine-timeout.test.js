@@ -145,35 +145,6 @@ test('the idle deadline resumes once the in-flight tool finishes', async () => {
   assert.equal(r.timeoutKind, 'idle');
   assert.ok(took >= 1800 && took < 9000, 'killed one idle window after the tool result: ' + took);
 });
-// 第二个独立故障的回归测试：宿主代理配置污染引擎。
-// 宿主有 HTTPS_PROXY + NODE_USE_ENV_PROXY 但没有 no_proxy 时，引擎会把发往
-// 本机网关的明文请求交给代理，代理回 400 → 整个回合失败。engineEnv 必须兜住。
-test('engineEnv never lets a local gateway go through a proxy', async () => {
-  const { engineEnv } = await import('../src/engines/claude-code.js');
-  const orig = { NO_PROXY: process.env.NO_PROXY, no_proxy: process.env.no_proxy, HTTPS_PROXY: process.env.HTTPS_PROXY };
-  try {
-    delete process.env.NO_PROXY; delete process.env.no_proxy;
-    process.env.HTTPS_PROXY = 'http://127.0.0.1:7897';
-    const a = engineEnv({ baseUrl: 'http://127.0.0.1:3425/v1', apiKey: 'k' });
-    for (const k of ['NO_PROXY', 'no_proxy']) {
-      assert.match(a[k], /localhost/, k + ' must bypass the proxy for localhost');
-      assert.match(a[k], /127\.0\.0\.1/, k + ' must bypass the proxy for 127.0.0.1');
-      assert.match(a[k], /::1/, k + ' must bypass the proxy for ::1');
-    }
-    assert.equal(a.ANTHROPIC_BASE_URL, 'http://127.0.0.1:3425', 'the /v1 suffix is stripped');
-    assert.equal(a.ANTHROPIC_AUTH_TOKEN, 'k');
-    // 宿主已有的 no_proxy 必须保留（合并不覆盖）
-    process.env.no_proxy = 'example.com';
-    const b = engineEnv({ baseUrl: 'http://127.0.0.1:3425/v1' });
-    assert.match(b.NO_PROXY, /example\.com/, 'existing host entries survive');
-    assert.match(b.NO_PROXY, /127\.0\.0\.1/, 'local entries are still added');
-    // 空 apiKey 有确定的兜底值，不是 undefined
-    assert.equal(b.ANTHROPIC_API_KEY, 'sk-engine-local');
-  } finally {
-    for (const [k, v] of Object.entries(orig)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
-  }
-});
-
 test('an engine that works then goes quiet is killed only after it goes quiet', async () => {
   fakeCli([
     'console.log(JSON.stringify({ type: "assistant", message: { content: [{ type: "text", text: "a" }] } }));',

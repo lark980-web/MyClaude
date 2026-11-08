@@ -167,6 +167,23 @@
         "ArtifactCheck"
       ],
       "from": "claude-re-2.1.302/tools/spec3/out-all-runtime.json"
+    },
+    "staticSchemaCorrections": {
+      "count": 11,
+      "names": [
+        "RemoteTrigger",
+        "SuggestPluginInstall",
+        "SuggestSkills",
+        "Workflow",
+        "Read",
+        "ClaudeDesign",
+        "TodoWrite",
+        "TaskCreate",
+        "TaskUpdate",
+        "SearchPlugins",
+        "SearchSkills"
+      ],
+      "note": "静态抽取留下 x-unresolved/type:unknown；运行时 getter 是权威来源，按它纠正。"
     }
   },
   "tools": [
@@ -241,13 +258,13 @@
           },
           "cursor": {
             "type": "string",
-            "maximum": 1024,
             "description": "next_cursor from a previous list_runs or get_run_log page"
           },
           "body": {
-            "type": "unknown",
-            "x-unresolved": "ref-unresolved:fe",
-            "x-raw": "function",
+            "type": "object",
+            "additionalProperties": {
+              "x-unknown-node": "ZodUnknown"
+            },
             "description": "Required for create and update; optional for run"
           }
         },
@@ -279,6 +296,10 @@
         "method": "runtime",
         "chunk": "chunk-14yz6y31.js",
         "exportedAs": "RemoteTriggerTool"
+      },
+      "parametersSource": {
+        "method": "runtime-getter (17-extract-all-runtime)",
+        "reason": "static extraction left unresolved refs; runtime is authoritative"
       }
     },
     {
@@ -1027,28 +1048,23 @@
         "type": "object",
         "properties": {
           "contextLabel": {
-            "type": "string",
-            "maximum": 128,
-            "description": "Short header tying the suggestion to the user request."
+            "description": "Short header tying the suggestion to the user request.",
+            "type": "string"
           },
           "plugins": {
+            "description": "Plugins sourced from SearchPlugins results.",
             "type": "array",
             "items": {
               "type": "object",
               "properties": {
                 "pluginId": {
-                  "type": "string",
-                  "minimum": 1,
-                  "maximum": 256
+                  "type": "string"
                 },
                 "pluginName": {
-                  "type": "string",
-                  "minimum": 1,
-                  "maximum": 256
+                  "type": "string"
                 },
                 "description": {
-                  "type": "string",
-                  "maximum": 1024
+                  "type": "string"
                 },
                 "skills": {
                   "type": "array",
@@ -1056,41 +1072,39 @@
                     "type": "object",
                     "properties": {
                       "name": {
-                        "type": "string",
-                        "maximum": 256
+                        "type": "string"
                       },
                       "description": {
-                        "type": "string",
-                        "maximum": 1024
+                        "type": "string"
                       }
                     },
                     "required": [
                       "name"
-                    ]
-                  },
-                  "maximum": 32
+                    ],
+                    "additionalProperties": false
+                  }
                 }
               },
               "required": [
                 "pluginId",
                 "pluginName",
                 "description"
-              ]
-            },
-            "minimum": 1,
-            "maximum": 16,
-            "description": "Plugins sourced from SearchPlugins results."
+              ],
+              "additionalProperties": false
+            }
           },
           "trigger": {
-            "type": "unknown",
-            "x-unresolved": "ref:oe",
-            "x-raw": "f(()=>D().optional().describe(\"Howthissuggestionstarted:'user_asked'or'proactive'.\"))"
+            "type": "string",
+            "enum": [
+              "user_asked",
+              "proactive"
+            ],
+            "description": "How this suggestion started: 'user_asked' or 'proactive'."
           }
         },
         "required": [
           "contextLabel",
-          "plugins",
-          "trigger"
+          "plugins"
         ],
         "additionalProperties": false
       },
@@ -1112,7 +1126,11 @@
         "name": "high",
         "parameters": "high"
       },
-      "nameEvidence": "chunk-v63rpz2m.js: var LBe=\"SuggestPluginInstall\" @657"
+      "nameEvidence": "chunk-v63rpz2m.js: var LBe=\"SuggestPluginInstall\" @657",
+      "parametersSource": {
+        "method": "runtime-getter (17-extract-all-runtime)",
+        "reason": "static extraction left unresolved refs; runtime is authoritative"
+      }
     },
     {
       "name": "SuggestSkills",
@@ -1123,29 +1141,26 @@
         "type": "object",
         "properties": {
           "keywords": {
+            "description": "Topic keywords from the user's request.",
             "type": "array",
             "items": {
-              "type": "string",
-              "minimum": 1,
-              "maximum": 64
-            },
-            "minimum": 1,
-            "maximum": 8,
-            "description": "Topic keywords from the user's request."
+              "type": "string"
+            }
           },
           "contextLabel": {
-            "type": "string",
-            "maximum": 128
+            "type": "string"
           },
           "trigger": {
-            "type": "unknown",
-            "x-unresolved": "ref:oe",
-            "x-raw": "f(()=>D().optional().describe(\"Howthissuggestionstarted:'user_asked'or'proactive'.\"))"
+            "type": "string",
+            "enum": [
+              "user_asked",
+              "proactive"
+            ],
+            "description": "How this suggestion started: 'user_asked' or 'proactive'."
           }
         },
         "required": [
-          "keywords",
-          "trigger"
+          "keywords"
         ],
         "additionalProperties": false
       },
@@ -1167,7 +1182,11 @@
         "name": "high",
         "parameters": "high"
       },
-      "nameEvidence": "chunk-v63rpz2m.js: var ern=\"SuggestSkills\" @684"
+      "nameEvidence": "chunk-v63rpz2m.js: var ern=\"SuggestSkills\" @684",
+      "parametersSource": {
+        "method": "runtime-getter (17-extract-all-runtime)",
+        "reason": "static extraction left unresolved refs; runtime is authoritative"
+      }
     },
     {
       "name": "(template: ae)",
@@ -1254,8 +1273,7 @@
         "properties": {
           "script": {
             "type": "string",
-            "maximum": "DC",
-            "description": "Self-contained workflow script. Must begin with `export const meta = { name, description, phases }` (pure literal, no computed values) followed by the script body using agent()/parallel()/pipeline()/phase(). "
+            "description": "Self-contained workflow script. Must begin with `export const meta = { name, description, phases }` (pure literal, no computed values) followed by the script body using agent()/parallel()/pipeline()/phase()."
           },
           "name": {
             "type": "string",
@@ -1270,24 +1288,20 @@
             "description": "Ignored — set the workflow title in the script's `meta` block."
           },
           "args": {
-            "type": "unknown",
-            "x-unresolved": "ref-unresolved:oe",
-            "x-raw": "function",
-            "description": "Optional input value exposed to the script as the global `args`, verbatim. Pass arrays/objects as actual JSON values, NOT as a  JSON-encoded string — a stringified list breaks `args.filter`/ `args.map` in the script. Use for parameterized named workflows (e.g. a research question)."
+            "x-unknown-node": "ZodUnknown",
+            "description": "Optional input value exposed to the script as the global `args`, verbatim. Pass arrays/objects as actual JSON values, NOT as a JSON-encoded string — a stringified list breaks `args.filter`/`args.map` in the script. Use for parameterized named workflows (e.g. a research question)."
           },
           "scriptPath": {
             "type": "string",
             "description": "Path to a workflow script file on disk. Every Workflow invocation persists its script under the session directory and returns the path in the tool result. To iterate, edit that file with Write/Edit and re-invoke Workflow with the same `scriptPath` instead of re-sending the full script. Takes precedence over `script` and `name`."
           },
           "resumeFromRunId": {
-            "type": "string"
+            "type": "string",
+            "description": "Run ID of a prior Workflow invocation to resume from. Completed agent() calls with unchanged (prompt, opts) return their cached results instantly; only edited or new calls re-run. Same-session only. Stop the prior run first (TaskStop) before resuming."
           }
         },
-        "additionalProperties": false,
-        "x-spreads": [
-          "ge()?.runOpFields()??{}",
-          "!1"
-        ]
+        "required": [],
+        "additionalProperties": false
       },
       "flags": {
         "isReadOnly": null,
@@ -1306,6 +1320,10 @@
       "confidence": {
         "name": "high",
         "parameters": "high"
+      },
+      "parametersSource": {
+        "method": "runtime-getter (17-extract-all-runtime)",
+        "reason": "static extraction left unresolved refs; runtime is authoritative"
       }
     },
     {
@@ -2143,36 +2161,30 @@
         "type": "object",
         "properties": {
           "file_path": {
-            "type": "string",
-            "description": "The absolute path to the file to read"
-          },
-          "offset": {
-            "type": "integer",
-            "minimum": 0,
-            "description": "The line number to start reading from. Only provide if the file is too large to read at once"
-          },
-          "limit": {
-            "type": "integer",
-            "exclusiveMinimum": 0,
-            "description": "The number of lines to read. Only provide if the file is too large to read at once."
-          },
-          "pages": {
+            "description": "The absolute path to the file to read",
             "type": "string"
           },
-          "[computed:[Rge]]": {
-            "type": "unknown",
-            "x-unresolved": "ref:Rge",
-            "x-raw": "\"allow_large\"",
-            "description": "Set to true to read a text file, or a line range of one, that is over the usual size limits, up to what still fits in your context. Only use this when you genuinely need all of it or the user asked for the whole file; otherwise read it in parts with offset and limit, or search it."
+          "offset": {
+            "x-unknown-node": "ZodTransform"
+          },
+          "limit": {
+            "x-unknown-node": "ZodTransform"
+          },
+          "pages": {
+            "x-unknown-node": "ZodTransform"
+          },
+          "allow_large": {
+            "x-unknown-node": "ZodTransform"
           }
         },
         "required": [
-          "file_path"
+          "file_path",
+          "offset",
+          "limit",
+          "pages",
+          "allow_large"
         ],
-        "additionalProperties": false,
-        "x-spreads": [
-          "PK()"
-        ]
+        "additionalProperties": false
       },
       "flags": {
         "isReadOnly": null,
@@ -2197,6 +2209,10 @@
         "method": "runtime",
         "chunk": "chunk-e0x0xb6d.js",
         "exportedAs": "qw"
+      },
+      "parametersSource": {
+        "method": "runtime-getter (17-extract-all-runtime)",
+        "reason": "static extraction left unresolved refs; runtime is authoritative"
       }
     },
     {
@@ -2457,14 +2473,16 @@
         "type": "object",
         "properties": {
           "operation": {
+            "description": "Claude Design action to perform. Call with \"list\" first to discover the available operations and their argument schemas.",
             "type": "string"
           },
           "arguments": {
-            "type": "unknown",
-            "x-unresolved": "ref-unresolved:fe",
-            "x-raw": "function",
+            "type": "object",
+            "additionalProperties": {
+              "x-unknown-node": "ZodUnknown"
+            },
             "description": "Action input object (server-validated). Pass {} for operations that take no input.",
-            "default": "{}"
+            "default": {}
           }
         },
         "required": [
@@ -2495,6 +2513,10 @@
         "method": "runtime",
         "chunk": "chunk-grrf8dq2.js",
         "exportedAs": "DesignTool"
+      },
+      "parametersSource": {
+        "method": "runtime-getter (17-extract-all-runtime)",
+        "reason": "static extraction left unresolved refs; runtime is authoritative"
       }
     },
     {
@@ -2987,28 +3009,33 @@
         "type": "object",
         "properties": {
           "todos": {
-            "type": "object",
-            "properties": {
-              "content": {
-                "type": "string",
-                "minimum": "1,\"Content cannot be empty\""
+            "description": "The updated todo list",
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "content": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "pending",
+                    "in_progress",
+                    "completed"
+                  ]
+                },
+                "activeForm": {
+                  "type": "string"
+                }
               },
-              "status": {
-                "type": "unknown",
-                "x-unresolved": "ref:yVo",
-                "x-raw": "f(()=>U([\"pending\",\"in_progress\",\"completed\"]))"
-              },
-              "activeForm": {
-                "type": "string",
-                "minimum": "1,\"Active form cannot be empty\""
-              }
-            },
-            "required": [
-              "content",
-              "status",
-              "activeForm"
-            ],
-            "description": "The updated todo list"
+              "required": [
+                "content",
+                "status",
+                "activeForm"
+              ],
+              "additionalProperties": false
+            }
           }
         },
         "required": [
@@ -3039,6 +3066,10 @@
         "method": "static-fallback",
         "chunk": "chunk-gwd0s2d1.js",
         "exportedAs": null
+      },
+      "parametersSource": {
+        "method": "runtime-getter (17-extract-all-runtime)",
+        "reason": "static extraction left unresolved refs; runtime is authoritative"
       }
     },
     {
@@ -3413,21 +3444,22 @@
         "type": "object",
         "properties": {
           "subject": {
-            "type": "string",
-            "description": "A brief title for the task"
+            "description": "A brief title for the task",
+            "type": "string"
           },
           "description": {
-            "type": "string",
-            "description": "What needs to be done"
+            "description": "What needs to be done",
+            "type": "string"
           },
           "activeForm": {
             "type": "string",
             "description": "Present continuous form shown in spinner when in_progress (e.g., \"Running tests\")"
           },
           "metadata": {
-            "type": "unknown",
-            "x-unresolved": "ref-unresolved:fe",
-            "x-raw": "function",
+            "type": "object",
+            "additionalProperties": {
+              "x-unknown-node": "ZodUnknown"
+            },
             "description": "Arbitrary metadata to attach to the task"
           }
         },
@@ -3460,6 +3492,10 @@
         "method": "static-fallback",
         "chunk": "chunk-gwd0s2d1.js",
         "exportedAs": null
+      },
+      "parametersSource": {
+        "method": "runtime-getter (17-extract-all-runtime)",
+        "reason": "static extraction left unresolved refs; runtime is authoritative"
       }
     },
     {
@@ -3514,8 +3550,8 @@
         "type": "object",
         "properties": {
           "taskId": {
-            "type": "string",
-            "description": "The ID of the task to update"
+            "description": "The ID of the task to update",
+            "type": "string"
           },
           "subject": {
             "type": "string",
@@ -3530,9 +3566,20 @@
             "description": "Present continuous form shown in spinner when in_progress (e.g., \"Running tests\")"
           },
           "status": {
-            "type": "unknown",
-            "x-unresolved": "ref:e",
-            "x-raw": "[Yvn,qvn,i$e,Vvn,Gvn,Kvn,Nt,kss,zqt,import.meta.require(\"B:/~BUN/root/chunk-2nkn6ytg.js\").LocalWorkflowTask]",
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "pending",
+                  "in_progress",
+                  "completed"
+                ]
+              },
+              {
+                "type": "undefined",
+                "const": "deleted"
+              }
+            ],
             "description": "New status for the task"
           },
           "addBlocks": {
@@ -3554,9 +3601,10 @@
             "description": "New owner for the task"
           },
           "metadata": {
-            "type": "unknown",
-            "x-unresolved": "ref-unresolved:fe",
-            "x-raw": "function",
+            "type": "object",
+            "additionalProperties": {
+              "x-unknown-node": "ZodUnknown"
+            },
             "description": "Metadata keys to merge into the task. Set a key to null to delete it."
           }
         },
@@ -3588,6 +3636,10 @@
         "method": "static-fallback",
         "chunk": "chunk-gwd0s2d1.js",
         "exportedAs": null
+      },
+      "parametersSource": {
+        "method": "runtime-getter (17-extract-all-runtime)",
+        "reason": "static extraction left unresolved refs; runtime is authoritative"
       }
     },
     {
@@ -5107,9 +5159,11 @@
         "type": "object",
         "properties": {
           "keywords": {
-            "type": "unknown",
-            "x-unresolved": "ref:Q",
-            "x-raw": "f(()=>T(o().min(1).max(64)).min(1).max(8).describe(\"Keywordphrasesdescribingtheuser'sintent.\"))"
+            "description": "Keyword phrases describing the user's intent.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         },
         "required": [
@@ -5132,6 +5186,10 @@
       "confidence": {
         "name": "medium",
         "parameters": "medium:inherited from template shape"
+      },
+      "parametersSource": {
+        "method": "runtime-getter (17-extract-all-runtime)",
+        "reason": "static extraction left unresolved refs; runtime is authoritative"
       }
     },
     {
@@ -5143,9 +5201,11 @@
         "type": "object",
         "properties": {
           "keywords": {
-            "type": "unknown",
-            "x-unresolved": "ref:Q",
-            "x-raw": "f(()=>T(o().min(1).max(64)).min(1).max(8).describe(\"Keywordphrasesdescribingtheuser'sintent.\"))"
+            "description": "Keyword phrases describing the user's intent.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         },
         "required": [
@@ -5168,6 +5228,10 @@
       "confidence": {
         "name": "medium",
         "parameters": "medium:inherited from template shape"
+      },
+      "parametersSource": {
+        "method": "runtime-getter (17-extract-all-runtime)",
+        "reason": "static extraction left unresolved refs; runtime is authoritative"
       }
     },
     {

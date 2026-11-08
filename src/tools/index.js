@@ -28,6 +28,412 @@ function truncate(text, limit = MAX_OUTPUT) {
   return `${text.slice(0, limit)}\n\n...[truncated ${text.length - limit} chars]`;
 }
 
+/* ------------------------------------------------------- 子进程输出解码 */
+
+/**
+ * TextDecoder labels for the Windows console code pages cmd.exe reports.
+ *
+ * Node ships full ICU, so gbk/big5/shift_jis all resolve; an exotic page this
+ * Node cannot decode falls back to the UTF-8 path below.
+ */
+const WINDOWS_CODEPAGE_ENCODINGS = {
+  65001: "utf-8",
+  936: "gbk",
+  54936: "gb18030",
+  950: "big5",
+  932: "shift_jis",
+  949: "euc-kr",
+  1252: "windows-1252",
+};
+
+/** Create a streaming decoder for one of the labels above, or null. */
+function makeDecoder(label) {
+  try {
+    const d = new TextDecoder(label, { fatal: false, ignoreBOM: true });
+    return { decode: (buf, opts) => d.decode(buf, opts), label };
+  } catch {
+    return null;
+  }
+}
+
+function utf8Decoder() {
+  return makeDecoder("utf-8") || { decode: (buf) => String(buf), label: "utf-8" };
+}
+
+/** Count U+FFFD: a non-zero count means the bytes were not in that encoding. */
+function replacementCount(text) {
+  let n = 0;
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] === REPLACEMENT_CHAR) n++;
+  }
+  return n;
+}
+
+/**
+ * The code page a Windows console writes its output in.
+ *
+ * A Chinese Windows console defaults to 936 (GBK), so cmd.exe reports
+ * "'ls' 不是内部或外部命令" as cp936 bytes. Decoding those as UTF-8 put 485
+ * U+FFFD into a session's history; the mangled text was then re-sent to the
+ * model, which could not read it and repeated the same wrong command.
+ * chcp is asked once per process; a non-Windows platform never gets here.
+ */
+let consoleEncodingCache;
+function consoleEncoding() {
+  if (consoleEncodingCache !== undefined) return consoleEncodingCache;
+  consoleEncodingCache = null;
+  if (process.platform === "win32") {
+    try {
+      const probe = spawnSync("chcp", [], { encoding: "utf8", timeout: 5000, windowsHide: true });
+      const m = /(\d{3,5})/.exec(String(probe.stdout || ""));
+      const label = m ? WINDOWS_CODEPAGE_ENCODINGS[Number(m[1])] : null;
+      if (label) consoleEncodingCache = label;
+    } catch {
+      // No chcp (or it is unavailable): stay on the UTF-8 path.
+    }
+  }
+  return consoleEncodingCache;
+}
+
+/** A decoder state for one command's stdout or stderr. */
+function outputDecoder() {
+  const preferred = consoleEncoding();
+  return {
+    // The console code page, when it differs from UTF-8.
+    primary: preferred && preferred !== "utf-8" ? makeDecoder(preferred) : null,
+    utf8: utf8Decoder(),
+    label: preferred || "utf-8",
+    /** Bytes held back: a multi-byte character split across two chunks. */
+    pending: Buffer.alloc(0),
+    /** Set once a chunk decoded cleanly: the encoding cannot change mid-stream. */
+    chosen: null,
+  };
+}
+
+/** True when the bytes are a valid UTF-8 sequence (ASCII included). */
+function isValidUtf8Chunk(buf) {
+  try {
+    new TextDecoder("utf-8", { fatal: true }).decode(buf);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** True when one byte can start a UTF-8 multi-byte sequence. */
+function utf8LeadByte(byte) {
+  return (byte >= 0xC2 && byte <= 0xDF) || (byte >= 0xE0 && byte <= 0xEF) || (byte >= 0xF0 && byte <= 0xF4);
+}
+
+/** True when every byte of a chunk is at least 0x80 (a run of non-ASCII). */
+function looksLikeMultibyteText(buf) {
+  for (let i = 0; i < buf.length; i++) {
+    if (buf[i] < 0x80) return false;
+  }
+  return buf.length > 0;
+}
+
+/**
+ * Decode bytes whose character boundaries are still unknown.
+ *
+ * A multi-byte character can be split across two reads, so up to three bytes
+ * are held back until the next chunk (or EOF) completes the sequence.
+ */
+function decodeChunk(decoder, chunk) {
+  if (!decoder.primary) return decoder.utf8.decode(chunk, { stream: true });
+  const buf = decoder.pending.length ? Buffer.concat([decoder.pending, chunk]) : chunk;
+  decoder.pending = Buffer.alloc(0);
+
+  if (decoder.chosen) {
+    const d = decoder.chosen === "utf-8" ? decoder.utf8 : decoder.primary;
+    return d.decode(buf, { stream: true });
+  }
+
+  // A complete UTF-8 sequence cannot be produced by GBK text that contains
+  // non-ASCII bytes, so valid UTF-8 wins; ASCII alone decodes the same either way.
+  if (isValidUtf8Chunk(buf)) {
+    decoder.chosen = "utf-8";
+    return decoder.utf8.decode(buf, { stream: true });
+  }
+
+  // The tail may be an incomplete character. Hold it back and decide on the
+  // part that is complete rather than committing to an encoding on half a
+  // character.
+  const lead = buf[buf.length - 1];
+  const tailLen = buf.length >= 2 && utf8LeadByte(buf[buf.length - 2]) && (lead & 0xC0) === 0x80 ? 2 : 1;
+  const head = buf.subarray(0, buf.length - tailLen);
+  const tail = buf.subarray(buf.length - tailLen);
+
+  if (head.length && isValidUtf8Chunk(head)) {
+    // A lead byte followed by three continuation bytes, where those four bytes
+    // are a valid UTF-8 character but a run of non-ASCII bytes in GBK: the byte
+    // before the lead byte still decides what the rest of the stream is.
+    const cjk = head.length >= 4 &&
+      utf8LeadByte(head[head.length - 4]) &&
+      (head[head.length - 3] & 0xC0) === 0x80 &&
+      (head[head.length - 2] & 0xC0) === 0x80 &&
+      (head[head.length - 1] & 0xC0) === 0x80 &&
+      looksLikeMultibyteText(tail);
+    if (!cjk) {
+      decoder.chosen = "utf-8";
+      return decoder.utf8.decode(buf, { stream: true });
+    }
+  }
+
+  decoder.chosen = decoder.label;
+  return decoder.primary.decode(buf, { stream: true });
+}
+
+/** Decode a whole buffer, or pass an already-decoded string through. */
+function decodeWholeOutput(decoder, value) {
+  if (typeof value === "string") {
+    // A string means the caller already assembled the text; just flush.
+    if (decoder.pending && decoder.pending.length) decoder.pending = Buffer.alloc(0);
+    return value;
+  }
+  const parts = [];
+  if (value && value.length) parts.push(decodeChunk(decoder, value));
+  if (decoder.pending && decoder.pending.length) {
+    const d = decoder.chosen === "utf-8" || !decoder.primary ? decoder.utf8 : decoder.primary;
+    parts.push(d.decode(decoder.pending));
+    decoder.pending = Buffer.alloc(0);
+  } else {
+    const d = decoder.chosen === "utf-8" || !decoder.primary ? decoder.utf8 : decoder.primary;
+    if (d) parts.push(d.decode());
+  }
+  return parts.join("");
+}
+
+/** Append a decoded chunk, keeping the pre-existing 10MB cap. */
+function appendDecoded(current, decoder, chunk) {
+  if (current.length >= 10 * 1024 * 1024) return current;
+  return current + decodeChunk(decoder, chunk);
+}
+
+/* ------------------------------------------------------- 工具参数守卫 */
+
+/**
+ * Thrown when a tool call's arguments cannot be used as sent.
+ *
+ * It is deliberately not a TypeError: the message is what the model reads
+ * back, so it has to name the field that is wrong instead of a Node internal
+ * ("The \"path\" argument must be of type string... Received undefined").
+ */
+export class ToolArgumentError extends Error {
+  constructor(message, detail) {
+    super(message);
+    this.name = "ToolArgumentError";
+    this.detail = detail || null;
+  }
+}
+
+/** A short, single-line preview of raw model output, for an error message. */
+function previewRaw(text, max = 240) {
+  const oneLine = String(text == null ? "" : text).replace(/\s+/g, " ").trim();
+  if (oneLine.length <= max) return oneLine;
+  return oneLine.slice(0, max) + "... (+" + (oneLine.length - max) + " chars)";
+}
+
+/**
+ * Required fields that the partial text never carried.
+ *
+ * When the JSON is broken the fields it lost are exactly what the model has to
+ * resend, so the error names them. Only keys that appear in the text are read,
+ * which keeps this a report of what arrived rather than a guess at it.
+ */
+function missingKeysInRawText(raw, schema) {
+  const required = schema && Array.isArray(schema.required) ? schema.required : [];
+  if (!raw || !required.length) return [];
+  const present = new Set();
+  const re = /"([^"\\]+)"\s*:/g;
+  let m;
+  while ((m = re.exec(raw)) !== null) present.add(m[1]);
+  return required.filter((k) => !present.has(k));
+}
+
+/** The error text for arguments whose JSON could not be parsed at all. */
+function parseErrorText(toolName, raw, problem, schema) {
+  const detail = problem ? "（" + problem + "）" : "";
+  const missing = missingKeysInRawText(raw, schema);
+  const missingText = missing.length ? "缺少必填参数 " + missing.map((k) => "'" + k + "'").join(", ") + "。" : "";
+  return toolName + ": 工具参数不是合法 JSON" + detail + "，已按原文尝试修复，仍然失败。\n" +
+    missingText +
+    "收到的参数（截断显示）：" + previewRaw(raw) + "\n" +
+    "请重新调用该工具，并输出完整的、符合 schema 的 JSON 参数。";
+}
+
+/**
+ * Tool-call arguments that carry a raw JSON string under \`raw\`.
+ *
+ * The provider puts model output that failed to parse under \`raw\`; the same
+ * key is what a well-behaved caller would never send as a string. A string
+ * there that does not parse means the argument JSON was invalid or truncated,
+ * which is the case this guard exists for.
+ */
+function rawLooksUnparsable(args) {
+  const raw = args && args.raw;
+  if (typeof raw !== "string" || !raw.trim()) return null;
+  const trimmed = raw.trim();
+  if (trimmed[0] !== "{" && trimmed[0] !== "[") return null;
+  try {
+    JSON.parse(trimmed);
+    return null;
+  } catch {
+    return raw;
+  }
+}
+
+function typeOfValue(value) {
+  if (Array.isArray(value)) return "array";
+  if (value === null) return "null";
+  if (typeof value === "number" && !Number.isFinite(value)) return "non-finite number";
+  if (typeof value === "object") return "object";
+  return typeof value;
+}
+
+function matchesType(value, type) {
+  switch (type) {
+    case "string": return typeof value === "string";
+    case "number": return typeof value === "number" && Number.isFinite(value);
+    case "integer": return typeof value === "number" && Number.isInteger(value);
+    case "boolean": return typeof value === "boolean";
+    case "array": return Array.isArray(value);
+    case "object": return !!value && typeof value === "object" && !Array.isArray(value);
+    case "null": return value === null;
+    default: return true;
+  }
+}
+
+/** Field-level errors for one schema node, or null when it matches. */
+function mismatchAgainstSubschema(value, fieldPath, schema) {
+  if (!schema || typeof schema !== "object") return null;
+  const label = fieldPath || "参数";
+  const type = schema.type;
+  const allowed = schema.enum;
+  const items = schema.items;
+  const minItems = schema.minItems;
+  if (typeof type === "string" && !matchesType(value, type)) {
+    return label + " 类型错误：schema 要求 " + type + "，实际是 " + typeOfValue(value);
+  }
+  if (Array.isArray(allowed) && allowed.length && !allowed.includes(value)) {
+    return label + " 取值非法：只接受 " + allowed.map((x) => JSON.stringify(x)).join("/") +
+      "，实际是 " + JSON.stringify(value);
+  }
+  if (Array.isArray(value)) {
+    if (typeof minItems === "number" && value.length < minItems) {
+      return label + " 至少要有 " + minItems + " 项，实际 " + value.length + " 项";
+    }
+    if (items && typeof items === "object") {
+      for (let i = 0; i < value.length; i++) {
+        const bad = mismatchAgainstSubschema(value[i], label + "[" + i + "]", items);
+        if (bad) return bad;
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * Validate the arguments a tool is about to run with.
+ *
+ * Only the parts of JSON Schema the tool contracts actually use are checked —
+ * required, type, enum, array items — plus a hard failure for a missing
+ * required field. Range keywords such as minimum are deliberately ignored so
+ * this guard cannot change behaviour that predates it.
+ *
+ * @returns {string|null} a readable error, or null when the call may proceed
+ */
+export function validateToolArguments(toolName, args, schema) {
+  if (args === null || typeof args !== "object" || Array.isArray(args)) {
+    return toolName + ": 参数必须是一个 JSON 对象（object），实际是 " + typeOfValue(args) + "。";
+  }
+
+  const rawProblem = rawLooksUnparsable(args);
+  if (rawProblem) return parseErrorText(toolName, rawProblem, "JSON.parse 失败，生成可能被截断", schema);
+
+  if (args.__parseError) {
+    return parseErrorText(toolName, args.__raw || args.raw || "", "JSON.parse 失败，生成可能被截断", schema);
+  }
+
+  if (!schema || typeof schema !== "object") return null;
+  // oneOf / anyOf: the call is valid when it satisfies any one branch.
+  for (const key of ["oneOf", "anyOf"]) {
+    const branches = schema[key];
+    if (Array.isArray(branches) && branches.length) {
+      const problems = [];
+      for (const branch of branches) {
+        const problem = validateToolArguments(toolName, args, branch);
+        if (!problem) return null;
+        problems.push(problem);
+      }
+      return toolName + ": 参数不满足 schema 的任何一个分支：" + previewRaw(problems.join(" / "), 300);
+    }
+  }
+
+  const required = Array.isArray(schema.required) ? schema.required : [];
+  const missing = required.filter((k) => args[k] === undefined || args[k] === null);
+  if (missing.length) {
+    return toolName + ": 缺少必填参数 " + missing.map((k) => "'" + k + "'").join(", ") +
+      "。收到的参数是 " + previewRaw(JSON.stringify(args)) +
+      "。请按工具 schema 重新调用（缺字段的调用不会被执行）。";
+  }
+
+  const properties = schema.properties && typeof schema.properties === "object" ? schema.properties : {};
+  for (const field of Object.keys(properties)) {
+    if (args[field] === undefined) continue;
+    const bad = mismatchAgainstSubschema(args[field], field, properties[field]);
+    if (bad) return toolName + ": " + bad;
+  }
+  return null;
+}
+
+/**
+ * Wrap a tool so its arguments are validated before run() sees them.
+ *
+ * The tool objects themselves stay unchanged, so a caller that imports a tool
+ * directly keeps working; every path that resolves a tool through findTool() /
+ * allRegisteredTools() — which is what the agent, the CLI and the registry use
+ * — gets the guard.
+ */
+export function withArgumentGuard(tool) {
+  // One wrapper per tool per process. Callers (and tests) patch the object
+  // findTool() hands them, so a fresh wrapper on every lookup would silently
+  // drop the patch and the agent would run the unwrapped tool.
+  const cached = GUARDED_TOOLS.get(tool.name);
+  if (cached && cached.__source === tool) return cached;
+  const guarded = Object.assign({}, tool);
+  guarded.__source = tool;
+  GUARDED_TOOLS.set(tool.name, guarded);
+  const direct = tool.run.bind(tool);
+  guarded.run = async (args, ctx) => {
+    // Validate against the schema the tool's own run() is written for, not the
+    // one advertised to the model: upstream-schemas.js is a best-effort
+    // reconstruction, and where it disagrees with the runtime contract (its
+    // TodoWrite says todos is an object, while run() takes an array) the
+    // runtime contract is what "the arguments are usable" means.
+    const problem = validateToolArguments(tool.name, args, tool.input_schema);
+    if (problem) return { ok: false, content: problem };
+    return direct(args, ctx);
+  };
+  return guarded;
+}
+
+/** Wrappers already built, keyed by tool name: findTool() must be stable. */
+const GUARDED_TOOLS = new Map();
+
+/** Read a count-style parameter without letting a bad value reach fs/streams. */
+function positiveInt(value, fallback) {
+  const n = typeof value === "string" ? Number(value) : value;
+  return typeof n === "number" && Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback;
+}
+
+/** A readable failure for a missing or non-string parameter. */
+function requireString(toolName, field, value, hint) {
+  if (typeof value === "string" && value.trim()) return null;
+  const got = value === undefined ? "（缺字段）" : typeOfValue(value);
+  return toolName + ": 参数 " + field + " 必须是非空字符串，实际是 " + got + "。" +
+    (hint ? hint + " " : "") + "请重新调用并给出 " + field + "。";
+}
 /** Output beyond this size is written to disk instead of being pasted back. */
 const PERSIST_THRESHOLD = 30000;
 /** Where persisted output lives; one file per oversized result. */
@@ -86,7 +492,14 @@ export const readTool = {
     },
     required: ["file_path"],
   },
-  async run({ file_path, offset = 1, limit = 2000, pages, allow_large }) {
+  async run(raw) {
+    const a = raw || {};
+    const badPath = requireString("Read", "file_path", a.file_path, "它必须是文件的绝对路径。");
+    if (badPath) return err(badPath);
+    const file_path = a.file_path;
+    const offset = positiveInt(a.offset, 1);
+    const limit = positiveInt(a.limit, 2000);
+    const { pages, allow_large } = a;
     try {
       const st = await stat(file_path);
       if (st.isDirectory()) return err(`EISDIR: ${file_path} is a directory (use LS)`);
@@ -215,7 +628,17 @@ export const editTool = {
     },
     required: ["file_path", "old_string", "new_string"],
   },
-  async run({ file_path, old_string, new_string, replace_all = false }) {
+  async run(raw) {
+    const a = raw || {};
+    const badPath = requireString("Edit", "file_path", a.file_path, "旧字符串必须能在该文件里唯一匹配。");
+    if (badPath) return err(badPath);
+    if (typeof a.old_string !== "string") {
+      return err("Edit: 参数 old_string 必须是字符串（要替换掉的原文），实际是 " + typeOfValue(a.old_string) + "。请重新调用并给出 old_string。");
+    }
+    if (typeof a.new_string !== "string") {
+      return err("Edit: 参数 new_string 必须是字符串（替换后的内容），实际是 " + typeOfValue(a.new_string) + "。请重新调用并给出 new_string。");
+    }
+    const { file_path, old_string, new_string, replace_all = false } = a;
     try {
       const raw = await readFile(file_path, "utf8");
       // Models emit LF even when the file on disk is CRLF, so a literal
@@ -252,7 +675,12 @@ export const lsTool = {
       path: { type: "string", description: "Directory path (default: cwd)" },
     },
   },
-  async run({ path = process.cwd() }) {
+  async run(raw) {
+    const a = raw || {};
+    if (a.path !== undefined && (typeof a.path !== "string" || !a.path.trim())) {
+      return err(requireString("LS", "path", a.path, "不传 path 时默认列出当前工作目录。"));
+    }
+    const path = a.path === undefined ? process.cwd() : a.path;
     try {
       const entries = await readdir(path, { withFileTypes: true });
       const lines = entries
@@ -276,7 +704,15 @@ export const globTool = {
     },
     required: ["pattern"],
   },
-  async run({ pattern, path = process.cwd() }) {
+  async run(raw) {
+    const a = raw || {};
+    const badPattern = requireString("Glob", "pattern", a.pattern, "例如 src/**/*.js。");
+    if (badPattern) return err(badPattern);
+    if (a.path !== undefined && (typeof a.path !== "string" || !a.path.trim())) {
+      return err(requireString("Glob", "path", a.path, "不传 path 时默认从当前工作目录开始。"));
+    }
+    const pattern = a.pattern;
+    const path = a.path === undefined ? process.cwd() : a.path;
     try {
       const matches = await globWalk(path, pattern);
       if (!matches.length) return ok("(no matches)");
@@ -493,6 +929,11 @@ export const grepTool = {
     // 上游用 ripgrep 风格的短横线参数（-A/-B/-C/-n/-i/-o）与 head_limit；
     // MyClaude 历史上用 A/B/C/i/n/max_results。两套都收，上游优先。
     const a = raw || {};
+    const badPattern = requireString("Grep", "pattern", a.pattern, "它是要搜索的正则表达式。");
+    if (badPattern) return err(badPattern);
+    if (a.path !== undefined && (typeof a.path !== "string" || !a.path.trim())) {
+      return err(requireString("Grep", "path", a.path, "不传 path 时默认搜索当前工作目录。"));
+    }
     const norm = {
       ...a,
       i: a["-i"] !== undefined ? a["-i"] : a.i,
@@ -517,16 +958,22 @@ export const grepTool = {
       C = 0,
       max_results = 200,
     } = norm;
+    // A non-number here would reach index arithmetic (before/after) or the
+    // result cap; coerce before the search instead of failing inside it.
+    const ctxA = positiveInt(A, 0);
+    const ctxB = positiveInt(B, 0);
+    const ctxC = positiveInt(C, 0);
+    const cap = positiveInt(max_results, 200);
     try {
       // Prefer ripgrep when installed: it honours .gitignore and is far faster
       // on large trees. Falls through to the JS scan below when unavailable.
-      const rgResult = ripgrepSearch({ pattern, path, glob, type, output_mode, i, n, o, A, B, C, max_results });
+      const rgResult = ripgrepSearch({ pattern, path, glob, type, output_mode, i, n, o, A: ctxA, B: ctxB, C: ctxC, max_results: cap });
       if (rgResult) { return rgResult; }
       let flags = "m";
       if (i) flags += "i";
       const re = new RegExp(pattern, flags);
-      const before = Math.max(B, C);
-      const after = Math.max(A, C);
+      const before = Math.max(ctxB, ctxC);
+      const after = Math.max(ctxA, ctxC);
       const includeRe = glob ? globToRegExp(glob) : null;
       const typeRe = type ? typeToRegexp(type) : null;
       const results = [];
@@ -574,12 +1021,12 @@ export const grepTool = {
             results.push(`${prefix}${lines[li].slice(0, 300)}`);
           }
           prev = li;
-          if (results.length >= max_results) return;
+          if (results.length >= cap) return;
         }
       }
 
       async function walk(dir) {
-        if (results.length >= max_results) return;
+        if (results.length >= cap) return;
         let entries;
         try {
           entries = await readdir(dir, { withFileTypes: true });
@@ -587,7 +1034,7 @@ export const grepTool = {
           return;
         }
         for (const e of entries) {
-          if (results.length >= max_results) return;
+          if (results.length >= cap) return;
           const full = join(dir, e.name);
           if (e.isDirectory()) {
             if (skip.has(e.name)) continue;
@@ -669,7 +1116,11 @@ export const multiEditTool = {
     },
     required: ["file_path", "edits"],
   },
-  async run({ file_path, edits }) {
+  async run(raw) {
+    const a = raw || {};
+    const badPath = requireString("MultiEdit", "file_path", a.file_path);
+    if (badPath) return err(badPath);
+    const { file_path, edits } = a;
     if (!Array.isArray(edits) || !edits.length) return err("edits must be a non-empty array");
     let text;
     try {
@@ -721,6 +1172,11 @@ export const bashTool = {
     // timeout 优先（上游命名），dangerouslyDisableSandbox 无对应沙箱实现，忽略并说明。
     const a = raw || {};
     const timeout_ms = a.timeout !== undefined ? a.timeout : (a.timeout_ms !== undefined ? a.timeout_ms : 120000);
+    const badCommand = requireString("Bash", "command", a.command, "它是要交给 shell 执行的命令文本。");
+    if (badCommand) return err(badCommand);
+    if (a.cwd !== undefined && (typeof a.cwd !== "string" || !a.cwd.trim())) {
+      return err(requireString("Bash", "cwd", a.cwd, "不传 cwd 时默认使用当前工作目录。"));
+    }
     const { command, cwd = process.cwd(), run_in_background = false, signal } = a;
     if (run_in_background) {
       const started = await startBackground({ command, cwd, timeout_ms: Math.max(timeout_ms, 60000) });
@@ -763,6 +1219,10 @@ export const bashTool = {
       }
       let stdout = "";
       let stderr = "";
+      // Decode with the console code page, not blindly as UTF-8: see the
+      // decoding helpers above. Each stream needs its own stateful decoder.
+      const outDecoder = outputDecoder();
+      const errDecoder = outputDecoder();
       let timedOut = false;
       let promotedTask = null;
       let settled = false;
@@ -792,16 +1252,16 @@ export const bashTool = {
           } catch {}
         });
       }, Math.max(1000, timeout_ms));
-      child.stdout.on("data", (c) => {
-        if (stdout.length < 10 * 1024 * 1024) { stdout += c; }
-      });
-      child.stderr.on("data", (c) => {
-        if (stderr.length < 10 * 1024 * 1024) { stderr += c; }
-      });
+      child.stdout.on("data", (c) => { stdout = appendDecoded(stdout, outDecoder, c); });
+      child.stderr.on("data", (c) => { stderr = appendDecoded(stderr, errDecoder, c); });
       const finish = (code, promoted = false) => {
         if (settled) return;
         settled = true;
         clearTimeout(timer);
+        // Flush what a stateful decoder is still holding and drop a partial
+        // character that was cut off mid-sequence at EOF.
+        stdout = decodeWholeOutput(outDecoder, stdout).replace(/\uFFFD+$/, "");
+        stderr = decodeWholeOutput(errDecoder, stderr).replace(/\uFFFD+$/, "");
         const parts = [];
         if (promoted && promotedTask) {
           // The command is still running in the background: say so up front,
@@ -850,7 +1310,14 @@ export const bashOutputTool = {
     },
     required: ["task_id"],
   },
-  async run({ task_id, offset = 0, limit = 60000, wait = false }) {
+  async run(raw) {
+    const a = raw || {};
+    const badTask = requireString("BashOutput", "task_id", a.task_id, "它是 Bash(run_in_background=true) 返回的任务 id。");
+    if (badTask) return err(badTask);
+    const { task_id } = a;
+    const offset = positiveInt(a.offset, 0);
+    const limit = positiveInt(a.limit, 60000);
+    const wait = a.wait === true;
     if (wait) {
       const settled = await waitTask(task_id);
       if (!settled.ok) return err(settled.error);
@@ -878,7 +1345,10 @@ export const killShellTool = {
     },
     required: ["task_id"],
   },
-  async run({ task_id }) {
+  async run(raw) {
+    const task_id = raw ? raw.task_id : undefined;
+    const badTask = requireString("KillShell", "task_id", task_id, "它是 Bash(run_in_background=true) 返回的任务 id。");
+    if (badTask) return err(badTask);
     const r = killTask(task_id);
     if (!r.ok) return err(r.error);
     if (r.note) return ok(`${r.id}: ${r.note}`);
@@ -915,17 +1385,30 @@ export const EXTRA_TOOLS = [];
 
 export function registerTools(tools) {
   for (const t of tools) {
-    if (!EXTRA_TOOLS.find((x) => x.name === t.name)) EXTRA_TOOLS.push(t);
+    if (!EXTRA_TOOLS.find((x) => x.name === t.name)) {
+      EXTRA_TOOLS.push(t);
+      // A re-registered tool may have a different object behind the name.
+      GUARDED_TOOLS.delete(t.name);
+    }
   }
 }
 
+/**
+ * Every registered tool, with its argument guard attached.
+ *
+ * The guard is applied here rather than on the exported tool objects, so a
+ * caller that imports one tool directly keeps the old behaviour while every
+ * path that resolves tools the way the agent does (findTool, the CLI, /tools)
+ * validates the arguments first and answers with a readable error instead of a
+ * TypeError out of fs.
+ */
 export function allRegisteredTools() {
   const seen = new Set();
   const out = [];
   for (const t of [...ALL_TOOLS, ...EXTRA_TOOLS]) {
     if (seen.has(t.name)) continue;
     seen.add(t.name);
-    out.push(t);
+    out.push(withArgumentGuard(t));
   }
   return out;
 }

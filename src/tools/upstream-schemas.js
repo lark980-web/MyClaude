@@ -12,7 +12,11 @@ export const UPSTREAM_TOOL_SCHEMAS = {
         "name": "Read",
         "mode": "merge",
         "required": [
-          "file_path"
+          "file_path",
+          "offset",
+          "limit",
+          "pages",
+          "allow_large"
         ],
         "properties": [
           "file_path",
@@ -249,43 +253,33 @@ export const UPSTREAM_TOOL_SCHEMAS = {
         "type": "object",
         "properties": {
           "file_path": {
-            "type": "string",
-            "description": "The absolute path to the file to read"
-          },
-          "offset": {
-            "type": "integer",
-            "minimum": 0,
-            "description": "The line number to start reading from. Only provide if the file is too large to read at once"
-          },
-          "limit": {
-            "type": "integer",
-            "exclusiveMinimum": 0,
-            "description": "The number of lines to read. Only provide if the file is too large to read at once."
-          },
-          "pages": {
+            "description": "The absolute path to the file to read",
             "type": "string"
           },
+          "offset": {
+            "x-unknown-node": "ZodTransform"
+          },
+          "limit": {
+            "x-unknown-node": "ZodTransform"
+          },
+          "pages": {
+            "x-unknown-node": "ZodTransform"
+          },
           "allow_large": {
-            "description": "Set to true to read a text file, or a line range of one, that is over the usual size limits, up to what still fits in your context. Only use this when you genuinely need all of it or the user asked for the whole file; otherwise read it in parts with offset and limit, or search it."
+            "x-unknown-node": "ZodTransform"
           }
         },
         "required": [
-          "file_path"
+          "file_path",
+          "offset",
+          "limit",
+          "pages",
+          "allow_large"
         ],
         "additionalProperties": false
       },
       "upstreamName": null,
-      "notes": {
-        "renamedProperties": {
-          "[computed:[Rge]]": "allow_large"
-        },
-        "unresolvedProperties": {
-          "allow_large": "\"allow_large\""
-        },
-        "upstreamSpreads": [
-          "PK()"
-        ]
-      },
+      "notes": {},
       "source": {
         "file": "02-modules/files/chunk-e0x0xb6d.js",
         "line": 3236,
@@ -613,26 +607,33 @@ export const UPSTREAM_TOOL_SCHEMAS = {
         "type": "object",
         "properties": {
           "todos": {
-            "type": "object",
-            "properties": {
-              "content": {
-                "type": "string",
-                "minimum": "1,\"Content cannot be empty\""
+            "description": "The updated todo list",
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "content": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "pending",
+                    "in_progress",
+                    "completed"
+                  ]
+                },
+                "activeForm": {
+                  "type": "string"
+                }
               },
-              "status": {
-                "type": "unknown"
-              },
-              "activeForm": {
-                "type": "string",
-                "minimum": "1,\"Active form cannot be empty\""
-              }
-            },
-            "required": [
-              "content",
-              "status",
-              "activeForm"
-            ],
-            "description": "The updated todo list"
+              "required": [
+                "content",
+                "status",
+                "activeForm"
+              ],
+              "additionalProperties": false
+            }
           }
         },
         "required": [

@@ -45,35 +45,7 @@ function ceilingMs() {
   const v = Number(process.env.MYCLAUDE_ENGINE_MAX_MS);
   return Number.isFinite(v) && v >= 5_000 ? v : DEFAULT_MAX_MS;
 }
-/**
- * 引擎 `--permission-mode` 的**权威取值**。
- *
- * 来源：直接让引擎自己打印 —— `bun B:/~BUN/root/cli --help`：
- *   --permission-mode <mode>  (choices: "acceptEdits", "auto", "bypassPermissions",
- *                              "manual", "dontAsk", "plan")
- * 注意没有 "default" —— 以前这里写的就是错的，MyClaude 的 ask/dontAsk 全被静默降级。
- */
-const ENGINE_PERMISSION_MODES = new Set(["acceptEdits", "auto", "bypassPermissions", "manual", "dontAsk", "plan"]);
-
-/**
- * MyClaude 模式 → 引擎模式。7 个 MyClaude 模式都有明确对应，不再静默降级。
- * 未知值一律退到 **manual（最保守）**，而不是 acceptEdits —— 未知不等于放行。
- */
-const ENGINE_MODE_MAP = Object.freeze({
-  ask: "manual",
-  acceptEdits: "acceptEdits",
-  auto: "auto",
-  dontAsk: "dontAsk",
-  plan: "plan",
-  bypassPermissions: "bypassPermissions",
-  fullAccess: "bypassPermissions", // MyClaude 专有逃生舱，语义等同
-});
-
-export function toEnginePermissionMode(mode) {
-  const m = String(mode || "").trim();
-  if (ENGINE_PERMISSION_MODES.has(m)) return m;
-  return ENGINE_MODE_MAP[m] || "manual";
-}
+const PERMISSION_MODES = new Set(["default", "acceptEdits", "plan", "bypassPermissions"]);
 const MISSING_SESSION_RE = /No conversation found with session ID/i;
 
 let cachedBun;
@@ -131,28 +103,17 @@ export function engineEnv({ baseUrl, apiKey } = {}) {
 }
 
 /** CLI 参数。prompt 不走 argv（会被 shell/Start-Process 拆错），走 stdin。 */
-export function buildEngineArgs({
-  model, permissionMode = "manual", resumeSessionId, additionalDirectories, permissionPrompts,
-} = {}) {
-  const mode = toEnginePermissionMode(permissionMode);
+export function buildEngineArgs({ model, permissionMode = "acceptEdits", resumeSessionId } = {}) {
+  const mode = PERMISSION_MODES.has(permissionMode) ? permissionMode : "acceptEdits";
   const args = [
     cliPath(),
     "--print",
     "--output-format", "stream-json",
     "--verbose",
     "--permission-mode", mode,
-    // 引擎默认 --permission-prompts host：它会把授权询问发给宿主，而 MyClaude 目前
-    // 不实现该协议 → 询问悬空。显式设 none 让行为确定：会询问的一律自动拒绝，
-    // 并把拒绝原因回传到 result.permission_denials，由 describeDenials() 讲给人听。
-    "--permission-prompts", permissionPrompts === "host" ? "host" : "none",
   ];
   if (resumeSessionId) args.push("--resume", String(resumeSessionId));
   if (model) args.push("--model", String(model));
-  // 额外工作目录：MyClaude 的 /add-dir。不给的话引擎只能碰项目目录，
-  // 连自己的技能目录（~/.claude/skills）都读不到。
-  const dirs = (Array.isArray(additionalDirectories) ? additionalDirectories : [])
-    .map((d) => String(d || "").trim()).filter(Boolean);
-  if (dirs.length) args.push("--add-dir", ...dirs);
   return args;
 }
 
@@ -164,7 +125,6 @@ export function summarizeEngineEvents(lines) {
     sessionId: null, model: null, permissionMode: null, toolsCount: 0,
     assistantTexts: [], toolUses: [], reasoningChars: 0,
     result: null, numTurns: null, durationMs: null, isError: null, costUsd: null, usage: null,
-    permissionDenials: [],
   };
   for (const line of lines) {
     let o;
@@ -188,11 +148,6 @@ export function summarizeEngineEvents(lines) {
       out.costUsd = o.total_cost_usd ?? out.costUsd;
       out.usage = o.usage || out.usage;
       out.sessionId = o.session_id || out.sessionId;
-      // 引擎会如实报出「本来要问、但因为没人应答而拒绝」的调用。
-      // 这是把「无法创建技能」这类静默失败讲清楚的关键数据。
-      if (Array.isArray(o.permission_denials) && o.permission_denials.length) {
-        out.permissionDenials = o.permission_denials;
-      }
     }
   }
   return out;
@@ -253,37 +208,6 @@ export function forgetEngineSession(key) {
  * 引擎跑一条长命令（全工作区搜索之类）时**本来就长时间没有输出**，
  * 那是在等自己的工具，不是卡死。把「工具在飞行中」也当静默，就会误杀它。
  */
-/**
- * 把引擎报回的权限拒绝转成人能照着做的提示。
- *
- * 为什么需要它：上游把 `.claude/skills|commands|agents` 当作**硬保护目录**
- * （chunk-zvergrz0.js 的 Ef()；调用方 PG() 对这类路径一律要求显式授权）。
- * --print 模式下没人能应答授权 → 静默失败。用户只看到「没装成」，
- * 不知道挡在哪、也不知道怎么办。这个函数负责把话说全。
- */
-export function describeDenials(denials, { mode } = {}) {
-  const list = Array.isArray(denials) ? denials.filter(Boolean) : [];
-  if (!list.length) return null;
-  const pickInput = (d) => (d && (d.tool_input || d.input)) || {};
-  const lines = list.slice(0, 5).map((d) => {
-    const name = (d && (d.tool_name || d.toolName || d.name)) || "工具";
-    const input = pickInput(d);
-    const target = input.file_path || input.path || input.notebook_path || input.command || "";
-    const why = (d && (d.decision_reason || d.reason || d.message)) || "";
-    return "  · " + name + (target ? " → " + String(target) : "") + (why ? "（" + String(why).slice(0, 120) + "）" : "");
-  });
-  const protectedHit = list.some((d) => {
-    const input = pickInput(d);
-    const path = String(input.file_path || input.path || "").replace(/\\/g, "/");
-    return /\/\.claude\/(skills|commands|agents)\//.test(path);
-  });
-  const fix = protectedHit
-    ? ["这是上游的硬保护目录（.claude/skills|commands|agents）。两条路：",
-       "  1) 把权限模式切到「全部放行」后重试；",
-       "  2) 或把该目录加进额外工作目录（/add-dir），再放行 Write。"].join("\n")
-    : ["如果这些调用本来就该放行：检查当前权限模式（/mode），或改用「接受编辑 / 自动 / 全部放行」后重试。"].join("\n");
-  return "引擎拒绝了 " + list.length + " 次调用（当前模式：" + (mode || "?") + "）：\n" + lines.join("\n") + "\n" + fix;
-}
 export function toolBalanceOf(line) {
   try {
     const ev = JSON.parse(line);
@@ -320,14 +244,14 @@ function missingSession(result) {
 /** 单次 spawn 尝试。timeoutMs 是**静默**阈值；maxMs 是绝对上限。 */
 function attempt({
   prompt, model, baseUrl, apiKey, cwd: workdir,
-  timeoutMs, maxMs, permissionMode, onEvent, resumeSessionId, additionalDirectories,
+  timeoutMs, maxMs, permissionMode, onEvent, resumeSessionId,
 }) {
   return new Promise((resolve) => {
     const st = engineStatus();
     if (!st.available) { resolve({ ok: false, error: "native engine unavailable", status: st }); return; }
     const idle = Math.max(5_000, Math.min(Number(timeoutMs) || idleMs(), MAX_TIMEOUT_MS));
     const ceiling = Math.max(idle, Math.min(Number(maxMs) || ceilingMs(), MAX_CEILING_MS));
-    const args = buildEngineArgs({ model, permissionMode, resumeSessionId, additionalDirectories });
+    const args = buildEngineArgs({ model, permissionMode, resumeSessionId });
     let child;
     try {
       child = spawn(st.bun, args, {
@@ -403,13 +327,13 @@ function attempt({
  */
 export function runEngineTurn({
   prompt, model, baseUrl, apiKey, cwd: workdir,
-  timeoutMs, maxMs, permissionMode = "manual", onEvent, resumeSessionId, additionalDirectories,
+  timeoutMs, maxMs, permissionMode = "acceptEdits", onEvent, resumeSessionId,
 } = {}) {
   return (async () => {
     if (!prompt || !String(prompt).trim()) return { ok: false, error: "empty prompt" };
     const base = {
       prompt: String(prompt), model, baseUrl, apiKey,
-      cwd: workdir, timeoutMs, maxMs, permissionMode, onEvent, additionalDirectories,
+      cwd: workdir, timeoutMs, maxMs, permissionMode, onEvent,
     };
     const first = await attempt({ ...base, resumeSessionId: resumeSessionId || null });
     if (resumeSessionId && !first.ok && missingSession(first)) {

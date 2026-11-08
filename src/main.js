@@ -9,7 +9,7 @@ import { createAgent, closeAgent } from "./agent/runtime.js";
 import { runWithAutoContinue } from "./agent/autorun.js";
 import { setAutonomous } from "./tools/extended.js";
 import { buildStatusLineInput, runStatusLine } from "./agent/statusline.js";
-import { describeTimeout, describeDenials } from "./engines/claude-code.js";
+import { describeTimeout } from "./engines/claude-code.js";
 import {
   newSessionId,
   saveSession,
@@ -166,8 +166,6 @@ function sessionMeta(agent, config) {
     permissionMode: agent.mode ?? config.permissionMode,
     turnCount: agent.turnCount,
     version: VERSION,
-    // N5：见 gui-server 同名注释 —— 不声明的话，自研回合写出来的会话就没有这个字段。
-    engine: "self",
   };
 }
 
@@ -932,11 +930,10 @@ case "init": {
         ui.info("已解绑上游会话，下一回合将开新会话");
         return {};
       }
-      ui.info("原生引擎执行中…（无输出超过 " + Math.round((config.engineIdleMs || 180000) / 1000) + " 秒才判定卡死）");
+      ui.info("原生引擎执行中…（最长 180 秒）");
       const r = await runEngineTurn({
         prompt: arg, model: config.model, baseUrl: config.baseUrl,
         apiKey: config.apiKey, cwd: process.cwd(), timeoutMs: config.engineIdleMs, maxMs: config.engineMaxMs,
-        permissionMode: config.permissionMode, additionalDirectories: config.additionalDirectories,
         resumeSessionId: bound,
       });
       if (!r.ok) {
@@ -944,8 +941,6 @@ case "init": {
         return {};
       }
       rememberEngineSession(key, r.sessionId);
-      const tuiDenials = describeDenials(r.permissionDenials, { mode: r.permissionMode });
-      if (tuiDenials) { ui.warn(tuiDenials); }
       const tools = r.toolUses.length ? "\n工具调用: " + r.toolUses.map((t) => t.name).join(" → ") : "";
       ui.info(String(r.result || r.assistantTexts.join("\n\n") || "(无输出)") + tools);
       const resumedTag = r.resumedFrom ? "（续接）" : (r.recoveredFromMissingResume ? "（原会话已失效，已开新会话）" : "");

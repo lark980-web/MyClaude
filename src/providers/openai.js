@@ -322,14 +322,15 @@ export class OpenAIProvider {
     const toolCalls = [...toolAccum.values()]
       .filter((t) => t.name)
       .map((t) => {
-        let args = {};
-        try {
-          args = t.arguments ? JSON.parse(t.arguments) : {};
-        } catch {
-          const repaired = repairToolJson(t.arguments);
-          args = repaired || { __raw: t.arguments, __parseError: true };
-        }
-        return { id: t.id, name: t.name, arguments: args, raw: t.arguments };
+        const parsed = parseToolArguments(t.arguments);
+        // Invalid JSON is never silently replaced with an empty object: the
+        // raw text rides along in the call (and as a "raw" key inside the
+        // arguments) so the tool layer answers with a readable error instead
+        // of the tool running with no arguments at all.
+        const args = parsed.ok
+          ? parsed.value
+          : { raw: t.arguments, __parseError: true, __parseErrorReason: parsed.reason };
+        return { id: t.id, name: t.name, arguments: args, raw: t.arguments, argumentsError: parsed.ok ? null : parsed.reason };
       });
 
     for (const call of toolCalls) onToolCall?.(call);
@@ -361,13 +362,11 @@ export class OpenAIProvider {
     const json = await res.json();
     const msg = json.choices?.[0]?.message || {};
     const toolCalls = (msg.tool_calls || []).map((t) => {
-      let args = {};
-      try {
-        args = t.function.arguments ? JSON.parse(t.function.arguments) : {};
-      } catch {
-        args = {};
-      }
-      return { id: t.id, name: t.function.name, arguments: args, raw: t.function.arguments };
+      const parsed = parseToolArguments(t.function.arguments);
+      const args = parsed.ok
+        ? parsed.value
+        : { raw: t.function.arguments, __parseError: true, __parseErrorReason: parsed.reason };
+      return { id: t.id, name: t.function.name, arguments: args, raw: t.function.arguments, argumentsError: parsed.ok ? null : parsed.reason };
     });
     return {
       text: msg.content || "",
@@ -386,14 +385,109 @@ export class OpenAIProvider {
 /**
  * Repair a tool-call argument string that a model emitted as "almost JSON".
  *
- * Some providers (observed with spark-x2.6) stream real newlines/tabs INSIDE
- * string values instead of the \n escape, which makes JSON.parse throw and
- * the tool then runs with no arguments (Write crashed with
- * ERR_INVALID_ARG_TYPE on an undefined path). Escaping control characters
- * that sit inside a string literal recovers those calls.
+ * Two failure modes are known:
+ *  - spark-x2.6 streams real newlines/tabs INSIDE string values instead of the
+ *    \n escape, which makes JSON.parse throw;
+ *  - a stream that ends early truncates the JSON mid-structure (the observed
+ *    Read call ended at "limit": 35 with no closing quote or brace).
+ *
+ * The first is fixed by escaping control characters that sit inside a string
+ * literal, the second by closing whatever brackets and quotes are still open
+ * at the end. Both are deterministic for these two shapes.
+ *
+ * @returns {*} the parsed value, or null when the text cannot be salvaged
  */
 export function repairToolJson(text) {
   if (typeof text !== "string" || !text.trim()) return null;
+  return repairToolJsonDetailed(text).value;
+}
+
+/**
+ * Same repair, plus the reason it failed.
+ *
+ * @returns {{value: any, reason: string|null}} value is null when unrepairable
+ */
+export function repairToolJsonDetailed(text) {
+  if (typeof text !== "string" || !text.trim()) {
+    return { value: null, reason: "参数为空" };
+  }
+
+  const stripped = stripCodeFence(text.trim());
+  const escaped = escapeControlCharsInStrings(stripped);
+
+  const direct = tryParse(stripped);
+  if (direct !== undefined) return { value: direct, reason: null };
+  const directEscaped = tryParse(escaped);
+  if (directEscaped !== undefined) return { value: directEscaped, reason: null };
+
+  // Structural truncation: close the strings and containers left open.
+  const completed = completeTruncatedJson(escaped);
+  if (completed) {
+    const value = tryParse(completed);
+    if (value !== undefined) return { value, reason: null };
+  }
+
+  const trailingCommas = escaped.replace(/,\s*([}\]])/g, "$1");
+  const lax = tryParse(trailingCommas);
+  if (lax !== undefined) return { value: lax, reason: null };
+
+  const completedLax = completeTruncatedJson(trailingCommas);
+  if (completedLax) {
+    const value = tryParse(completedLax);
+    if (value !== undefined) return { value, reason: null };
+  }
+
+  return { value: null, reason: "JSON.parse 失败：括号或引号未闭合，或存在非法字符" };
+}
+
+/**
+ * Parse a tool-call argument string, falling back to repair.
+ *
+ * Callers must not turn a failure into an empty argument object: an empty
+ * object makes the tool run with no parameters at all, which is how Read got
+ * stat(undefined). The \`raw\` text is returned so the caller can hand it back
+ * to the model.
+ *
+ * @returns {{ok: boolean, value: any, raw: string, reason: string|null}}
+ */
+export function parseToolArguments(text) {
+  if (text === undefined || text === null || String(text).trim() === "") {
+    return { ok: true, value: {}, raw: text == null ? "" : String(text), reason: null };
+  }
+  const raw = String(text);
+  const direct = tryParse(raw);
+  if (direct !== undefined) {
+    if (direct === null || typeof direct !== "object" || Array.isArray(direct)) {
+      return { ok: false, value: null, raw, reason: "参数 JSON 不是对象" };
+    }
+    return { ok: true, value: direct, raw, reason: null };
+  }
+  const repaired = repairToolJsonDetailed(raw);
+  if (repaired.value !== null && typeof repaired.value === "object" && !Array.isArray(repaired.value)) {
+    return { ok: true, value: repaired.value, raw, reason: null };
+  }
+  return { ok: false, value: null, raw, reason: repaired.reason || "JSON.parse 失败" };
+}
+
+/** JSON.parse without throwing; undefined means "did not parse". */
+function tryParse(text) {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+}
+
+/** Drop a code fence some providers wrap argument JSON in. */
+function stripCodeFence(text) {
+  return text.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/, "");
+}
+
+/**
+ * Escape raw control characters (newline, tab, CR) that sit inside a string
+ * literal, which is what a provider streaming unescaped text produces.
+ */
+function escapeControlCharsInStrings(text) {
   let out = "";
   let inString = false;
   let escaped = false;
@@ -414,10 +508,44 @@ export function repairToolJson(text) {
     if (ch === '"') { inString = true; }
     out += ch;
   }
-  try { return JSON.parse(out); } catch {}
-  const stripped = out.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/, "").replace(/,\s*([}\]])/g, "$1");
-  try { return JSON.parse(stripped); } catch {}
-  return null;
+  return out;
+}
+
+/**
+ * Close a truncated JSON document.
+ *
+ * Walks the text tracking which strings and containers are still open, then
+ * appends the missing closers in the right order. Returns null when there is
+ * nothing to close, or when the shape is too mangled for this to help.
+ */
+function completeTruncatedJson(text) {
+  const stack = [];
+  let inString = false;
+  let escaped = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (inString) {
+      if (escaped) { escaped = false; continue; }
+      if (ch === "\\") { escaped = true; continue; }
+      if (ch === '"') { inString = false; }
+      continue;
+    }
+    if (ch === '"') { inString = true; continue; }
+    if (ch === "{") { stack.push("}"); continue; }
+    if (ch === "[") { stack.push("]"); continue; }
+    if (ch === "}" || ch === "]") { stack.pop(); continue; }
+  }
+  if (!inString && !stack.length) return null;
+
+  const trimmed = text.trimEnd();
+  // A trailing colon means the value never arrived: feed it null rather than
+  // leaving the document invalid.
+  if (/:$/.test(trimmed)) {
+    return text + "null" + (inString ? '"' : "") + stack.reverse().join("");
+  }
+  // Drop a dangling comma: JSON does not allow one before a closer.
+  const body = /,$/.test(trimmed) ? text.replace(/,\s*$/, "") : text;
+  return body + (inString ? '"' : "") + stack.reverse().join("");
 }
 
 // createProvider 已移到 providers/index.js：AnthropicProvider 继承本模块的
