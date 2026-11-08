@@ -7,8 +7,8 @@
 
 | 维度 | 占比 | 口径 |
 |---|---|---|
-| 命令面（TUI） | **97%** | R4 分母重推后真数：本地相关 64（回收 restart/theme），TUI 62/64，缺 /theme /restart（测于 2026-11-07 via node scripts/parity-metrics.mjs --json；判定依据 docs/command-denominator.md） |
-| 命令面（GUI） | **98%** | 同口径，GUI 63/64，缺 /restart（GUI 已有 /theme） |
+| 命令面（TUI） | **100%** | 本地相关 64，TUI 64/64，零缺失（测于 2026-11-08 via node scripts/parity-metrics.mjs --json；/theme /restart 已实现，见下） |
+| 命令面（GUI） | **100%** | 同口径，GUI 64/64，零缺失（/restart 经命令桥实现） |
 | 工具契约 | **17/17 可对齐项 = 100%** | 上游 96 条目中 79 个为云侧/生态/模板（不可达）；本地 17 个工具全部逐字采用上游 description+schema |
 | 输出样式 | **5/5 = 100%** | default/Proactive/Concise/Explanatory/Learning 逐字（含 turnReminder/waitingTurnReminder） |
 | 系统提示词 | **六段结构 ✓** | 13,147 字符；高价值子句逐字对照（system-prompt-parity 测试锁定） |

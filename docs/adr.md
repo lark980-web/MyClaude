@@ -80,3 +80,11 @@
 - **阻塞**：Bun 源码不可达（GitHub raw 5 路径全 404；web_search API key 失效）。
 - **放弃理由**：无源码无法确证算法，猜测被计划规则禁止。值域上限 ~16.7M 暗示可能是 wyhash/xxhash 截断或 Bun 自定义哈希——但这是推断不是结论。
 - **保留**：原始字节 trailer.bin + 分段结构（payload-forensics.md）+ 尝试脚本（.local/r8-*.mjs）。详见 claude-re-2.1.302/01-artifact/trailer-hash.md。
+
+## 剩余项收口（2026-11-08）：catalog 修复 + bypass/deny 验证 + 三命令补齐 + gate:full 首绿
+
+- **catalog-cdp EPERM 修复**（895f2a3）：verify-catalog-toolcard.mjs 清理改 rmResilient（退避重试 + 残留锁降级警告）；13 项行为检查全过、exit 0。gate:full 不再卡此步。
+- **R5.5-b bypass/deny 验证**（6bdea31）：上游证据链——规则匹配器 zce（chunk-e0x0xb6d @923379）deny 命中返回硬 behavior:"deny"（type:"rule"）自身不查模式；逐工具模式处理器 SFt/at 对 bypass 返回 passthrough + "handled in main permission flow"（不在规则前短路）。MyClaude agent.js askPermission 先 evaluate（deny→false）后 bypass→true，顺序一致。回归测试 2/2。
+- **三命令补齐**：/theme（TUI：config.theme 持久化 + 状态行指示 + light 深橙强调色 + /config 行；3/3 测试）；/restart + /update 别名（src/restart.js：restartArgs 保留旗标替换 --resume + performRestart detached 重启；TUI case + GUI /api/command 桥；4/4 测试）。**现测 TUI 64/64=100%、GUI 64/64=100%，零缺失**——R4 回收后的真缺口闭合，100% 这次是挣来的。
+- **gate:full 首次全 9 步绿**：tests→prompt→features→build-embed→build-exe→smoke→catalog-cdp→vim-cdp→tty。修了两处链缺陷：catalog 清理 EPERM（上述）+ build-exe 后杀软瞬时锁新 exe（error 0x20）撞 TTY——加 build settle（默认 3s，MYCLAUDE_GATE_BUILD_SETTLE_MS 可调）。
+- **纪律**：每步 gate 验证；环境竞态（杀软锁）靠 settle/重试处置而非放宽闸门；所有数字现测。

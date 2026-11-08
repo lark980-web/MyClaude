@@ -6492,6 +6492,8 @@
       var b = $("btn-export-chat");
       if (b) { b.click(); } else { addNotice("导出入口不可用", "warn"); }
     },
+    restart: function () { runServerCommand("restart"); },
+    update: function () { runServerCommand("restart"); },
     memory: function (arg) { runServerCommand("memory", arg); },
     skills: function () { runServerCommand("skills"); },
     plugin: function () { runServerCommand("plugin"); },

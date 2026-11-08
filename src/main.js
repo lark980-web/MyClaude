@@ -102,7 +102,7 @@ Commands (interactive):
   /rm <id>           delete a saved session
 
 Upstream 2.1.302 parity (local subset):
-  /advisor /auto-mode-setup /autocompact /subtask /cd /color /vim /diff
+  /advisor /auto-mode-setup /autocompact /subtask /cd /color /theme /vim /diff
   /background /stop /focus /heapdump /keybindings /import /pause-memory
   /reload-plugins /reload-skills /rename /statusline /tui /security-review
   /terminal-setup /scroll-speed /usage /recap /goal /sandbox /list-agents
@@ -1225,6 +1225,28 @@ case "init": {
       });
       return {};
     }
+    case "theme": {
+      // 上游 /theme（chunk-e0x0xb6d @2182394：type:"local-jsx",description:"Change the theme"）。
+      // TUI 无 GUI 式背景切换；主题作用于 ink 强调色与状态行指示，持久化到 config.theme。
+      const THEMES = ["dark", "light", "auto"];
+      const cur = THEMES.includes(config.theme) ? config.theme : "dark";
+      const next = arg && THEMES.includes(arg.trim()) ? arg.trim() : THEMES[(THEMES.indexOf(cur) + 1) % THEMES.length];
+      config.theme = next;
+      saveConfig({ theme: next });
+      const label = next === "dark" ? "深色" : next === "light" ? "浅色" : "跟随系统";
+      ui.info(`主题 → ${next}（${label}）；状态行与强调色即时生效`);
+      return {};
+    }
+    case "restart":
+    case "update": {
+      // 上游 /restart（aliases:["update"]）：重启并保留会话。本地实现：保存当前会话后以 --resume 重启自身。
+      const { performRestart } = await import("./restart.js");
+      const sid = ctx.autoSaver?.id || agent?.sessionKey || null;
+      try { ctx.autoSaver?.save({ force: true }); } catch {}
+      ui.info(sid ? `重启并恢复会话 ${sid}…` : "重启（新会话）…");
+      performRestart({ sessionId: sid });
+      return { exit: true };
+    }
     case "vim": {
       // 上游 2.1.302 的 /vim 已改为跳转 /config（Editor mode，chunk-0p6y8rwv.js）；
       // 本项目保留开关并真生效：TUI 输入框按 editorMode==="vim" 启用 vim 键位（src/ui/vim.js）。
@@ -1583,6 +1605,7 @@ async function runTui({ config, provider, agent, autoSaver }) {
         { key: "editorMode", label: "Editor mode（编辑器模式）", values: ["normal", "vim"], valueIdx: config.editorMode === "vim" ? 1 : 0 },
         { key: "outputStyle", label: "Output style（输出样式）", values: styles.map((s) => s.name), valueIdx: Math.max(0, styleIdx) },
         { key: "autoCompact", label: "自动压缩（autoCompact）", values: ["on", "off"], valueIdx: config.autoCompact === false ? 1 : 0 },
+        { key: "theme", label: "Theme（主题）", values: ["dark", "light", "auto"], valueIdx: Math.max(0, ["dark", "light", "auto"].indexOf(config.theme || "dark")) },
       ];
     },
     onConfigApply: (key, value) => {
@@ -1600,6 +1623,10 @@ async function runTui({ config, provider, agent, autoSaver }) {
         config.autoCompact = value === "on";
         saveConfig({ autoCompact: config.autoCompact });
         bridge.info("autoCompact → " + (config.autoCompact ? "on" : "off"));
+      } else if (key === "theme") {
+        config.theme = value;
+        saveConfig({ theme: value });
+        bridge.info("Theme → " + value);
       }
     },
     onEditMessage: async (depth, text) => {

@@ -24,7 +24,7 @@
 | GUI 覆盖 | 62/62 = 100%（虚高） | **63/64 = 98%**（真数：缺 restart；theme 已有） |
 
 > **headline 从 100% 降为 96.9%/98.4%——降下来的这天起它才可信。**
-> 两个真实缺口（TUI /restart、TUI /theme）的实现是后续轮次的任务，不在 R4 度量轮内。
+> 两个真实缺口已于 2026-11-08 补齐：TUI /theme（config.theme + 状态行指示 + 强调色 + /config 行）、TUI /restart 与 GUI /restart（src/restart.js：保存会话→detached 重启 --resume；GUI 经 /api/command 桥）。现测 TUI 64/64、GUI 64/64，零缺失。
 
 ## 维持排除的完整清单依据（44 项，R4 抽查 6 项后其余沿用原判定）
 

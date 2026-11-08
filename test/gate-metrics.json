@@ -1,16 +1,16 @@
 {
   "schemaVersion": 1,
   "baseline": {
-    "testCount": 722,
-    "commit": "1775d81e2a0ee556c92159411726e23e6c4d0612",
-    "at": "2026-11-07T08:22:02.944Z"
+    "testCount": 731,
+    "commit": "6bdea31cb023c9aba305bb91995f9c11e06eaaa3",
+    "at": "2026-11-08T04:53:25.337Z"
   },
   "latest": {
-    "runId": "2026-11-07T08-20-44-159Z",
-    "mode": "fast",
-    "startedAt": "2026-11-07T08:20:44.191Z",
-    "commit": "1775d81e2a0ee556c92159411726e23e6c4d0612",
-    "dirty": "M docs/EXECUTION-PLAN.md\n M docs/adr.md",
+    "runId": "2026-11-08T04-51-33-449Z",
+    "mode": "full",
+    "startedAt": "2026-11-08T04:51:33.452Z",
+    "commit": "6bdea31cb023c9aba305bb91995f9c11e06eaaa3",
+    "dirty": "M scripts/gate.mjs\n M src/main.js\n M src/ui/assets.js\n M src/ui/gui-server.js\n M src/ui/ink-app.js\n M src/ui/web/js/app.js\n M test/gate-metrics.json",
     "status": "passed",
     "steps": [
       {
@@ -24,7 +24,7 @@
         ],
         "exitCode": 0,
         "signal": null,
-        "logPath": "E:\\WorkSpaces\\Test09\\MyClaude\\.local\\gate\\2026-11-07T08-20-44-159Z\\tests.log"
+        "logPath": "E:\\WorkSpaces\\Test09\\MyClaude\\.local\\gate\\2026-11-08T04-51-33-449Z\\tests.log"
       },
       {
         "name": "prompt",
@@ -34,7 +34,7 @@
         ],
         "exitCode": 0,
         "signal": null,
-        "logPath": "E:\\WorkSpaces\\Test09\\MyClaude\\.local\\gate\\2026-11-07T08-20-44-159Z\\prompt.log"
+        "logPath": "E:\\WorkSpaces\\Test09\\MyClaude\\.local\\gate\\2026-11-08T04-51-33-449Z\\prompt.log"
       },
       {
         "name": "features",
@@ -43,10 +43,66 @@
         ],
         "exitCode": 0,
         "signal": null,
-        "logPath": "E:\\WorkSpaces\\Test09\\MyClaude\\.local\\gate\\2026-11-07T08-20-44-159Z\\features.log"
+        "logPath": "E:\\WorkSpaces\\Test09\\MyClaude\\.local\\gate\\2026-11-08T04-51-33-449Z\\features.log"
+      },
+      {
+        "name": "build-embed",
+        "args": [
+          "scripts/bundle-gui.mjs"
+        ],
+        "exitCode": 0,
+        "signal": null,
+        "logPath": "E:\\WorkSpaces\\Test09\\MyClaude\\.local\\gate\\2026-11-08T04-51-33-449Z\\build-embed.log"
+      },
+      {
+        "name": "build-exe",
+        "args": [
+          "scripts/build-exe.mjs"
+        ],
+        "exitCode": 0,
+        "signal": null,
+        "logPath": "E:\\WorkSpaces\\Test09\\MyClaude\\.local\\gate\\2026-11-08T04-51-33-449Z\\build-exe.log"
+      },
+      {
+        "name": "smoke",
+        "args": [
+          "--test",
+          "--test-reporter=tap",
+          "test/smoke-commands.smoke.js"
+        ],
+        "exitCode": 0,
+        "signal": null,
+        "logPath": "E:\\WorkSpaces\\Test09\\MyClaude\\.local\\gate\\2026-11-08T04-51-33-449Z\\smoke.log"
+      },
+      {
+        "name": "catalog-cdp",
+        "args": [
+          "scripts/verify-catalog-toolcard.mjs"
+        ],
+        "exitCode": 0,
+        "signal": null,
+        "logPath": "E:\\WorkSpaces\\Test09\\MyClaude\\.local\\gate\\2026-11-08T04-51-33-449Z\\catalog-cdp.log"
+      },
+      {
+        "name": "vim-cdp",
+        "args": [
+          "scripts/verify-gui-vim.mjs"
+        ],
+        "exitCode": 0,
+        "signal": null,
+        "logPath": "E:\\WorkSpaces\\Test09\\MyClaude\\.local\\gate\\2026-11-08T04-51-33-449Z\\vim-cdp.log"
+      },
+      {
+        "name": "tty",
+        "args": [
+          "scripts/verify-tui-tty.mjs"
+        ],
+        "exitCode": 0,
+        "signal": null,
+        "logPath": "E:\\WorkSpaces\\Test09\\MyClaude\\.local\\gate\\2026-11-08T04-51-33-449Z\\tty.log"
       }
     ],
-    "testCount": 722,
-    "finishedAt": "2026-11-07T08:22:02.944Z"
+    "testCount": 731,
+    "finishedAt": "2026-11-08T04:53:25.337Z"
   }
 }

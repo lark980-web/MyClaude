@@ -1350,6 +1350,15 @@ async function searchWorkspaceFiles(query = "", limit = 40) {
                 resumed: Boolean(r.resumedFrom), recovered: Boolean(r.recoveredFromMissingResume) } });
             return;
           }
+          if (name === "restart") {
+            // 上游 /restart：重启并保留会话。GUI 服务端进程重启后浏览器重连即可。
+            const { performRestart } = await import("../restart.js");
+            const sid = agent ? agent.sessionKey : null;
+            try { if (agent && agent.autoSaver) agent.autoSaver.save({ force: true }); } catch {}
+            reply(sid ? "重启服务并恢复会话 " + sid + "…（浏览器稍后重连）" : "重启服务…（浏览器稍后重连）");
+            setTimeout(() => performRestart({ sessionId: sid }), 300);
+            return;
+          }
           if (name === "memory") {
             const sub = (arg.split(/\s+/)[0] || "").toLowerCase();
             if (sub === "add") {

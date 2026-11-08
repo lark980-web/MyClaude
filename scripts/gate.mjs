@@ -56,6 +56,8 @@ export function runGate({root, full=false, runner, steps=gateSteps(full)} = {}) 
       const text=(result.stdout||'')+'\n'+(result.stderr||''); writeFileSync(logPath,text);
       latest.steps.push({name,args,exitCode:result.status,signal:result.signal||null,logPath});
       if (result.error || result.signal || result.status !== 0) throw Error(name+': '+(result.error?.message||'exit '+result.status));
+      if (name === 'build-exe') { // AV briefly locks the freshly built exe (error 0x20); let the scan settle before smoke/TTY launch it.
+        spawnSync(process.execPath, ['-e', 'setTimeout(()=>{}, Number(process.env.MYCLAUDE_GATE_BUILD_SETTLE_MS)||3000)'], {windowsHide:true, timeout:15000}); }
       if (name === 'tests' || name === 'smoke') { const s=parseSummary(result.stdout||''); if(name==='tests'){summary=s; checkCount(s.tests,baseline);} }
       if (name === 'prompt') { const p=JSON.parse(result.stdout); if(p.errors !== 0) throw Error('Prompt inspection failed'); }
       if (name === 'tty') { const line=(result.stdout||'').split(/\r?\n/).find(x=>x.startsWith('{')); const p=JSON.parse(line||'null'); if(!p || p.welcome!==true || p.sawTyped!==true || p.cfgPanelSeen!==true) throw Error('TTY behavioral checks failed'); }

@@ -6,6 +6,10 @@ import Spinner from "ink-spinner";
 const h = React.createElement;
 
 const CLAUDE = "#d97757";
+// /theme：light 主题用深橙强调色（浅底终端上 #d97757 对比不足）；dark/auto 保持品牌橙。
+function accentColor(config) {
+  return config && config.theme === "light" ? "#9a4a2e" : CLAUDE;
+}
 import { VERSION } from "../version.js";
 import {
   vimEnabled, createVimSession, vimApply, resetVimSession, vimClear,
@@ -45,7 +49,7 @@ function Welcome({ config }) {
     h(
       Box,
       { marginTop: 1 },
-      h(Text, { color: CLAUDE, bold: true }, "Welcome to MyClaude "),
+      h(Text, { color: accentColor(config), bold: true }, "Welcome to MyClaude "),
       h(Text, { color: "gray" }, `v${VERSION}`)
     ),
     h(Text, { color: "gray", dimColor: true }, `model ${config.model} · mode ${config.permissionMode} · ${process.cwd()}`),
@@ -149,7 +153,7 @@ function Item({ item, expanded }) {
 
 function StatusLine({ config, busy, stats }) {
   const mode = config.permissionMode;
-  const modeColor = mode === "auto" ? CLAUDE : mode === "plan" ? "yellow" : "gray";
+  const modeColor = mode === "auto" ? accentColor(config) : mode === "plan" ? "yellow" : "gray";
   return h(
     Box,
     null,
@@ -160,6 +164,7 @@ function StatusLine({ config, busy, stats }) {
     h(Text, { color: "gray", dimColor: true }, "  ·  "),
     h(Text, { color: "gray" }, config.provider),
     vimEnabled(config) ? h(Text, { color: "magenta", dimColor: true }, "  ·  vim") : null,
+    config.theme && config.theme !== "dark" ? h(Text, { color: "gray", dimColor: true }, `  ·  ${config.theme}`) : null,
     stats?.turns ? h(Text, { color: "gray", dimColor: true }, `  ·  turn ${stats.turns}`) : null,
     stats?.messages ? h(Text, { color: "gray", dimColor: true }, `  ·  ${stats.messages} msg`) : null,
     busy ? h(Text, { color: "yellow" }, "  ·  working…") : null,
