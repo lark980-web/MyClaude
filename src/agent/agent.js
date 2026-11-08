@@ -86,6 +86,32 @@ function lastReasoningParagraph(raw) {
  * 确定性兜底：连收尾请求都失败时，用本轮真实执行过的工具生成结论，
  * 而不是把问题推回给用户（旧版在这里输出的是一句让用户自己再问一次的占位文案）。
  */
+/**
+ * 空正文补救的配额与文案（会话审计 §1.2 / §1.3 R1+R2）。
+ *
+ * 旧实现：上限写死为「每回合 2 次」，且计数器在每次 run() 开头归零 ——
+ * 用户每发一条消息就重新获得 2 条**逐字节完全相同**的系统消息。
+ * 实测（会话 2026-11-08T11-44-52_9d93d2）用户连续看到 3 条一模一样的
+ * 「[系统] 上一条回复只有思考过程、没有正文…」，既无信息量也像故障。
+ *
+ * 现在：配额按**会话时间窗**计（不随回合归零），且每次注入给不同约束。
+ * 审计明确不推荐单纯把次数调大 —— 那只会让病态时更多雷同消息涌进对话历史。
+ */
+const EMPTY_BODY_WINDOW_MS = 60_000;
+// 两个上限并存：
+//  - **每回合 2 次**：保持原有的补救节奏（催两次不成，就直接用 reasoning 尾段兜底）。
+//    审计明确警告过「不要单纯把次数调大」—— 那只会让病态时更多雷同消息涌进历史。
+//  - **每会话 60 秒窗口 4 次**：密钥在于它**不随回合归零**。旧写法每次 run() 归零，
+//    用户每发一条消息就重新拿到 2 条配额，于是连续看到一模一样的系统消息。
+const EMPTY_BODY_MAX_PER_TURN = 2;
+const EMPTY_BODY_MAX_PER_WINDOW = 4;
+const EMPTY_BODY_HINTS = [
+  "请直接写出给用户的最终结论（中文正文，不要调用工具）。",
+  "这次务必直接输出正文；内容多就先给一句话结论，再补细节。",
+  "不要再思考了 —— 用中文把结论写出来，哪怕只有一句话。",
+  "最后一次提醒：请输出面向用户的正文，不要再调用工具。",
+];
+
 function summarizeTurn(messages) {
   const names = [];
   let tail = "";
@@ -99,7 +125,10 @@ function summarizeTurn(messages) {
   const head = names.length
     ? "本轮共执行 " + names.length + " 个工具操作，模型未输出文字结论。"
     : "模型本轮未输出文字结论。";
-  return head + (tail ? "\n\n最后一步工具输出（节选）：\n" + tail : "");
+  // 审计 §1.3 R3 / N7：这是**确定性兜底**，不是模型写的正文。
+  // 以前它在界面上与模型正文完全无从分辨，用户会以为模型就是这么说的话。
+  return "[自动摘要，非模型原文 —— 可以让我重说一遍]" + "\n\n" + head +
+    (tail ? "\n\n最后一步工具输出（节选）：\n" + tail : "");
 }
 
 export class Agent {
@@ -568,7 +597,10 @@ export class Agent {
    */
   async run(userInput, opts = {}) {
     this._finalizeUsed = false;
+    // 每回合配额照旧归零（保住补救节奏）；**会话窗口**不归零 —— 这才是审计指出的病灶：
+    // 旧写法只有「每回合 2 次」这一个上限，用户每发一条消息就重新拿到 2 条雷同系统消息。
     this._emptyBodyRetries = 0;
+    this._emptyBodyInjections = (this._emptyBodyInjections || []).filter((ts) => Date.now() - ts < EMPTY_BODY_WINDOW_MS);
     const result = await this.runLoop(userInput, opts);
     if (!result) return result;
     // 这些结局不该被收尾请求改写：达到轮次上限/被中断/被钩子拦下/用户停止。
@@ -740,9 +772,15 @@ export class Agent {
           // 推理模型会把整段答复放进 reasoning_content、content 留空。旧实现把空字符串
           // 当成「回答完成」，界面于是留下一个空气泡。这里先有界催两次让模型写正文，
           // 仍空则用 reasoning 尾段兜底 —— 绝不 push 空 assistant 消息污染历史。
-          this._emptyBodyRetries = (this._emptyBodyRetries || 0) + 1;
-          if (this._emptyBodyRetries <= 2) {
-            this.messages.push({ role: "user", content: "[系统] 上一条回复只有思考过程、没有正文。请直接写出给用户的最终结论（中文正文，不要只思考，不要调用工具）。" });
+          const stamps = this._emptyBodyInjections || (this._emptyBodyInjections = []);
+          const perTurn = (this._emptyBodyRetries || 0) + 1;
+          if (perTurn <= EMPTY_BODY_MAX_PER_TURN && stamps.length < EMPTY_BODY_MAX_PER_WINDOW) {
+            this._emptyBodyRetries = perTurn;
+            stamps.push(Date.now());
+            // 标签用**窗口内**的序号，跨回合单调递增 —— 用户永远不会看到两条一样的提示。
+            const nth = stamps.length;
+            const hint = EMPTY_BODY_HINTS[(nth - 1) % EMPTY_BODY_HINTS.length];
+            this.messages.push({ role: "user", content: "[系统] 上一条回复只有思考过程、没有正文（本会话第 " + nth + " 次）。" + hint });
             continue;
           }
           const fromReasoning = lastReasoningParagraph(reasoning);

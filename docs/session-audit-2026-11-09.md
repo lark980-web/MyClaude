@@ -453,3 +453,46 @@ j.messages.forEach((m,i)=>console.log(i,m.role,(m.tool_calls||[]).length,String(
 - 唯一写入：本文件。过程中为读 JSON 曾在 `docs/_audit_probe.cjs` 落过一个临时 node 脚本，**已在收尾前删除**。
 - 未对仓库做递归 grep（仓库含 2.8 GB apk 与 14.5 GB mitm-logs）。所有 grep 均带 `path` 限定。
 - 会话统计覆盖「按 LastWriteTime 最近的 15 个」；「原生引擎超时 / 失败 = 0 次」这一否证覆盖全部 50 个会话文件。
+
+---
+
+## 7. Lead 更正（2026-11-09）：§1.1(a-2) 的机制推论是错的
+
+> 本节结论经**行为测试证伪**后更正。审计其余部分（§1.2、§1.3、§2、§3、§4）不受影响。
+
+**审计原结论**：`saveSession` 是「读旧文件 + `...meta` 合并」，**从不删除旧字段**；
+只有 upstream 写过 `engine`，所以 `engine:"upstream"` 是**永久残留**，
+说明该会话其实一直在跑自研 agent。
+
+**实际情况**：`src/session.js` 的 `saveSession` 只白名单保留 4 个旧键 ——
+`title` / `pinned` / `archived` / `unarchived`。
+**其它键（包括 `engine`）必须每次重新传，否则一律丢弃**：
+
+```js
+const payload = {
+  id, savedAt: prev?.savedAt || now, updatedAt: now,
+  ...(prev?.title !== undefined ? { title: prev.title } : {}),
+  ...(prev?.pinned !== undefined ? { pinned: prev.pinned } : {}),
+  ...(prev?.archived !== undefined ? { archived: prev.archived } : {}),
+  ...(prev?.unarchived !== undefined ? { unarchived: prev.unarchived } : {}),
+  ...meta,                  // <- 白名单之外的键全靠这一行，不传就没有
+  messages: messages || [],
+};
+```
+
+**因此**：
+
+- `engine:"upstream"` **不是残留** —— 它意味着**最后一次写入**来自 upstream 路径。
+- 那个会话是**混合**的：早期的自研回合产生了被引为「决定性反证」的 26 条 `role:"tool"` 消息；
+  之后至少有一个 upstream 回合跑过（`engine-sessions.json:7` 也印证了这点），
+  而 upstream 写会话时是 **loadSession 取回整段历史再 append 两条**，所以 26 条 tool 消息被完整保留。
+- 审计对 (a) 的**答案本身仍然正确**：「只有思考过程」的注入确实不作用于 upstream 回合 ——
+  那几条消息是早期自研回合产生、被历史带着走的。错的是「标记是残留」这个**机制解释**。
+
+**真实缺陷（比原判更轻，但确实存在）**：两条自研写入路径都不传 `engine`，
+所以自研回合写出的会话**没有这个字段**（不是留着旧值）。同一会话在后端之间切换时，
+该字段时有时无，排障时无从判断「这一回合到底谁跑的」。
+
+**修复（已落地）**：`src/ui/gui-server.js` 与 `src/main.js` 的自研 meta 都显式声明 `engine:"self"`，
+语义统一为「最近一次写入的真实来源」。回归测试 `test/session-engine-marker.test.js`
+同时锁住白名单机制与两条路径的声明。

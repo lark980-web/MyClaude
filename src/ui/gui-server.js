@@ -291,6 +291,12 @@ const sse = (res, event) => {
           turnCount: agent.turnCount,
           version: VERSION,
           ui: "gui",
+          // N5：session.js 的 saveSession 只保留 4 个白名单旧键（title/pinned/archived/
+          // unarchived），**其它键必须每次重新传**，否则被丢弃。而只有 upstream 路径
+          // 传过 engine —— 于是同一会话在两种后端之间切换时，这个字段时有时无：
+          // 上游回合写的是 upstream，自研回合干脆没有。排障时无从判断这一回到底谁跑的。
+          // 两条自研路径都显式声明，字段才始终存在且是「最近一次写入的真实来源」。
+          engine: "self",
           todos: getTodos(key)
         })
       });

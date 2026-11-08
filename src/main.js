@@ -166,6 +166,8 @@ function sessionMeta(agent, config) {
     permissionMode: agent.mode ?? config.permissionMode,
     turnCount: agent.turnCount,
     version: VERSION,
+    // N5：见 gui-server 同名注释 —— 不声明的话，自研回合写出来的会话就没有这个字段。
+    engine: "self",
   };
 }
 

@@ -1,3 +1,27 @@
+/** Windows 上 Bash 工具实际执行命令的 shell（事实来源：src/tools/index.js 的 shell 选择）。 */
+const BASH_SHELL_NAME = process.platform === "win32" ? "cmd.exe" : "/bin/sh";
+
+/**
+ * N1（会话审计 §4.1）：模型此前不知道自己在哪个平台、Bash 背后是什么 shell，
+ * 于是把 ls/head/tail/grep/cat 交给 Windows 的 cmd.exe —— 15 个会话里 18 次二分失败。
+ * 最典型的一种：把 `node --test ... | tail -30` 发给 cmd.exe，退出码非零，
+ * **测试其实跑完了，结果却被管道吃掉**。
+ *
+ * 放在这里而不是另开一节，是因为 SYSTEM_PROMPT 里本来就有 # Environment；
+ * 重复的标题会被 scripts/inspect-prompt.mjs 的 section-duplicate 检查判为 error。
+ */
+const SHELL_NOTE = BASH_SHELL_NAME === "cmd.exe"
+  ? [
+      " - This shell is Windows cmd.exe, NOT a Unix shell. ls, head, tail, grep, cat, sed, awk,",
+      "   which, xargs and rm -rf do not exist or do not behave as they do on Unix. A pipeline",
+      "   such as node --test ... | tail -30 exits non-zero here and swallows the very output",
+      "   you were after, so run the command bare instead.",
+      " - Prefer the Read / Glob / Grep tools: they are cross-platform and need no shell. Reach",
+      "   for Bash only for what genuinely needs a process (installs, git, builds, servers),",
+      "   written in cmd.exe syntax: dir, type, findstr, where, del.",
+    ].join("\n")
+  : " - Standard Unix utilities are available.";
+
 export const SYSTEM_PROMPT = `You are MyClaude, an interactive CLI coding agent running in the user's terminal.
 
 You are an agent working with the user toward their goals, using your own judgment along the way. Use the instructions below and the tools available to you to assist the user.
@@ -95,6 +119,8 @@ A follow-up question about your earlier work is not, by itself, a signal that yo
  - Platform: ${process.platform}
  - Working directory: ${process.cwd()}
  - Date: ${new Date().toISOString().slice(0, 10)}
+ - Shell behind the Bash tool: ${BASH_SHELL_NAME}
+${SHELL_NOTE}
 `;
 
 /**
