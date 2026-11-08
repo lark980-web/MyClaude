@@ -26,6 +26,17 @@ const CDP_PORT = 9334;
 const SESSION_ID = "verify-catalog-" + Date.now().toString(36);
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+// Chrome/AV may still hold the temp profile right after kill (EPERM). Retry with
+// backoff; a disposable temp dir that stays locked is a warning, not a test
+// failure — the behavioral checks above are the verdict.
+async function rmResilient(p) {
+  for (let i = 0; i < 6; i++) {
+    try { rmSync(p, { recursive: true, force: true, maxRetries: 3, retryDelay: 200 }); return; }
+    catch (e) { if (e.code !== "EPERM" && e.code !== "EBUSY" && e.code !== "ENOTEMPTY") throw e; await sleep(300 * (i + 1)); }
+  }
+  try { rmSync(p, { recursive: true, force: true }); }
+  catch { console.error("warn: temp dir still locked, left for OS cleanup: " + p); }
+}
 async function waitUntil(fn, ms, what) {
   const t0 = Date.now();
   while (Date.now() - t0 < ms) {
@@ -199,8 +210,8 @@ try {
   try { chrome && chrome.kill(); } catch {}
   try { gui && gui.kill(); } catch {}
   await sleep(400);
-  rmSync(home, { recursive: true, force: true });
-  rmSync(chromeProfile, { recursive: true, force: true });
+  await rmResilient(home);
+  await rmResilient(chromeProfile);
 }
 
 if (failures.length) {
