@@ -1,7 +1,7 @@
 import { estimateTextTokens } from "../tokens.js";
 import { createServer } from "node:http";
 import { spawnSync, exec, spawn } from "node:child_process";
-import { engineStatus, runEngineTurn, engineSessionFor, rememberEngineSession, forgetEngineSession, engineEnv, buildEngineArgs, describeTimeout } from "../engines/claude-code.js";
+import { engineStatus, runEngineTurn, engineSessionFor, rememberEngineSession, forgetEngineSession, engineEnv, buildEngineArgs, describeTimeout, describeDenials } from "../engines/claude-code.js";
 import { streamUpstreamTurn, upstreamBoundSession, bindUpstreamSession } from "../engines/upstream-chat.js";
 import { buildStatusLineInput, runStatusLine } from "../agent/statusline.js";
 import { consoleUi } from "./console-ui.js";
@@ -239,18 +239,24 @@ const sse = (res, event) => {
     const bound = upstreamBoundSession(key);
     const r = await streamUpstreamTurn({
       prompt: message, model: config.model, baseUrl: config.baseUrl, apiKey: config.apiKey,
-      cwd, timeoutMs: config.engineIdleMs, maxMs: config.engineMaxMs, permissionMode: "acceptEdits", resumeSessionId: bound,
+      cwd, timeoutMs: config.engineIdleMs, maxMs: config.engineMaxMs,
+      // 用户选的模式必须真的传给引擎 —— 以前这里写死 acceptEdits，界面上切模式对引擎毫无作用。
+      permissionMode: config.permissionMode, additionalDirectories: config.additionalDirectories,
+      resumeSessionId: bound,
       onEvent: (ev) => sse(res, ev),
       onChild: (child) => upstreamChildren.set(key, child),
     });
     upstreamChildren.delete(key);
+    const denialNote = describeDenials(r.permissionDenials, { mode: r.permissionMode });
     if (!r.ok) {
       sse(res, { type: "error", text: r.timedOut ? describeTimeout(r) : ("原生引擎失败" + (r.error ? "：" + r.error : "")) });
+      if (denialNote) { sse(res, { type: "warn", text: denialNote }); }
       sse(res, { type: "assistant_end" });
       sse(res, { type: "done" });
       res.end();
       return;
     }
+    if (denialNote) { sse(res, { type: "warn", text: denialNote }); }
     const finalText = String(r.result || r.assistantTexts.join("\n\n") || "").trim();
     if (finalText) {
       try {
@@ -1341,6 +1347,7 @@ async function searchWorkspaceFiles(query = "", limit = 40) {
             const r = await runEngineTurn({
               prompt: arg, model: config.model, baseUrl: config.baseUrl,
               apiKey: config.apiKey, cwd, timeoutMs: config.engineIdleMs, maxMs: config.engineMaxMs,
+              permissionMode: config.permissionMode, additionalDirectories: config.additionalDirectories,
               resumeSessionId: bound,
             });
             if (!r.ok) {
@@ -1350,7 +1357,9 @@ async function searchWorkspaceFiles(query = "", limit = 40) {
               return;
             }
             rememberEngineSession(key, r.sessionId);
+            const engineDenials = describeDenials(r.permissionDenials, { mode: r.permissionMode });
             const body = String(r.result || r.assistantTexts.join("\n\n") || "(无输出)");
+            if (engineDenials) { reply(engineDenials); }
             const tools = r.toolUses.length ? "\n\n工具调用  " + r.toolUses.map((t) => t.name).join(" → ") : "";
             const resumedTag = r.resumedFrom ? "（续接）" : (r.recoveredFromMissingResume ? "（原会话已失效，已开新会话）" : "");
             reply(body + tools + "\n\n— 原生 Claude Code 2.1.302" + resumedTag + " · 回合 " + (r.numTurns ?? "?") +

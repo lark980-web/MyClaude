@@ -1692,7 +1692,7 @@ pre.code.wrap { white-space: pre-wrap; overflow-wrap: anywhere; }
 .insp-scroll { flex: 1; overflow-y: auto; padding: 4px 20px 24px; }
 .insp-sec { padding: 16px 0; border-bottom: 1px solid var(--line); }
 .insp-sec:last-child { border-bottom: 0; }
-/* 编辑式组头：低对比小标 + 延伸细线，与追问卡 / 画布同一套结构语言 */
+/* 编辑式组头：低对比小标 + 延伸细线，与画布同一套结构语言 */
 .insp-sec-head {
   display: flex; align-items: center; gap: 10px;
   font: 600 11px/1 var(--mono); letter-spacing: .08em;
@@ -3584,7 +3584,7 @@ body.no-motion *, body.no-motion *::before, body.no-motion *::after { animation:
 }
 
 /* ============================================================================
-   10. Claude 旗舰标准推进：Projects 知识库 · 深度思考 · Artifacts 2.0 · 智能追问建议
+   10. Claude 旗舰标准推进：Projects 知识库 · 深度思考 · Artifacts 2.0
    ========================================================================== */
 
 /* 深度思考按钮（Claude Extended Thinking） */
@@ -3608,113 +3608,6 @@ body.no-motion *, body.no-motion *::before, body.no-motion *::after { animation:
 .top-title:hover {
   background: var(--hover);
   color: var(--fg);
-}
-
-/* 继续追问 —— 三列结构卡：编号是建筑性细节，不是装饰 */
-.followup-row {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
-  margin: 18px 0 2px;
-  animation: rise 220ms var(--ease-out) both;
-}
-@media (max-width: 720px) {
-  .followup-row { grid-template-columns: 1fr; }
-  /* 窄屏让位给标题，英文组标与卡片固定高度都收掉 */
-  .followup-head-en { display: none; }
-  .followup-row { --fc-min-h: 0; }
-}
-.followup-head {
-  grid-column: 1 / -1;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 2px;
-  user-select: none;
-}
-.followup-head-label {
-  flex-shrink: 0;
-  font-size: 11.5px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  color: var(--fg-3);
-}
-.followup-head-en {
-  flex-shrink: 0;
-  font: 500 10px/1 var(--mono);
-  letter-spacing: 0.14em;
-  color: var(--fg-4);
-}
-.followup-head-rule { flex: 1; height: 1px; background: var(--line); }
-.followup-card {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  min-height: var(--fc-min-h, 98px);
-  padding: 13px 14px 14px;
-  border-radius: 8px;
-  border: 1px solid var(--line);
-  background: var(--panel);
-  color: var(--fg-2);
-  text-align: left;
-  cursor: pointer;
-  box-shadow: var(--card-shadow);
-  transition: transform 140ms var(--ease), border-color var(--t) var(--ease), box-shadow var(--t) var(--ease);
-}
-.followup-card:hover {
-  transform: translateY(-2px);
-  border-color: var(--line-strong);
-  box-shadow: var(--card-shadow-hover);
-}
-.followup-card:active { transform: translateY(0) scale(0.995); }
-.followup-card:focus-visible { outline: 2px solid var(--accent-ring); outline-offset: 2px; }
-/* L 形角标：hover 才浮现，给卡片一个结构锚点而不是又一层圆角 */
-.followup-card::before {
-  content: "";
-  position: absolute;
-  left: -1px; top: -1px;
-  width: 10px; height: 10px;
-  border-left: 1px solid var(--line-strong);
-  border-top: 1px solid var(--line-strong);
-  opacity: 0;
-  transition: opacity var(--t) var(--ease);
-  pointer-events: none;
-}
-.followup-card:hover::before { opacity: 1; }
-.fc-top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 9px;
-}
-.fc-num {
-  font: 500 10px/1 var(--mono);
-  letter-spacing: 0.12em;
-  color: var(--fg-4);
-  padding: 3px 5px;
-  border: 1px solid var(--line);
-  border-radius: 3px;
-  background: var(--panel-2);
-}
-.fc-arrow {
-  font: 400 13px/1 var(--mono);
-  color: var(--fg-4);
-  transition: transform var(--t) var(--ease), color var(--t) var(--ease);
-}
-.followup-card:hover .fc-arrow { color: var(--accent); transform: translateX(2px); }
-.fc-rule { height: 1px; background: var(--line); margin-bottom: 9px; }
-.fc-title {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--fg);
-  line-height: 1.4;
-  margin-bottom: 4px;
-}
-.fc-desc {
-  font-size: 11.5px;
-  line-height: 1.55;
-  color: var(--fg-3);
-  overflow-wrap: anywhere;
 }
 
 /* Artifacts 2.0：全屏画布、在线代码编辑器、底部 AI 局部迭代栏 */

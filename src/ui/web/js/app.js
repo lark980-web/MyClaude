@@ -1830,32 +1830,6 @@
     }
   }
 
-  function buildFollowupPrompts(rawText, bodyEl) {
-    // 美工卡片：每条建议两层信息——短标签 + 完整句子（点击发送的是完整句子）。
-    var txt = String(rawText || "");
-    var hasArtifact = bodyEl && bodyEl.querySelector(".artifact-card");
-    var hasCode = /```/.test(txt) || (bodyEl && bodyEl.querySelector(".codeblock"));
-    if (hasArtifact) {
-      return [
-        { t: "视觉打磨", d: "再优化一下视觉细节和配色" },
-        { t: "响应式", d: "加上响应式布局和深浅色切换" },
-        { t: "集成落地", d: "讲讲怎么集成到现有项目" }
-      ];
-    }
-    if (hasCode) {
-      return [
-        { t: "补测试", d: "补上边界情况的单元测试" },
-        { t: "安全审查", d: "查一下异常、性能和安全隐患" },
-        { t: "重构注释", d: "再精简重构并补上中文注释" }
-      ];
-    }
-    return [
-      { t: "展开方案", d: "展开说说实现方案和步骤" },
-      { t: "行动清单", d: "总结 3 个行动项和验证方法" },
-      { t: "边界分析", d: "分析边界情况和替代方案" }
-    ];
-  }
-
   /* ---- 语音朗读 (TTS SpeechSynthesis 内联播放控制栏) 与内联引文渲染 ---- */
   var LS_TTS_RATE = "myclaude.tts.rate";
   var TTS_SPEEDS = [0.75, 1.0, 1.25, 1.5, 2.0];
@@ -2309,9 +2283,6 @@
     handle.raw = b.raw || "";
     handle.wrap._raw = handle.raw;
     handle.wrap._citations = b.citations || [];
-    // 分支换了，旧追问卡的建议不再成立
-    var oldF = handle.wrap.querySelector(".followup-row");
-    if (oldF && oldF.parentNode) { oldF.parentNode.removeChild(oldF); }
     flushAssistant(handle, handle.raw, false);
     addCopyActions(handle);
     toast("已切换至回复版本 " + (targetIdx + 1) + " / " + branches.length, "info");
@@ -2384,49 +2355,6 @@
     }
 
     decorateCitationsInMessage(handle);
-    // 追问卡不再在这里渲染：多步任务里每个工具段收束都会走 addCopyActions，
-    // 把中间小结当成完整回答 → 任务进行中连续冒出多组追问卡（用户实测反馈）。
-    // 现在只在回合真正结束（done 事件）时由 renderFollowupForLastAnswer 渲染一次。
-  }
-
-  /** 回合结束（done）后，给最后一条 AI 回复渲染一组「继续追问」卡。 */
-  function renderFollowupForLastAnswer() {
-    var root = logRoot();
-    if (!root) { return; }
-    var asst = root.querySelectorAll(".msg-asst");
-    var wrap = asst[asst.length - 1];
-    if (!wrap) { return; }
-    var old = wrap.querySelector(".followup-row");
-    if (old && old.parentNode) { old.parentNode.removeChild(old); }
-    var raw = String(wrap._raw != null ? wrap._raw : wrap.textContent || "").trim();
-    if (raw.length <= 20) { return; }
-    var bodyEl = wrap.querySelector(".md");
-    var fRow = el("div", "followup-row");
-    var fHead = el("div", "followup-head");
-    fHead.appendChild(el("span", "followup-head-label", "继续追问"));
-    fHead.appendChild(el("span", "followup-head-en", "FOLLOW-UPS"));
-    fHead.appendChild(el("span", "followup-head-rule"));
-    fRow.appendChild(fHead);
-    buildFollowupPrompts(raw, bodyEl).forEach(function (item, idx) {
-      var card = el("button", "followup-card");
-      card.type = "button";
-      var top = el("span", "fc-top");
-      top.appendChild(el("span", "fc-num", (idx + 1 < 10 ? "0" : "") + (idx + 1)));
-      top.appendChild(el("span", "fc-arrow", "\u2197"));
-      card.appendChild(top);
-      card.appendChild(el("span", "fc-rule"));
-      card.appendChild(el("span", "fc-title", item.t));
-      card.appendChild(el("span", "fc-desc", item.d));
-      card.addEventListener("click", function () {
-        var ta = $("in");
-        if (!ta) { return; }
-        ta.value = item.d;
-        autoGrow(ta);
-        if (!S.busy) { sendMessage(); } else { ta.focus(); }
-      });
-      fRow.appendChild(card);
-    });
-    wrap.appendChild(fRow);
   }
 
   /**
@@ -2435,7 +2363,7 @@
    * Some gateways put their reasoning inline in `content` instead of a dedicated
    * field. That reasoning belongs in the collapsible "thinking" panel, never in
    * the message body — and it must never reach `handle.raw`, which feeds copy,
-   * TTS, pin, follow-ups and the saved branch history.
+   * TTS, pin and the saved branch history.
    *
    * The closing tag is searched from the opening tag onwards so a stray
    * `implicit reasoning` mentioned inside the prose cannot swallow the answer.
@@ -2906,8 +2834,6 @@
             // 重新打字或去找上一条消息。
             if (_turnHadError && S.lastUserText) { addRetryCard(); }
             _turnHadError = false;
-            // 追问卡只在这里出现一次：整回合收束后，最后一条 AI 回复上
-            renderFollowupForLastAnswer();
             // AI 自动命名是回合外异步完成的：晚 3 秒刷新一次侧栏拿标题
             setTimeout(function () { refreshSessions(); }, 3000);
             setBusy(false);

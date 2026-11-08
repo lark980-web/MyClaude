@@ -8,6 +8,62 @@
 
 ## [Unreleased]
 
+### Fixed（追问卡是假的 + 引擎权限写死 —— 用户报的两件事）
+
+用户原话：「最新的会话问题一大堆，无法创建技能」+「追问卡每次都是固定的内容，这他妈是什么鬼东西，就这还复刻claude？」
+两条都确诊并修复，另有并行审计挖出 10 条新问题。
+
+**① 追问卡：假的，而且上游根本没这个功能**
+
+- 位置：`src/ui/web/js/app.js:1833` `buildFollowupPrompts()`。按「有没有 artifact / 代码块」
+  返回**三套写死文案**（默认恒为「展开方案 / 行动清单 / 边界分析」），与对话内容零关系。
+- **上游 2.1.302 没有这个功能**：对 2429 个上游模块做三个定向探针
+  （`nextSteps|suggestedFollowUp|followUpSuggestion|suggestionChips`、`what would you like to do next`、
+  `try asking|you could also ask`）—— **全部 0 命中**。
+- 实测危害：会话 `2026-11-08T11-44-52_9d93d2` 里用户点了写死的「展开说说实现方案和步骤」，
+  随后连续出现 3 次「[系统] 上一条回复只有思考过程、没有正文」的补救轮。假卡片制造了浪费的回合。
+- **处置：整体移除**（app.js −75 行 / styles.css −107 行）。这不是复刻目标，是装饰性伪造。
+
+**② 引擎权限模式写死，用户选择被忽略**
+
+- `gui-server.js` 把引擎调用写死 `permissionMode: "acceptEdits"` —— 界面上切模式对引擎**毫无作用**。
+- `buildEngineArgs()` 的模式白名单是**错的**：写的是
+  `["default","acceptEdits","plan","bypassPermissions"]`，而引擎自己的 `--help` 说真值是
+  `["acceptEdits","auto","bypassPermissions","manual","dontAsk","plan"]` —— 根本没有 `"default"`，
+  而且 MyClaude 的 `ask/dontAsk` 全被静默降级成了 `acceptEdits`。
+- 修复：7 个 MyClaude 模式逐一映射（`ask → manual`），**未知值退到最保守的 `manual`，绝不退到放行档**。
+- 顺带修掉一个**守护错误的旧测试**：`test/native-engine.test.js` 断言「未知模式落回 acceptEdits」并称其为「安全默认」——
+  那是 fail-open。现在断言必须落 `manual`。
+
+**③ 引擎拿不到额外工作目录**
+
+- MyClaude 有 `config.additionalDirectories`（`/add-dir` 维护），但从不传给引擎 → 引擎只能碰项目目录，
+  连 `~/.claude/skills` 都列不出来。现在通过 `--add-dir` 传下去。
+
+**④ 授权策略显式化 + 失败讲清楚**
+
+- 引擎默认 `--permission-prompts host`：它把授权询问发给宿主，而 MyClaude 不实现该协议 → 询问悬空。
+  现在显式设 `none`，行为确定：会询问的一律拒绝，并**如实回传到 `result.permission_denials`**。
+- 新增 `describeDenials()`：把拒绝转成可操作的提示 —— 列出被拒的工具与**确切路径**，
+  命中上游硬保护目录（`.claude/skills|commands|agents`，见 `chunk-zvergrz0.js` 的 `Ef()`）时给出两条出路。
+  此前用户只看到「没装成」，不知道挡在哪、也不知道怎么办。
+
+**验收（真实端到端，非单测）**：切「全部放行」后让引擎创建技能 ——
+引擎用 `Write` 写出 `.claude/skills/e2e-probe/SKILL.md`，回复 `SKILL-CREATED`，
+**文件真的落盘**且内容正确（55 秒）。探针已清理。
+全量 **748/748**。
+
+### Added（会话问题系统审计）
+
+- `docs/PLAN-2026-11-09.md` —— 本轮推进计划（问题确诊 + 分工 + 验收 + 红线）。
+- `docs/session-audit-2026-11-09.md`（450 行）—— 只读审计 50 个会话，结论分【观察/推断/未知】三档。
+  - **更正了 Lead 给的行号**：注入点在 `agent.js:745` 的 `runLoop()`，不在 `ensureFinalAnswer()`（那是另一条补救链）。
+  - 证明那条会话跑的其实是**自研引擎**，`engine:"upstream"` 是过期残留 —— `saveSession` 用 `...meta` 合并、从不删旧键。
+  - 「连续 3 次」= **2 个回合**：配额 `agent.js:744` 是「每回合 2 次」，`:571` 每回合归零。
+  - **两条重要否证**：`原生引擎超时/失败` 在**全部 50 个会话里出现 0 次**（会话里那几行字来自 git diff 上下文）；
+    「仓库太大导致搜索超时」全库只出现 1 次且是模型自述，同回合实际调用全是 `Read`，**没有一条递归扫描**。
+  - 新发现 10 条（N1–N10），含 Windows 上系统性误用 Unix 命令（18 次二分失败）、
+    cmd.exe 输出按 UTF-8 解码致 485 个替换字符进历史、`readTool` 缺参数守卫等。
 ### Fixed（原生引擎两个独立故障：代理污染 + 超时策略错误）
 
 用户报「原生引擎超时（180 秒）」且任务无法进行。排查出**两个互不相关的 bug**，都已修复并验证。

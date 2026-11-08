@@ -1,7 +1,7 @@
 /**
  * GUI command parity + inspector information architecture.
  * These live inside app.js's IIFE, so assert against the source text —
- * same approach as followup-chips.test.js.
+ * (buildFollowupPrompts was removed; see followup-removed.test.js.)
  */
 import test from "node:test";
 import assert from "node:assert/strict";

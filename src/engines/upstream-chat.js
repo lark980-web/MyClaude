@@ -82,7 +82,7 @@ export function newTranslateState() {
  */
 export function streamUpstreamTurn({
   prompt, model, baseUrl, apiKey, cwd: workdir,
-  timeoutMs, maxMs, permissionMode = "acceptEdits", onEvent, resumeSessionId, onChild,
+  timeoutMs, maxMs, permissionMode = "manual", onEvent, resumeSessionId, onChild, additionalDirectories,
 } = {}) {
   return new Promise((resolve) => {
     const st = engineStatus();
@@ -94,7 +94,7 @@ export function streamUpstreamTurn({
     const envMax = Number(process.env.MYCLAUDE_ENGINE_MAX_MS);
     const idle = Math.max(5_000, Math.min(Number(timeoutMs) || (Number.isFinite(envIdle) && envIdle >= 5_000 ? envIdle : 180_000), 3_600_000));
     const ceiling = Math.max(idle, Math.min(Number(maxMs) || (Number.isFinite(envMax) && envMax >= 5_000 ? envMax : 3_600_000), 7_200_000));
-    const args = buildEngineArgs({ model, permissionMode, resumeSessionId });
+    const args = buildEngineArgs({ model, permissionMode, resumeSessionId, additionalDirectories });
     let child;
     try {
       child = spawn(st.bun, args, {

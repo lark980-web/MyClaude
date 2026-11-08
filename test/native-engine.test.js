@@ -38,9 +38,14 @@ test("buildEngineArgs: stream-json + verbose + permission mode whitelist", () =>
   assert.ok(a.includes("--print") && a.includes("stream-json") && a.includes("--verbose"));
   assert.ok(a.includes("--permission-mode") && a.includes("plan"));
   assert.ok(a.includes("--model") && a.includes("m/x"));
-  // 未知模式必须落回安全默认，不能原样透传给引擎
+  // 未知模式必须落回**最保守**的那个，绝不能原样透传，也不能落回放行档。
+  // 修正说明：旧断言要求落到 acceptEdits 并称其为「安全默认」—— 那是 fail-open，
+  // 未知模式静默变成「自动接受所有编辑」正是要避免的方向。
   const b = buildEngineArgs({ model: "m", permissionMode: "no-such-mode" });
-  assert.ok(b.includes("acceptEdits"));
+  const mode = b[b.indexOf("--permission-mode") + 1];
+  assert.equal(mode, "manual", "unknown mode must fall back to manual (safest), not acceptEdits");
+  assert.notEqual(mode, "acceptEdits");
+  assert.notEqual(mode, "bypassPermissions");
 });
 
 test("runEngineTurn rejects an empty prompt without spawning", async () => {
