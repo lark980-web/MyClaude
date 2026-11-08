@@ -88,3 +88,12 @@
 - **三命令补齐**：/theme（TUI：config.theme 持久化 + 状态行指示 + light 深橙强调色 + /config 行；3/3 测试）；/restart + /update 别名（src/restart.js：restartArgs 保留旗标替换 --resume + performRestart detached 重启；TUI case + GUI /api/command 桥；4/4 测试）。**现测 TUI 64/64=100%、GUI 64/64=100%，零缺失**——R4 回收后的真缺口闭合，100% 这次是挣来的。
 - **gate:full 首次全 9 步绿**：tests→prompt→features→build-embed→build-exe→smoke→catalog-cdp→vim-cdp→tty。修了两处链缺陷：catalog 清理 EPERM（上述）+ build-exe 后杀软瞬时锁新 exe（error 0x20）撞 TTY——加 build settle（默认 3s，MYCLAUDE_GATE_BUILD_SETTLE_MS 可调）。
 - **纪律**：每步 gate 验证；环境竞态（杀软锁）靠 settle/重试处置而非放宽闸门；所有数字现测。
+
+## 自检自测补强（2026-11-08，回应"自检自测都做了吗"）
+
+- **自检发现的薄弱点（诚实）**：上轮 theme/restart 测试多为"源码含某字符串"的存在性断言，非行为测试；/restart 只用注入 spawner 测了参数构造、没真重启；/theme 没在真 TTY 看过渲染。本轮补真行为验证。
+- **/theme 真 TTY 行为**（.local/verify-theme-tty.mjs）：winpty 真终端里输入 /theme light → 欢迎屏✓、"主题→light"消息✓、状态行出现 "· light ·"✓、config.json 持久化 theme=light✓。
+- **/restart 真进程行为**（.local/verify-restart-*.mjs）：-p 播种会话(2消息)→TUI --resume 恢复(状态行 "2 msg")→/restart→"重启并恢复会话"消息✓、原进程退出✓、tasklist 证实新 myclaude.exe(Console)存活✓。期间一度误判"新进程没出现"——实为 Get-Process 查询时机问题，tasklist 纠正。
+- **自检发现的真实加固点**：restart 原 stdio:"inherit" 让重启子进程继承父终端，父进程(winpty)退出可能拆毁它；改 stdio:"ignore" 让 OS 给新控制台，真正独立。隔离测试证明 detached 机制正确（子进程存活写标记）。
+- **gate 再加固**：catalog-cdp 复发 spawn EBUSY（杀软锁新构建 exe，smoke 之后）——gate 对 exe 启动步（smoke/catalog/vim/tty）加 EBUSY/EPERM 退避重试（4 次）。gate:full 复跑全 9 步绿。
+- **结论**：行为级自检补上了存在性断言测不到的东西（真渲染、真重启、真持久化），并揪出 stdio inherit 的真实健壮性缺口。存在性测试保留作快速回归，行为验证作深度确认。

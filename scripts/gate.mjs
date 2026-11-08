@@ -52,7 +52,17 @@ export function runGate({root, full=false, runner, steps=gateSteps(full)} = {}) 
       const env = { ...process.env };
       const winptyDir = process.env.MYCLAUDE_GATE_WINPTY_DIR || 'F:/Tools/Git/usr/bin';
       if (name === 'tty' && existsSync(join(winptyDir,'winpty.exe'))) env.PATH = winptyDir + ';' + (env.PATH || '');
-      const result = runner ? runner(name,args,root) : spawnSync(process.execPath,args,{cwd:root,encoding:'utf8',windowsHide:true,timeout:600000,maxBuffer:64*1024*1024,env});
+      const exeSteps = new Set(['smoke','catalog-cdp','vim-cdp','tty']);
+      const runOnce = () => runner ? runner(name,args,root) : spawnSync(process.execPath,args,{cwd:root,encoding:'utf8',windowsHide:true,timeout:600000,maxBuffer:64*1024*1024,env});
+      let result = runOnce();
+      // AV can lock the freshly built exe (spawn EBUSY / EPERM, exit 0x20). Retry
+      // exe-launching steps with backoff; this is environment noise, not a verdict.
+      for (let attempt = 0; attempt < 4 && exeSteps.has(name) && !runner; attempt++) {
+        const blob = (result.stdout||'')+'\n'+(result.stderr||'')+'\n'+(result.error?.message||'');
+        if (result.status === 0 || !/EBUSY|EPERM|error 0x20|being used by another process|另一个程序正在使用/.test(blob)) break;
+        spawnSync(process.execPath, ['-e', 'setTimeout(()=>{}, 2500*(Number(process.env.MYCLAUDE_GATE_RETRY)||1))'], {windowsHide:true, timeout:15000});
+        result = runOnce();
+      }
       const text=(result.stdout||'')+'\n'+(result.stderr||''); writeFileSync(logPath,text);
       latest.steps.push({name,args,exitCode:result.status,signal:result.signal||null,logPath});
       if (result.error || result.signal || result.status !== 0) throw Error(name+': '+(result.error?.message||'exit '+result.status));

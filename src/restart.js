@@ -18,7 +18,10 @@ export function restartArgs(argv, sessionId) {
  *  Returns the child pid (for tests/logging); never returns in production. */
 export function performRestart({ sessionId, argv = process.argv.slice(2), execPath = process.execPath, exit = (code) => process.exit(code), spawner = spawn } = {}) {
   const args = [process.argv[1], ...restartArgs(argv, sessionId)].filter(Boolean);
-  const child = spawner(execPath, args, { detached: true, stdio: "inherit", cwd: process.cwd(), env: process.env });
+  // stdio:"ignore" (not "inherit"): the replacement must outlive the parent's
+  // terminal. Inheriting stdio ties it to the dying parent's console/winpty and
+  // can tear it down on parent exit; ignore lets the OS give it a fresh console.
+  const child = spawner(execPath, args, { detached: true, stdio: "ignore", cwd: process.cwd(), env: process.env });
   child.unref();
   exit(0);
   return child.pid;
