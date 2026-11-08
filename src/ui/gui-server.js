@@ -1,7 +1,7 @@
 import { estimateTextTokens } from "../tokens.js";
 import { createServer } from "node:http";
-import { spawnSync, exec } from "node:child_process";
-import { engineStatus, runEngineTurn, engineSessionFor, rememberEngineSession, forgetEngineSession } from "../engines/claude-code.js";
+import { spawnSync, exec, spawn } from "node:child_process";
+import { engineStatus, runEngineTurn, engineSessionFor, rememberEngineSession, forgetEngineSession, engineEnv, buildEngineArgs, describeTimeout } from "../engines/claude-code.js";
 import { streamUpstreamTurn, upstreamBoundSession, bindUpstreamSession } from "../engines/upstream-chat.js";
 import { buildStatusLineInput, runStatusLine } from "../agent/statusline.js";
 import { consoleUi } from "./console-ui.js";
@@ -239,13 +239,13 @@ const sse = (res, event) => {
     const bound = upstreamBoundSession(key);
     const r = await streamUpstreamTurn({
       prompt: message, model: config.model, baseUrl: config.baseUrl, apiKey: config.apiKey,
-      cwd, timeoutMs: 180_000, permissionMode: "acceptEdits", resumeSessionId: bound,
+      cwd, timeoutMs: config.engineIdleMs, maxMs: config.engineMaxMs, permissionMode: "acceptEdits", resumeSessionId: bound,
       onEvent: (ev) => sse(res, ev),
       onChild: (child) => upstreamChildren.set(key, child),
     });
     upstreamChildren.delete(key);
     if (!r.ok) {
-      sse(res, { type: "error", text: r.timedOut ? "原生引擎超时（180 秒）" : ("原生引擎失败" + (r.error ? "：" + r.error : "")) });
+      sse(res, { type: "error", text: r.timedOut ? describeTimeout(r) : ("原生引擎失败" + (r.error ? "：" + r.error : "")) });
       sse(res, { type: "assistant_end" });
       sse(res, { type: "done" });
       res.end();
@@ -826,6 +826,8 @@ async function searchWorkspaceFiles(query = "", limit = 40) {
   effort: config.effort ?? null,
           autoRun: !!config.autoRun,
           engineBackend: currentEngineBackend(),
+          engineIdleMs: config.engineIdleMs ?? null,
+          engineMaxMs: config.engineMaxMs ?? null,
           fastMode: !!config.fastMode,
           // 编辑器模式（上游真键 editorMode ∈ normal|vim；vimMode 为兼容布尔）——
           // GUI vim 输入模式按它启用，vimInsertModeRemaps 透传给引擎
@@ -850,6 +852,13 @@ async function searchWorkspaceFiles(query = "", limit = 40) {
             config.statusLineCommand = String(v);
             saveConfig({ statusLineCommand: config.statusLineCommand });
           }
+        }
+        // 引擎超时可配置：idle 是「连续多久无输出算卡死」，max 是绝对上限。
+        for (const k of ['engineIdleMs', 'engineMaxMs']) {
+          if (body[k] === undefined) continue;
+          const v = Number(body[k]);
+          if (Number.isFinite(v) && v >= 5000) { config[k] = v; saveConfig({ [k]: v }); }
+          else if (body[k] === null) { delete config[k]; saveConfig({ [k]: null }); }
         }
         if (body.engineBackend !== undefined) {
           const v = String(body.engineBackend);
@@ -1331,12 +1340,12 @@ async function searchWorkspaceFiles(query = "", limit = 40) {
             }
             const r = await runEngineTurn({
               prompt: arg, model: config.model, baseUrl: config.baseUrl,
-              apiKey: config.apiKey, cwd, timeoutMs: 180_000,
+              apiKey: config.apiKey, cwd, timeoutMs: config.engineIdleMs, maxMs: config.engineMaxMs,
               resumeSessionId: bound,
             });
             if (!r.ok) {
               sendJson(res, 200, { ok: false, error: r.timedOut
-                ? "原生引擎超时（180 秒）已终止"
+                ? describeTimeout(r)
                 : "原生引擎执行失败" + (r.error ? "：" + r.error : "") + (r.stderrTail ? "｜" + String(r.stderrTail).slice(-300) : "") });
               return;
             }

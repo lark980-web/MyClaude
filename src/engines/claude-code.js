@@ -19,8 +19,32 @@ import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 
 const DEFAULT_CLI = "B:/~BUN/root/cli";
-const DEFAULT_TIMEOUT_MS = 180_000;
-const MAX_TIMEOUT_MS = 600_000;
+/**
+ * 超时策略：**静默超时（idle）为主，绝对上限兜底**。
+ *
+ * 旧实现是「从 spawn 起算的绝对墙钟」—— 于是正在干活的引擎也会被砍掉。
+ * 实测：一次全工作区搜索（本仓库含 2.8GB apk 与 14.5GB mitm-logs）就超过 180s，
+ * 引擎已跑完 2 个工具调用却被杀掉，界面还显示「已终止」，用户以为白干了。
+ *
+ * 现在的规则：引擎**有输出**（工具调用/文本/事件）就说明它活着，计时器随之重置；
+ * 只有连续 idleMs 没有任何输出才算卡死。绝对上限仍在，防「永远不结束」。
+ * 两者都可用环境变量覆盖：MYCLAUDE_ENGINE_IDLE_MS / MYCLAUDE_ENGINE_MAX_MS。
+ */
+const DEFAULT_IDLE_MS = 180_000;      // 连续多久无输出算卡死（沿用旧数字，但语义变了）
+const DEFAULT_MAX_MS = 3_600_000;     // 绝对上限：60 分钟（卡死由静默检测负责，这里只防「永远不结束」）
+const MAX_TIMEOUT_MS = 3_600_000;     // 显式传入 idle 值的上限（1 小时）
+const MAX_CEILING_MS = 7_200_000;     // 显式传入绝对上限的上限（2 小时）
+
+/** 环境变量覆盖的 idle 阈值（非法值退回默认，不静默改变行为）。 */
+function idleMs() {
+  const v = Number(process.env.MYCLAUDE_ENGINE_IDLE_MS);
+  return Number.isFinite(v) && v >= 5_000 ? v : DEFAULT_IDLE_MS;
+}
+/** 环境变量覆盖的绝对上限。 */
+function ceilingMs() {
+  const v = Number(process.env.MYCLAUDE_ENGINE_MAX_MS);
+  return Number.isFinite(v) && v >= 5_000 ? v : DEFAULT_MAX_MS;
+}
 const PERMISSION_MODES = new Set(["default", "acceptEdits", "plan", "bypassPermissions"]);
 const MISSING_SESSION_RE = /No conversation found with session ID/i;
 
@@ -54,14 +78,26 @@ export function engineStatus() {
 }
 
 /** baseUrl 允许带 /v1（OpenAI 风格配置值），Claude Code 要的是 API 根。 */
+/** 本地地址永远不该走代理。 */
+const LOCAL_NO_PROXY = "localhost,127.0.0.1,::1,[::1]";
+
 export function engineEnv({ baseUrl, apiKey } = {}) {
   const root = String(baseUrl || "").replace(/\/+$/, "").replace(/\/v1$/, "");
   const key = apiKey || "sk-engine-local";
+  // 引擎永远先跟 MyClaude 自己配置的 baseUrl 说话，而它通常是本机网关。
+  // 实测：宿主的 HTTPS_PROXY 被 ...process.env 透传给引擎后，若环境里没有 no_proxy，
+  // 引擎会把发往 127.0.0.1 的明文请求交给代理，代理回
+  // "400 The plain HTTP request was sent to HTTPS port" —— 整个回合直接失败。
+  // 所以这里显式把本地地址加入 NO_PROXY/no_proxy（与宿主已有值合并，不覆盖）。
+  const existing = String(process.env.NO_PROXY || process.env.no_proxy || "").split(",").map((x) => x.trim()).filter(Boolean);
+  const merged = Array.from(new Set([...existing, ...LOCAL_NO_PROXY.split(",")])).join(",");
   return {
     ...process.env,
     ...(root ? { ANTHROPIC_BASE_URL: root } : {}),
     ANTHROPIC_AUTH_TOKEN: key,
     ANTHROPIC_API_KEY: key,
+    NO_PROXY: merged,
+    no_proxy: merged,
     NO_COLOR: "1",
   };
 }
@@ -158,21 +194,63 @@ export function forgetEngineSession(key) {
   saveEngineSessions(map);
 }
 
+/**
+ * 超时结果的人话描述 —— **P10 纪律：超时 ≠ 什么都没做**。
+ *
+ * 引擎被中止前可能已经执行了写操作（Edit/Write/Bash）。把「不知道」说成「已终止」，
+ * 用户会以为工作区没被动过 —— 那是错的。所以这里必须：说明中止原因、列出已发生的工具调用、
+ * 明确标注结果未知。
+ */
+/**
+ * 一行 stream-json 里的「工具增减」：tool_use +1，tool_result -1。
+ *
+ * 用途：判断引擎手里是否还有未完成的工具调用。这一点很关键 ——
+ * 引擎跑一条长命令（全工作区搜索之类）时**本来就长时间没有输出**，
+ * 那是在等自己的工具，不是卡死。把「工具在飞行中」也当静默，就会误杀它。
+ */
+export function toolBalanceOf(line) {
+  try {
+    const ev = JSON.parse(line);
+    const content = ev && ev.message && ev.message.content;
+    if (!Array.isArray(content)) return 0;
+    let d = 0;
+    for (const part of content) {
+      if (!part || typeof part !== "object") continue;
+      if (part.type === "tool_use") d++;
+      else if (part.type === "tool_result") d--;
+    }
+    return d;
+  } catch { return 0; }
+}
+export function describeTimeout(r) {
+  const idleSec = Math.round((Number(r && r.idleMs) || 0) / 1000);
+  let why;
+  if (r && r.timeoutKind === "ceiling") why = "已达绝对时间上限";
+  else if (idleSec) why = "已连续 " + idleSec + " 秒没有任何输出";
+  else why = "长时间没有任何输出";
+  const uses = Array.isArray(r && r.toolUses) ? r.toolUses : [];
+  const names = uses.map((t) => (t && t.name) || "").filter(Boolean).join("、");
+  const ran = uses.length
+    ? "中止前已执行 " + uses.length + " 个工具调用（" + names + "）"
+    : "中止前未见工具调用";
+  return "原生引擎" + why + "，已中止。" + ran + " —— 结果未知，可能已产生部分修改，请先检查工作区再决定是否重试。";
+}
 /** 上游会话已不存在的判定（实测报错特征在 stderr：No conversation found with session ID: xxx）。 */
 function missingSession(result) {
   const text = String(result.stderrTail || "") + "\n" + (result.result || "") + "\n" + (result.assistantTexts || []).join("\n");
   return MISSING_SESSION_RE.test(text);
 }
 
-/** 单次 spawn 尝试。 */
+/** 单次 spawn 尝试。timeoutMs 是**静默**阈值；maxMs 是绝对上限。 */
 function attempt({
   prompt, model, baseUrl, apiKey, cwd: workdir,
-  timeoutMs, permissionMode, onEvent, resumeSessionId,
+  timeoutMs, maxMs, permissionMode, onEvent, resumeSessionId,
 }) {
   return new Promise((resolve) => {
     const st = engineStatus();
     if (!st.available) { resolve({ ok: false, error: "native engine unavailable", status: st }); return; }
-    const timeout = Math.max(5_000, Math.min(Number(timeoutMs) || DEFAULT_TIMEOUT_MS, MAX_TIMEOUT_MS));
+    const idle = Math.max(5_000, Math.min(Number(timeoutMs) || idleMs(), MAX_TIMEOUT_MS));
+    const ceiling = Math.max(idle, Math.min(Number(maxMs) || ceilingMs(), MAX_CEILING_MS));
     const args = buildEngineArgs({ model, permissionMode, resumeSessionId });
     let child;
     try {
@@ -184,8 +262,25 @@ function attempt({
       });
     } catch (e) { resolve({ ok: false, error: "spawn failed: " + e.message, status: st }); return; }
     const lines = [];
-    let buf = "", stderrTail = "", timedOut = false, settled = false;
-    const timer = setTimeout(() => { timedOut = true; try { child.kill(); } catch { /* already gone */ } }, timeout);
+    let buf = "", stderrTail = "", timedOut = false, timeoutKind = null, settled = false;
+    let idleTimer = null, ceilingTimer = null;
+    // 飞行中的工具调用数：>0 时引擎是在等自己的工具，静默属正常
+    let pendingTools = 0;
+    const stopTimers = () => { if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; } if (ceilingTimer) { clearTimeout(ceilingTimer); ceilingTimer = null; } };
+    const deadline = (kind) => {
+      if (settled) return;
+      timedOut = true; timeoutKind = kind;
+      try { child.kill(); } catch { /* already gone */ }
+    };
+    // 每收到一段输出就重置静默计时器：有输出 == 还活着
+    const bumpIdle = () => {
+      if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
+      // 有工具在飞行中 → 不设静默计时器：长命令本来就安静，只受绝对上限约束
+      if (pendingTools > 0) return;
+      idleTimer = setTimeout(() => deadline("idle"), idle);
+    };
+    bumpIdle();
+    ceilingTimer = setTimeout(() => deadline("ceiling"), ceiling);
     child.stdout.setEncoding("utf8");
     child.stdout.on("data", (c) => {
       buf += c;
@@ -195,20 +290,25 @@ function attempt({
         buf = buf.slice(i + 1);
         if (line) {
           lines.push(line);
+          pendingTools = Math.max(0, pendingTools + toolBalanceOf(line));
           if (onEvent) { try { onEvent(line); } catch { /* 观察者异常不影响回合 */ } }
         }
       }
+      // 处理完这一段再决定要不要武装静默计时器（顺序很重要）
+      bumpIdle();
     });
     child.stderr.setEncoding("utf8");
+    // stderr 不算「活着」的证据：引擎会把模型警告一直写进 stderr
     child.stderr.on("data", (c) => { stderrTail = (stderrTail + c).slice(-2_000); });
-    child.on("error", (e) => { if (settled) return; settled = true; clearTimeout(timer); resolve({ ok: false, error: "engine process error: " + e.message, status: st }); });
+    child.on("error", (e) => { if (settled) return; settled = true; stopTimers(); resolve({ ok: false, error: "engine process error: " + e.message, status: st }); });
     child.on("close", (code) => {
       if (settled) return;
-      settled = true; clearTimeout(timer);
+      settled = true; stopTimers();
       const s = summarizeEngineEvents(lines);
       resolve({
         ok: !timedOut && code === 0 && !s.isError,
-        timedOut, exitCode: code, stderrTail,
+        timedOut, timeoutKind, exitCode: code, stderrTail, pendingTools,
+        idleMs: idle, ceilingMs: ceiling,
         ...(resumeSessionId ? { resumedFrom: String(resumeSessionId) } : {}),
         ...s,
       });
@@ -227,13 +327,13 @@ function attempt({
  */
 export function runEngineTurn({
   prompt, model, baseUrl, apiKey, cwd: workdir,
-  timeoutMs, permissionMode = "acceptEdits", onEvent, resumeSessionId,
+  timeoutMs, maxMs, permissionMode = "acceptEdits", onEvent, resumeSessionId,
 } = {}) {
   return (async () => {
     if (!prompt || !String(prompt).trim()) return { ok: false, error: "empty prompt" };
     const base = {
       prompt: String(prompt), model, baseUrl, apiKey,
-      cwd: workdir, timeoutMs, permissionMode, onEvent,
+      cwd: workdir, timeoutMs, maxMs, permissionMode, onEvent,
     };
     const first = await attempt({ ...base, resumeSessionId: resumeSessionId || null });
     if (resumeSessionId && !first.ok && missingSession(first)) {

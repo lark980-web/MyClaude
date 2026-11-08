@@ -9,6 +9,7 @@ import { createAgent, closeAgent } from "./agent/runtime.js";
 import { runWithAutoContinue } from "./agent/autorun.js";
 import { setAutonomous } from "./tools/extended.js";
 import { buildStatusLineInput, runStatusLine } from "./agent/statusline.js";
+import { describeTimeout } from "./engines/claude-code.js";
 import {
   newSessionId,
   saveSession,
@@ -932,11 +933,11 @@ case "init": {
       ui.info("原生引擎执行中…（最长 180 秒）");
       const r = await runEngineTurn({
         prompt: arg, model: config.model, baseUrl: config.baseUrl,
-        apiKey: config.apiKey, cwd: process.cwd(), timeoutMs: 180_000,
+        apiKey: config.apiKey, cwd: process.cwd(), timeoutMs: config.engineIdleMs, maxMs: config.engineMaxMs,
         resumeSessionId: bound,
       });
       if (!r.ok) {
-        ui.warn(r.timedOut ? "原生引擎超时（180 秒）已终止" : "原生引擎执行失败" + (r.error ? "：" + r.error : ""));
+        ui.warn(r.timedOut ? describeTimeout(r) : "原生引擎执行失败" + (r.error ? "：" + r.error : ""));
         return {};
       }
       rememberEngineSession(key, r.sessionId);

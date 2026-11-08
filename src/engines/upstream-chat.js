@@ -15,7 +15,7 @@
  */
 
 import { spawn } from "node:child_process";
-import { engineStatus, engineEnv, buildEngineArgs, engineSessionFor, rememberEngineSession } from "./claude-code.js";
+import { engineStatus, engineEnv, buildEngineArgs, engineSessionFor, rememberEngineSession, toolBalanceOf } from "./claude-code.js";
 
 /**
  * 翻译一行上游 NDJSON → 0..N 个 MyClaude SSE 事件（纯函数，可单测）。
@@ -82,13 +82,18 @@ export function newTranslateState() {
  */
 export function streamUpstreamTurn({
   prompt, model, baseUrl, apiKey, cwd: workdir,
-  timeoutMs = 180_000, permissionMode = "acceptEdits", onEvent, resumeSessionId, onChild,
+  timeoutMs, maxMs, permissionMode = "acceptEdits", onEvent, resumeSessionId, onChild,
 } = {}) {
   return new Promise((resolve) => {
     const st = engineStatus();
     if (!st.available) { resolve({ ok: false, error: "native engine unavailable", status: st }); return; }
     if (!prompt || !String(prompt).trim()) { resolve({ ok: false, error: "empty prompt" }); return; }
-    const timeout = Math.max(5_000, Math.min(Number(timeoutMs) || 180_000, 600_000));
+    // 与 claude-code.js 同一套静默超时策略：有输出就说明活着，只有连续无输出才算卡死。
+    // 绝对上限兜底防「永远不结束」。可用 MYCLAUDE_ENGINE_IDLE_MS / MYCLAUDE_ENGINE_MAX_MS 覆盖。
+    const envIdle = Number(process.env.MYCLAUDE_ENGINE_IDLE_MS);
+    const envMax = Number(process.env.MYCLAUDE_ENGINE_MAX_MS);
+    const idle = Math.max(5_000, Math.min(Number(timeoutMs) || (Number.isFinite(envIdle) && envIdle >= 5_000 ? envIdle : 180_000), 3_600_000));
+    const ceiling = Math.max(idle, Math.min(Number(maxMs) || (Number.isFinite(envMax) && envMax >= 5_000 ? envMax : 3_600_000), 7_200_000));
     const args = buildEngineArgs({ model, permissionMode, resumeSessionId });
     let child;
     try {
@@ -102,8 +107,24 @@ export function streamUpstreamTurn({
     // 把子进程交给调用方，便于中断/断连时杀掉（否则刷新页面会留下孤儿进程）
     if (onChild) { try { onChild(child); } catch { /* 观察者异常不影响回合 */ } }
     const state = newTranslateState();
-    let buf = "", stderrTail = "", timedOut = false, settled = false;
-    const timer = setTimeout(() => { timedOut = true; try { child.kill(); } catch { /* gone */ } }, timeout);
+    let buf = "", stderrTail = "", timedOut = false, timeoutKind = null, settled = false;
+    let idleTimer = null, ceilingTimer = null;
+    // 飞行中的工具调用数：>0 时引擎在等自己的工具，静默属正常（长命令本来就安静）
+    let pendingTools = 0;
+    const stopTimers = () => { if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; } if (ceilingTimer) { clearTimeout(ceilingTimer); ceilingTimer = null; } };
+    const deadline = (kind) => {
+      if (settled) return;
+      timedOut = true; timeoutKind = kind;
+      try { child.kill(); } catch { /* gone */ }
+    };
+    const bumpIdle = () => {
+      if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
+      // 有工具在飞行中 → 不设静默计时器：只受绝对上限约束
+      if (pendingTools > 0) return;
+      idleTimer = setTimeout(() => deadline("idle"), idle);
+    };
+    bumpIdle();
+    ceilingTimer = setTimeout(() => deadline("ceiling"), ceiling);
     child.stdout.setEncoding("utf8");
     child.stdout.on("data", (c) => {
       buf += c;
@@ -112,23 +133,27 @@ export function streamUpstreamTurn({
         const line = buf.slice(0, i).trim();
         buf = buf.slice(i + 1);
         if (!line) continue;
+        pendingTools = Math.max(0, pendingTools + toolBalanceOf(line));
         const t = translateUpstreamLine(line, state);
         for (const ev of t.events) { if (onEvent) { try { onEvent(ev); } catch { /* 观察者异常不影响回合 */ } } }
       }
+      // 处理完这一段再决定要不要武装静默计时器（顺序很重要）
+      bumpIdle();
     });
     child.stderr.setEncoding("utf8");
     child.stderr.on("data", (c) => { stderrTail = (stderrTail + c).slice(-2_000); });
     child.on("error", (e) => {
       if (settled) return;
-      settled = true; clearTimeout(timer);
+      settled = true; stopTimers();
       resolve({ ok: false, error: "engine process error: " + e.message, state });
     });
     child.on("close", (code) => {
       if (settled) return;
-      settled = true; clearTimeout(timer);
+      settled = true; stopTimers();
       resolve({
         ok: !timedOut && code === 0 && !state.isError,
-        timedOut, exitCode: code, stderrTail,
+        timedOut, timeoutKind, exitCode: code, stderrTail, pendingTools,
+        idleMs: idle, ceilingMs: ceiling,
         sessionId: state.sessionId,
         result: state.resultText,
         assistantTexts: state.assistantTexts,
