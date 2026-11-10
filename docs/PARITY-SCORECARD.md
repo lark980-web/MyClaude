@@ -20,6 +20,20 @@
 | 验证基建 | **708/708 单测 + CDP 双回归 27 项 + 真 TTY + smoke 46** | 七闸门（六闸门 + 真 TTY） |
 
 ## 2. 本轮（夜航）增量
+
+### 2026-11-11 凌晨增补（并发覆盖事故修复 + 逻辑层深化）
+1. **并发覆盖事故修复**：ac32bce 误回退了 c8b1111 的引擎权限逻辑（权威模式映射/
+   permission-prompts none/--add-dir/describeDenials）与 f721f8e 的 engine:"self" 标记
+   —— 10 项引擎测试被带崩且无人发现（上轮提交带红测试）。已恢复，gate:fast/full 首次真绿。
+2. **逻辑层差分测试**（5 项）：自研权限引擎与原生引擎裁决方向对比（ask 不静默放行/
+   deny 硬拒最高优先/allow 命中放行/deny 压 allow）。
+3. **N9 闭环**：引擎绑定随会话删除回收（GUI DELETE + TUI /rm）+ 运行时生命周期测试。
+4. **流式对齐**：--include-partial-messages 上游 flag 接入 + stream_event 翻译
+   （text_delta/thinking_delta，差量补发防双倍）。真引擎管道模式未发增量（如实记录）。
+5. **压缩边界行为测试**（表驱动 5 项）：悬空 tool_result 不入保留尾部。
+6. **clootee/clootee 评估**：Apache-2.0 启动器（非复刻），logic_struct/logic_realize 分层
+   模式与本项目 agent.js/engine 分层等价，无可抄内容。
+
 追加轮（时间盒内继续）：turnReminder 逐回合提醒（上游 Aer/Per/Oer 逐字 + waiting 变体）、
 TUI /config 交互面板（enum 循环取值：Editor mode/Output style/autoCompact）、
 真 TTY 验证闸门（winpty）。

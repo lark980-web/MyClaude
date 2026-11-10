@@ -130,3 +130,10 @@ TUI /config 交互面板（8d9d983）—— 上游 /config 本地可达枚举（
 CDP 双回归（目录/工具卡 13 项 + GUI vim 14 项）全过；
 smoke 46 命令 0 崩溃；verify-features ✓；inspect:prompt 0 error；
 度量：命令面本地相关 100%（TUI+GUI）、工具契约 17。
+
+## 9. 2026-11-11 凌晨（并发覆盖事故修复 + 逻辑层深化）
+- 修复 ac32bce 并发覆盖：引擎权限逻辑 + engine self 标记恢复（103b44c）
+- 差分测试/dc1a70b；N9 绑定回收/7ba380e；真引擎 denials 实测（skip 如实）
+- 流式 flag + stream_event 翻译（eb410b5）；压缩边界测试
+- gate:fast/full 首次九步真绿；全量 794 项 793 绿 + 1 skip（如实）
+- 参考仓库 clootee/clootee：启动器非复刻，分层模式等价，无可抄内容
