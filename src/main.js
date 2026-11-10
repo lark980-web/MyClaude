@@ -166,6 +166,8 @@ function sessionMeta(agent, config) {
     permissionMode: agent.mode ?? config.permissionMode,
     turnCount: agent.turnCount,
     version: VERSION,
+    // N5：不声明的话自研回合写出的会话就没有这个字段，排障无从判断来源。
+    engine: "self",
   };
 }
 

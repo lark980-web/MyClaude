@@ -239,7 +239,7 @@ const sse = (res, event) => {
     const bound = upstreamBoundSession(key);
     const r = await streamUpstreamTurn({
       prompt: message, model: config.model, baseUrl: config.baseUrl, apiKey: config.apiKey,
-      cwd, timeoutMs: config.engineIdleMs, maxMs: config.engineMaxMs, permissionMode: "acceptEdits", resumeSessionId: bound,
+      cwd, timeoutMs: config.engineIdleMs, maxMs: config.engineMaxMs, permissionMode: config.permissionMode, additionalDirectories: config.additionalDirectories, resumeSessionId: bound,
       onEvent: (ev) => sse(res, ev),
       onChild: (child) => upstreamChildren.set(key, child),
     });
@@ -284,6 +284,8 @@ const sse = (res, event) => {
           permissionMode: agent.mode ?? config.permissionMode,
           turnCount: agent.turnCount,
           version: VERSION,
+          // N5：两条自研路径都显式声明，字段才始终存在且是「最近一次写入的真实来源」。
+          engine: "self",
           ui: "gui",
           todos: getTodos(key)
         })
