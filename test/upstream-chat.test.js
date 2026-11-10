@@ -125,3 +125,41 @@ test("/api/chat in upstream mode streams SSE and persists the turn", async (t) =
 });
 
 after(() => { setTimeout(() => process.exit(0), 100).unref?.(); });
+
+test("R7: stream_event 部分增量推 delta，完整消息只补差量防双倍", () => {
+  const imports = { translateUpstreamLine, newTranslateState };
+  const st = newTranslateState();
+  const deltas = [];
+  // 流式：三段部分增量
+  for (const text of ["你好", "，", "世界"]) {
+    const r = translateUpstreamLine(JSON.stringify({
+      type: "stream_event", event: { type: "content_block_delta", index: 0, delta: { type: "text_delta", text } },
+    }), st);
+    deltas.push(...r.events.filter((e) => e.type === "delta").map((e) => e.text));
+  }
+  assert.deepEqual(deltas, ["你好", "，", "世界"]);
+  // 完整消息到达：只补差量（这里无差量 → 无重复 delta）
+  const full = translateUpstreamLine(JSON.stringify({
+    type: "assistant", message: { content: [{ type: "text", text: "你好，世界" }] },
+  }), st);
+  const rest = full.events.filter((e) => e.type === "delta").map((e) => e.text);
+  assert.deepEqual(rest, [], "已流式的不重发");
+  // 新消息开始：streamedText 重置
+  translateUpstreamLine(JSON.stringify({
+    type: "stream_event", event: { type: "content_block_start", index: 0, content_block: { type: "text" } },
+  }), st);
+  const r2 = translateUpstreamLine(JSON.stringify({
+    type: "stream_event", event: { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "新消息" } },
+  }), st);
+  assert.deepEqual(r2.events.filter((e) => e.type === "delta").map((e) => e.text), ["新消息"]);
+});
+
+test("R7: thinking_delta → reasoning 事件", () => {
+  const imports = { translateUpstreamLine, newTranslateState };
+  const st = newTranslateState();
+  const r = translateUpstreamLine(JSON.stringify({
+    type: "stream_event", event: { type: "content_block_delta", index: 0, delta: { type: "thinking_delta", thinking: "思考中" } },
+  }), st);
+  assert.deepEqual(r.events.map((e) => e.type), ["reasoning"]);
+  assert.equal(r.events[0].text, "思考中");
+});

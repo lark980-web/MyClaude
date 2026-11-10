@@ -140,6 +140,9 @@ export function buildEngineArgs({
     "--print",
     "--output-format", "stream-json",
     "--verbose",
+    // 上游用此 flag 实现细粒度流式（stream_event partial deltas）——
+    // 没有它 GUI 在 upstream 模式下要等整段助手消息才显示（丢流式体验）。
+    "--include-partial-messages",
     "--permission-mode", mode,
     // 引擎默认 --permission-prompts host：它会把授权询问发给宿主，而 MyClaude 目前
     // 不实现该协议 → 询问悬空。显式设 none 让行为确定：会询问的一律自动拒绝，

@@ -32,11 +32,31 @@ export function translateUpstreamLine(line, state) {
     if (o.session_id) state.sessionId = o.session_id;
     return { events };
   }
+  // 细粒度流式（--include-partial-messages）：文本/思考 delta 到达即推，
+  // 已流过的部分记入 streamedText，完整 assistant 消息到达时只补差量防重。
+  if (o.type === "stream_event" && o.event) {
+    const ev = o.event;
+    if (ev.type === "content_block_start" && ev.content_block && ev.content_block.type === "text") {
+      state.streamedText = "";
+    } else if (ev.type === "content_block_delta" && ev.delta) {
+      if (ev.delta.type === "text_delta" && ev.delta.text) {
+        state.streamedText += ev.delta.text;
+        events.push({ type: "delta", text: ev.delta.text });
+      } else if (ev.delta.type === "thinking_delta" && ev.delta.thinking) {
+        events.push({ type: "reasoning", text: ev.delta.thinking });
+      }
+    }
+    return { events };
+  }
   if (o.type === "assistant" && o.message && Array.isArray(o.message.content)) {
     for (const b of o.message.content) {
       if (b.type === "text" && b.text) {
         state.assistantTexts.push(b.text);
-        events.push({ type: "delta", text: b.text });
+        // 流式已推的部分不再重发（差量补发，防双倍）
+        const already = state.streamedText || "";
+        const rest = b.text.startsWith(already) ? b.text.slice(already.length) : b.text;
+        if (rest) events.push({ type: "delta", text: rest });
+        state.streamedText = "";
       } else if (b.type === "thinking" && b.thinking) {
         events.push({ type: "reasoning", text: b.thinking });
       } else if (b.type === "tool_use" && b.name) {
@@ -71,7 +91,7 @@ export function translateUpstreamLine(line, state) {
 
 /** 造一个翻译状态。 */
 export function newTranslateState() {
-  return { toolNames: new Map(), sessionId: null, assistantTexts: [], toolUses: [], resultText: null, isError: false };
+  return { toolNames: new Map(), sessionId: null, assistantTexts: [], toolUses: [], resultText: null, isError: false, streamedText: "" };
 }
 
 /**
