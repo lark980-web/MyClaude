@@ -1,16 +1,16 @@
 {
   "schemaVersion": 1,
   "baseline": {
-    "testCount": 812,
-    "commit": "70d9053388f6f1b4ec95a4b57a22856fecc6f6de",
-    "at": "2026-11-10T18:33:03.731Z"
+    "testCount": 824,
+    "commit": "b4c3bd72901746172e767368022af62cd69a3b79",
+    "at": "2026-11-10T18:56:14.556Z"
   },
   "latest": {
-    "runId": "2026-11-10T18-31-13-720Z",
+    "runId": "2026-11-10T18-54-36-716Z",
     "mode": "full",
-    "startedAt": "2026-11-10T18:31:13.723Z",
-    "commit": "70d9053388f6f1b4ec95a4b57a22856fecc6f6de",
-    "dirty": "M scripts/gate.mjs\n M test/gate-metrics.json\n M test/gate.test.js",
+    "startedAt": "2026-11-10T18:54:36.742Z",
+    "commit": "b4c3bd72901746172e767368022af62cd69a3b79",
+    "dirty": "",
     "status": "passed",
     "steps": [
       {
@@ -24,7 +24,7 @@
         ],
         "exitCode": 0,
         "signal": null,
-        "logPath": "E:\\WorkSpaces\\Test09\\MyClaude\\.local\\gate\\2026-11-10T18-31-13-720Z\\tests.log"
+        "logPath": "E:\\WorkSpaces\\Test09\\MyClaude\\.local\\gate\\2026-11-10T18-54-36-716Z\\tests.log"
       },
       {
         "name": "prompt",
@@ -34,7 +34,7 @@
         ],
         "exitCode": 0,
         "signal": null,
-        "logPath": "E:\\WorkSpaces\\Test09\\MyClaude\\.local\\gate\\2026-11-10T18-31-13-720Z\\prompt.log"
+        "logPath": "E:\\WorkSpaces\\Test09\\MyClaude\\.local\\gate\\2026-11-10T18-54-36-716Z\\prompt.log"
       },
       {
         "name": "features",
@@ -43,7 +43,7 @@
         ],
         "exitCode": 0,
         "signal": null,
-        "logPath": "E:\\WorkSpaces\\Test09\\MyClaude\\.local\\gate\\2026-11-10T18-31-13-720Z\\features.log"
+        "logPath": "E:\\WorkSpaces\\Test09\\MyClaude\\.local\\gate\\2026-11-10T18-54-36-716Z\\features.log"
       },
       {
         "name": "build-embed",
@@ -52,7 +52,7 @@
         ],
         "exitCode": 0,
         "signal": null,
-        "logPath": "E:\\WorkSpaces\\Test09\\MyClaude\\.local\\gate\\2026-11-10T18-31-13-720Z\\build-embed.log"
+        "logPath": "E:\\WorkSpaces\\Test09\\MyClaude\\.local\\gate\\2026-11-10T18-54-36-716Z\\build-embed.log"
       },
       {
         "name": "build-exe",
@@ -61,7 +61,7 @@
         ],
         "exitCode": 0,
         "signal": null,
-        "logPath": "E:\\WorkSpaces\\Test09\\MyClaude\\.local\\gate\\2026-11-10T18-31-13-720Z\\build-exe.log"
+        "logPath": "E:\\WorkSpaces\\Test09\\MyClaude\\.local\\gate\\2026-11-10T18-54-36-716Z\\build-exe.log"
       },
       {
         "name": "smoke",
@@ -72,7 +72,7 @@
         ],
         "exitCode": 0,
         "signal": null,
-        "logPath": "E:\\WorkSpaces\\Test09\\MyClaude\\.local\\gate\\2026-11-10T18-31-13-720Z\\smoke.log"
+        "logPath": "E:\\WorkSpaces\\Test09\\MyClaude\\.local\\gate\\2026-11-10T18-54-36-716Z\\smoke.log"
       },
       {
         "name": "catalog-cdp",
@@ -81,7 +81,7 @@
         ],
         "exitCode": 0,
         "signal": null,
-        "logPath": "E:\\WorkSpaces\\Test09\\MyClaude\\.local\\gate\\2026-11-10T18-31-13-720Z\\catalog-cdp.log"
+        "logPath": "E:\\WorkSpaces\\Test09\\MyClaude\\.local\\gate\\2026-11-10T18-54-36-716Z\\catalog-cdp.log"
       },
       {
         "name": "vim-cdp",
@@ -90,7 +90,7 @@
         ],
         "exitCode": 0,
         "signal": null,
-        "logPath": "E:\\WorkSpaces\\Test09\\MyClaude\\.local\\gate\\2026-11-10T18-31-13-720Z\\vim-cdp.log"
+        "logPath": "E:\\WorkSpaces\\Test09\\MyClaude\\.local\\gate\\2026-11-10T18-54-36-716Z\\vim-cdp.log"
       },
       {
         "name": "tty",
@@ -99,10 +99,10 @@
         ],
         "exitCode": 0,
         "signal": null,
-        "logPath": "E:\\WorkSpaces\\Test09\\MyClaude\\.local\\gate\\2026-11-10T18-31-13-720Z\\tty.log"
+        "logPath": "E:\\WorkSpaces\\Test09\\MyClaude\\.local\\gate\\2026-11-10T18-54-36-716Z\\tty.log"
       }
     ],
-    "testCount": 812,
-    "finishedAt": "2026-11-10T18:33:03.731Z"
+    "testCount": 824,
+    "finishedAt": "2026-11-10T18:56:14.556Z"
   }
 }
