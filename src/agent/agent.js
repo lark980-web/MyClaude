@@ -685,6 +685,10 @@ export class Agent {
         if (verdict.context) {
           this.messages.push({ role: "user", content: "[hook context]\n" + verdict.context });
         }
+        // 上游 additionalContexts（数组）逐条注入（chunk-1j09a7h8.js hook_additional_context）
+        for (const cx of verdict.contexts) {
+          this.messages.push({ role: "user", content: "[hook context]\n" + cx });
+        }
       }
       const resolved = await resolveAttachments(attachments);
       const bad = resolved.filter((a) => a.kind === "error");
@@ -841,18 +845,23 @@ export class Agent {
         // PreToolUse runs before the interactive prompt so a hook can settle the
         // decision without bothering the user (allow) or veto it outright (block).
         let hookPermission = null;
+        let hookPermissionReason = "";
         if (this.hooks.has("PreToolUse", call.name)) {
           const hv = await this.hooks.run("PreToolUse", {
             tool_name: call.name,
             tool_input: call.arguments,
+            tool_use_id: call.id || "",
           });
           hookPermission = hv.permission;
+          hookPermissionReason = hv.permissionReason || "";
           if (hv.systemMessage) { this.ui.warn(hv.systemMessage); }
           if (hv.block) {
             approvedCalls.push({ call, error: "ERROR: blocked by hook: " + hv.reason });
             this.ui.warn(`blocked by hook: ${call.name} — ${hv.reason}`);
             continue;
           }
+          // 上游 PreToolUse 可修改工具入参（updatedInput）—— 修改后既影响权限判定也影响执行
+          if (hv.updatedInput) { call.arguments = { ...call.arguments, ...hv.updatedInput }; }
         }
 
         const approved = hookPermission === "allow"
@@ -861,8 +870,8 @@ export class Agent {
             ? false
             : await this.askPermission(call.name, call.arguments);
         if (!approved) {
-          approvedCalls.push({ call, error: "ERROR: permission denied by user" });
-          this.ui.warn(`denied: ${call.name}`);
+          approvedCalls.push({ call, error: "ERROR: permission denied" + (hookPermissionReason ? " — " + hookPermissionReason : " by user") });
+          this.ui.warn(`denied: ${call.name}` + (hookPermissionReason ? " — " + hookPermissionReason : ""));
           continue;
         }
 
@@ -923,19 +932,27 @@ export class Agent {
 
         // PostToolUse sees the result, so it can lint, scan or audit it. A block
         // here cannot undo the call, but its reason is fed back to the model.
+        // 上游语义（chunk-e0x0xb6d.js）：updatedToolOutput 可修改工具输出；
+        // additionalContexts（数组）每条单独注入。
         if (this.hooks.has("PostToolUse", call.name)) {
           const hv = await this.hooks.run("PostToolUse", {
             tool_name: call.name,
             tool_input: call.arguments,
             tool_response: out.content,
             tool_ok: out.ok,
+            tool_use_id: call.id || "",
           });
           if (hv.systemMessage) { this.ui.warn(hv.systemMessage); }
           if (hv.context) { this.messages.push({ role: "user", content: "[hook context]\n" + hv.context }); }
+          for (const cx of hv.contexts) {
+            this.messages.push({ role: "user", content: "[hook context]\n" + cx });
+          }
           if (hv.block) {
             this.ui.warn(`hook flagged ${call.name}: ${hv.reason}`);
             this.messages.push({ role: "user", content: "[hook warning] " + hv.reason });
           }
+          // 上游 PostToolUse 可修改工具输出（updatedToolOutput）—— 修改后影响模型看到的 tool_result
+          if (hv.updatedToolOutput != null) { out.content = hv.updatedToolOutput; }
         }
 
         if (call.name === "ExitPlanMode" && out.ok && normalizeMode(this.config.permissionMode) === "plan") {

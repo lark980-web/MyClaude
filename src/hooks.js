@@ -66,10 +66,15 @@ export function matcherMatches(matcher, toolName) {
  * Interpret one hook process result into a decision object.
  *
  * @param {{code: number|null, stdout: string, stderr: string}} res
- * @returns {{block: boolean, reason: string, context: string, permission: string|null, systemMessage: string}}
+ * @returns {{block: boolean, reason: string, context: string, permission: string|null,
+ *            permissionReason: string, systemMessage: string, updatedInput: object|null,
+ *            updatedToolOutput: string|null, contexts: string[]}}
  */
 export function interpret(res) {
-  const out = { block: false, reason: "", context: "", permission: null, systemMessage: "" };
+  const out = {
+    block: false, reason: "", context: "", permission: null, permissionReason: "",
+    systemMessage: "", updatedInput: null, updatedToolOutput: null, contexts: [],
+  };
   const code = res && res.code;
 
   if (code === 2) {
@@ -98,9 +103,26 @@ export function interpret(res) {
   if (typeof data.systemMessage === "string") { out.systemMessage = data.systemMessage; }
 
   const spec = data.hookSpecificOutput || {};
-  if (spec.permissionDecision) { out.permission = spec.permissionDecision; }
+  if (spec.permissionDecision) {
+    out.permission = spec.permissionDecision;
+    // 上游：permissionDecisionReason 与裁决成对出现（chunk-e0x0xb6d.js fmt/m4）
+    out.permissionReason = spec.permissionDecisionReason || "";
+  }
+  // 上游 additionalContexts 是字符串数组（chunk-1j09a7h8.js：hook_additional_context 事件）
+  if (Array.isArray(spec.additionalContexts)) {
+    out.contexts.push(...spec.additionalContexts.filter((c) => typeof c === "string" && c));
+  }
   if (typeof spec.additionalContext === "string") { out.context = spec.additionalContext; }
+  if (Array.isArray(data.additionalContexts)) {
+    out.contexts.push(...data.additionalContexts.filter((c) => typeof c === "string" && c));
+  }
   if (typeof data.supplementalContext === "string") { out.context += (out.context ? "\n" : "") + data.supplementalContext; }
+  // 上游 PreToolUse 可修改工具入参（chunk-e0x0xb6d.js updatedInput/behavior:"allow"）
+  if (spec.updatedInput && typeof spec.updatedInput === "object") { out.updatedInput = spec.updatedInput; }
+  else if (data.updatedInput && typeof data.updatedInput === "object") { out.updatedInput = data.updatedInput; }
+  // 上游 PostToolUse 可修改工具输出（updatedToolOutput）
+  const uto = spec.updatedToolOutput ?? data.updatedToolOutput;
+  if (uto != null) { out.updatedToolOutput = String(uto); }
   return out;
 }
 
@@ -147,20 +169,26 @@ export class HookRunner {
   /**
    * Run every hook registered for an event and merge their verdicts.
    *
-   * A block from any hook wins; contexts accumulate; the last explicit
-   * permission decision is the one applied.
+   * A block from any hook wins; contexts accumulate; the MOST RESTRICTIVE
+   * permission decision wins (deny > ask > allow), matching upstream fmt():
+   * `r={allow:1,ask:2,deny:3}` — the more conservative verdict prevails when
+   * hooks disagree (chunk-e0x0xb6d.js).
    *
    * @param {string} event
    * @param {object} payload JSON handed to each hook on stdin
    */
   async run(event, payload = {}) {
     const commands = this.#plan(event, payload.tool_name);
-    const merged = { block: false, reason: "", context: "", permission: null, systemMessage: "", ran: 0 };
+    const merged = {
+      block: false, reason: "", context: "", permission: null, permissionReason: "",
+      systemMessage: "", updatedInput: null, updatedToolOutput: null, contexts: [], ran: 0,
+    };
     if (!commands.length) { return merged; }
 
     const input = JSON.stringify({
       hook_event_name: event,
       session_id: payload.session_id || this.config.sessionId || null,
+      transcript_path: payload.transcript_path || null,
       cwd: this.cwd,
       model: this.config.model || null,
       ...payload
@@ -175,7 +203,20 @@ export class HookRunner {
       const verdict = interpret(res);
       if (verdict.block) { merged.block = true; merged.reason = merged.reason ? merged.reason + "\n" + verdict.reason : verdict.reason; }
       if (verdict.context) { merged.context += (merged.context ? "\n" : "") + verdict.context; }
-      if (verdict.permission) { merged.permission = verdict.permission; }
+      merged.contexts.push(...verdict.contexts);
+      // 最严者赢（deny > ask > allow），与上游 fmt() 一致
+      if (verdict.permission) {
+        const rank = { allow: 1, ask: 2, deny: 3 };
+        const cur = merged.permission ? rank[merged.permission] ?? 0 : 0;
+        const next = rank[verdict.permission] ?? 0;
+        if (next > cur) {
+          merged.permission = verdict.permission;
+          merged.permissionReason = verdict.permissionReason;
+        }
+      }
+      // updatedInput 链式传递：最后一个 hook 的修改生效（前一个的输出是后一个的输入）
+      if (verdict.updatedInput) { merged.updatedInput = verdict.updatedInput; }
+      if (verdict.updatedToolOutput != null) { merged.updatedToolOutput = verdict.updatedToolOutput; }
       if (verdict.systemMessage) {
         merged.systemMessage += (merged.systemMessage ? "\n" : "") + verdict.systemMessage;
         if (this.ui && this.ui.warn) { this.ui.warn(`hook ${event}: ${verdict.systemMessage}`); }
