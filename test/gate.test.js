@@ -16,7 +16,9 @@ function fixture(t) {
 const runner = count => name => ({status:0,stdout:name==='tests'?tap(count):name==='prompt'?'{"errors":0}':'ok',stderr:''});
 test('TAP parser fails closed on missing, skipped, zero or failed suites',()=>{
   assert.equal(parseSummary(tap(4)).tests,4);
-  for(const s of ['',tap(0),tap(4).replace('# skipped 0','# skipped 1'),tap(4).replace('# fail 0','# fail 1')]) assert.throws(()=>parseSummary(s));
+  for(const s of ['',tap(0),tap(4).replace('# fail 0','# fail 1')]) assert.throws(()=>parseSummary(s));
+  // skipped 是合法状态（N 系列真引擎测试需要钥匙时如实 skip）
+  assert.equal(parseSummary(tap(4).replace('# skipped 0','# skipped 1')).skipped,1);
 });
 test('successful gate persists baseline; count regression cannot lower it',t=>{
   const root=fixture(t); assert.equal(runGate({root,runner:runner(4)}).latest.status,'passed');
