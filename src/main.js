@@ -1103,6 +1103,8 @@ case "init": {
         return {};
       }
       ui.success(deleteSession(arg) ? `已删除 ${arg}` : `未找到：${arg}`);
+      // N9：绑定随会话回收（engine-sessions.json 不留孤儿）
+      try { const { forgetEngineSession } = await import("./engines/claude-code.js"); forgetEngineSession(arg); } catch {}
       return {};
     }
     case "plugin": {

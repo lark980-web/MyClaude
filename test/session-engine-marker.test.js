@@ -39,3 +39,12 @@ test('both self-agent write paths declare engine:"self"', () => {
   // 上游路径仍然声明 upstream —— 不要改坏它
   assert.match(gui, /engine:\s*"upstream"/, 'upstream 路径的声明要保留');
 });
+
+test('N9：会话删除后引擎绑定被回收（forgetEngineSession 接线）', async () => {
+  const gui = readFileSync(new URL('../src/ui/gui-server.js', import.meta.url), 'utf8');
+  const tui = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+  // GUI DELETE /api/sessions/:id 内要调 forgetEngineSession(id)
+  assert.match(gui, /savers\.delete\(id\);[\s\S]{0,200}forgetEngineSession\(id\);/, 'GUI 删除路径回收绑定');
+  // TUI /rm 内要调 forgetEngineSession(arg)
+  assert.match(tui, /forgetEngineSession\(arg\)/, 'TUI /rm 路径回收绑定');
+});

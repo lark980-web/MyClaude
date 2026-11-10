@@ -2590,6 +2590,9 @@ running.add(key);
           savers.get(id)?.discard?.() ?? savers.get(id)?.dispose?.();
           savers.delete(id);
           sessions.delete(id);
+          // N9：引擎绑定随会话一起回收（否则 engine-sessions.json 无限增长，
+          // 且删除后重建同名会话会错误复用旧上游 sessionId）
+          forgetEngineSession(id);
         }
         sendJson(res, 200, { ok: removed });
         return;
