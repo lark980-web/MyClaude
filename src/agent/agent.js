@@ -946,6 +946,8 @@ export class Agent {
         if (out.git) { extra.git = out.git; }
         if (Array.isArray(out.diff)) { extra.diff = out.diff; }
         if (out.taskId) { extra.taskId = out.taskId; }
+        // N4：大输出落盘路径透传到 GUI（GUI 可引导用户查看完整输出）
+        if (out.persistedOutputPath) { extra.persistedOutputPath = out.persistedOutputPath; }
         this.ui.toolEnd(call.name, out.ok, entry.elapsed, out.content, extra);
 
         // PostToolUse sees the result, so it can lint, scan or audit it. A block
