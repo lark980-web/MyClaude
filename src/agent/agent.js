@@ -550,6 +550,10 @@ export class Agent {
     if (mode === "auto") {
       if (toolName === "Bash" && this.askOnDestructive && isDestructiveCommand(args && args.command)) {
         this.ui.warn("auto mode: this command looks destructive, asking first");
+        // 上游 Notification hook：需要用户确认时通知（chunk-9fg8a8zw.js worker_permission_prompt）
+        if (this.hooks.has("Notification")) {
+          await this.hooks.run("Notification", { message: `auto mode: destructive command needs confirmation: ${toolName}`, notificationType: "permission_request" });
+        }
         return this.ui.confirmTool(toolName, args);
       }
       // Auto mode promises "no routine prompts", and in Claude a reviewer model
@@ -561,10 +565,16 @@ export class Agent {
         const verdict = await reviewToolCall(this.router, toolName, args);
         if (verdict.allow === false) {
           this.ui.warn(`auto review: ${verdict.reason} — asking`);
+          if (this.hooks.has("Notification")) {
+            await this.hooks.run("Notification", { message: `auto review blocked: ${toolName} — ${verdict.reason}`, notificationType: "permission_request" });
+          }
           return this.ui.confirmTool(toolName, args);
         }
         if (verdict.allow === null) {
           this.ui.warn(`auto review: ${verdict.reason} — falling back to asking`);
+          if (this.hooks.has("Notification")) {
+            await this.hooks.run("Notification", { message: `auto review inconclusive: ${toolName}`, notificationType: "permission_request" });
+          }
           return this.ui.confirmTool(toolName, args);
         }
       }
@@ -577,6 +587,10 @@ export class Agent {
       return false;
     }
 
+    // ask 模式 + 非 auto 路径的确认：Notification hook 通知用户需要确认
+    if (this.hooks.has("Notification")) {
+      await this.hooks.run("Notification", { message: `tool needs confirmation: ${toolName}`, notificationType: "permission_request" });
+    }
     return this.ui.confirmTool(toolName, args);
   }
 
@@ -689,6 +703,10 @@ export class Agent {
         for (const cx of verdict.contexts) {
           this.messages.push({ role: "user", content: "[hook context]\n" + cx });
         }
+      }
+      // 上游 Notification hook：回合完成时通知用户（task_complete 语义）
+      if (this.hooks.has("Notification") && this.turnCount > 0) {
+        try { await this.hooks.run("Notification", { message: "turn completed", notificationType: "task_complete" }); } catch {}
       }
       const resolved = await resolveAttachments(attachments);
       const bad = resolved.filter((a) => a.kind === "error");
