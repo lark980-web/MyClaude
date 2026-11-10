@@ -33,8 +33,10 @@
 6. **压缩边界行为测试**（表驱动 5 项）：悬空 tool_result 不入保留尾部。
 7. **gate 允许 honest skip**：真引擎测试需要钥匙时如实 skip 比假绿好。
 8. **压缩行为测试 4 项**：阈值触发+摘要替换、失败降级截断、PreCompact 阻断、turn boundary。
+9. **Notification 三时机接线**：permission_request/破坏性命令/回合完成 + 行为级对照 4 项。
+10. **并发工具冲突 + abort 边界**：后写者赢/signal 传递/按序记录/stopRequested 语义测试 4 项。
 
-**全量 816 项 815 绿 + 1 skip，gate:full 九步全绿。**
+**全量 824 项 823 绿 + 1 skip，gate:full 九步全绿。**
 
 
 ### 2026-11-11 凌晨增补（并发覆盖事故修复 + 逻辑层深化）
