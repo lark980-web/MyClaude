@@ -845,6 +845,10 @@ function ripgrepSearch({ pattern, path, glob, type, output_mode, i, n, o, A, B, 
   if (!rg) { return null; }
 
   const args = ["--no-heading", "--color", "never"];
+  // N8：默认排除大体积/二进制目录（用户 --glob 可以覆盖）
+  for (const d of ["node_modules", ".git", "dist", "build", ".next", "coverage", "__pycache__", ".venv", "vendor"]) {
+    args.push("--glob", "!" + d);
+  }
   if (i) { args.push("-i"); }
   if (glob) { args.push("--glob", glob); }
   if (type) { args.push("--type", type); }
