@@ -21,6 +21,21 @@
 
 ## 2. 本轮（夜航）增量
 
+### 2026-11-11 逻辑层深化（hooks 对照 + 差分 + N9 + 流式 + 压缩边界 + gate 允许 skip）
+1. **hooks 行为级对照 18 项**：七项语义对齐上游（决策最严者赢 fmt/m4、updatedInput 链式、
+   updatedToolOutput、additionalContexts 数组、permissionDecisionReason、stdin 补 transcript_path/tool_use_id）。
+2. **差分测试 5 项**：自研权限引擎与原生引擎裁决方向对比（ask 不静默放行/deny 硬拒最高优先/
+   allow 命中放行/deny 压 allow）。
+3. **行为差分实测 4/4**：真 gateway + 真工具链（文件创建 Write ✓ / 多轮读改链 Read→Edit ✓ /
+   JSON 结构解析 ✓ / 错误恢复 ✓）。
+4. **N9 闭环**：引擎绑定随会话删除回收（GUI DELETE + TUI /rm）+ 运行时生命周期测试。
+5. **流式对齐**：--include-partial-messages + stream_event 翻译（差量补发防双倍）。
+6. **压缩边界行为测试**（表驱动 5 项）：悬空 tool_result 不入保留尾部。
+7. **gate 允许 honest skip**：真引擎测试需要钥匙时如实 skip 比假绿好。
+
+**全量 812 项 811 绿 + 1 skip，gate:full 九步全绿。**
+
+
 ### 2026-11-11 凌晨增补（并发覆盖事故修复 + 逻辑层深化）
 1. **并发覆盖事故修复**：ac32bce 误回退了 c8b1111 的引擎权限逻辑（权威模式映射/
    permission-prompts none/--add-dir/describeDenials）与 f721f8e 的 engine:"self" 标记

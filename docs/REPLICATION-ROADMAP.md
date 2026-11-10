@@ -137,3 +137,12 @@ smoke 46 命令 0 崩溃；verify-features ✓；inspect:prompt 0 error；
 - 流式 flag + stream_event 翻译（eb410b5）；压缩边界测试
 - gate:fast/full 首次九步真绿；全量 794 项 793 绿 + 1 skip（如实）
 - 参考仓库 clootee/clootee：启动器非复刻，分层模式等价，无可抄内容
+
+## 10. 2026-11-11 逻辑层深化（hooks 对照 + 差分 + N9 + 流式）
+- hooks 七项语义对齐上游（决策最严者赢/updatedInput/updatedToolOutput/
+  additionalContexts 数组/permissionDecisionReason/stdin 补全）—— 行为级对照测试 18 项
+- 差分测试 5 项 + 行为差分实测 4/4（真 gateway + 真工具链）
+- N9 绑定回收 + 运行时生命周期测试
+- 压缩边界表驱动 5 项
+- gate 允许 honest skip（比假绿好）→ gate:full 九步全绿
+- 全量 812 项 811 绿 + 1 skip
