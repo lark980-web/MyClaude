@@ -1012,6 +1012,38 @@ export class Agent {
    * outage the router could not route around) we fall back to truncation
    * rather than losing the session entirely.
    */
+
+  /**
+   * Micro-compaction: 移除旧 tool_result 正文（保留 tool_use/tool_result 结构），
+   * 只保留最近 keepRecent 个 tool_result 的完整内容。比全量压缩更轻——
+   * 先试 micro，如果释放了足够空间就不用做全量压缩了。
+   *
+   * @param {number} [keepRecent] 保留最近几个 tool_result 完整（默认 3）
+   * @returns {number} 释放的字符数（0 = 无事可做）
+   */
+  microCompact(keepRecent = 3) {
+    let freed = 0;
+    const toolMsgs = [];
+    for (let i = 0; i < this.messages.length; i++) {
+      const m = this.messages[i];
+      if (m.role === 'tool' && typeof m.content === 'string') {
+        toolMsgs.push({ idx: i, m });
+      }
+    }
+    // 从后往前保留最近 keepRecent 个
+    for (let i = 0; i < toolMsgs.length - keepRecent; i++) {
+      const { idx, m } = toolMsgs[i];
+      if (m.content.startsWith('[tool output removed')) { continue; } // 已清理过
+      const oldLen = m.content.length;
+      this.messages[idx] = {
+        ...m,
+        content: `[tool output removed: ${oldLen} chars]`,
+      };
+      freed += oldLen - `[tool output removed: ${oldLen} chars]`.length;
+    }
+    return freed;
+  }
+
   async maybeCompact() {
     const approxChars = this.messages.reduce((sum, m) => {
       const c = typeof m.content === "string" ? m.content : JSON.stringify(m.content ?? "");
@@ -1026,6 +1058,15 @@ export class Agent {
     const window = this.contextWindow || this.config.contextWindow;
     const limit = window * (this.config.compactThreshold || 0.8);
     if (approxTokens < limit) { return null; }
+
+    // 先试 micro-compaction（更轻：清旧 tool_result，保留 tool_use/tool_result 结构）。
+    // 释放了足够空间就不用做全量压缩了。
+    const microFreed = this.microCompact();
+    const afterMicro = estimateTokens(this.messages);
+    if (microFreed > 0 && afterMicro < limit) {
+      return { micro: true, freed: microFreed, approxTokens: afterMicro };
+    }
+    // micro 释放不够 → 继续走全量压缩
 
     // PreCompact fires before the history is rewritten, so a hook can archive
     // or annotate the full transcript while it still exists.
