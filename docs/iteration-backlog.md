@@ -5,7 +5,7 @@
 - [x] **Notification 契约锁到行为层**：behavior 测试改断言原始 payload 键（`notification_type`）+「不得回落 camelCase」；新增 e2e 契约测试（真实 cmd shell + stdin JSON，断言 hook 进程真收到 snake_case）。上游三处证据见 adr.md。
 - [x] **gate skip 白名单**：未登记的 skip 一律红（实测 `# tests = pass + skipped`，pass 退化为 skip 时总数不变、水位断言看不见）。白名单 `test/gate-skip-allowlist.json` 从真实 TAP 生成。
 - [x] **gate exe 就绪探针**：build-exe 后固定 sleep 3s 改为主动 `waitForExeReady()`（反复跑 exe --version）。失败特征是「下一步全部静默」（本次 smoke 46 命令 0 输出）。
-- [ ] **待办（本轮发现，未修）**：hook 命令里的**带引号路径在 Windows cmd 下会被原样传给子进程**。复现：`command: 'node "E:/abs/path.mjs"'` → 子进程收到 `cwd\"E:/abs/path.mjs"`（引号字面化）→ MODULE_NOT_FOUND。根因在 `cmd /d /s /c` 的引号处理（`src/hooks.js` 的 SHELLS.cmd）。现有 e2e 测试用「不加引号的 .cmd 脚本路径」绕过（见 hooks-e2e.test.js 头注）。影响：用户写带空格的路径（如 `C:\Program Files\...`）会失败。修法候选：改 `shell:true`、或去掉 `/s`、或检测并自行加引号——需先有测试再动。
+- [x] **hook 命令带引号路径在 cmd 下失效（2026-11-11 已修）**：根因——spawn 未经 windowsVerbatimArguments 传参时，Node 按 CreateProcess 规则把命令内层引号转义为反斜杠引号；cmd /s 剥首尾引号后转义引号原样留在命令里，子进程收到带字面引号的路径（MODULE_NOT_FOUND）。修法（照 Node 自身 shell:true 的实现）：SHELLS.cmd 改为包一层引号 + windowsVerbatimArguments:true——cmd /s 剥包裹引号，内部引号原样生效。先写红测试复现（带空格目录的引号绝对路径）再修，红转绿；hooks 相关 6 套件 41/41 全绿，gate:full 九步全绿。既有不带引号的 .cmd 脚本写法不受影响。powershell spec 未覆盖（opt-in，无测试），需要时同法先红后修。
 
 
 ## 基建轮 R1（2026-11-07）：闸门接线（已完成，详录见 docs/adr.md）

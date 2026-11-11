@@ -29,7 +29,13 @@ const DEFAULT_TIMEOUT_MS = 60000;
 const SHELLS = {
   powershell: { binary: "powershell.exe", args: (c) => ["-NoProfile", "-Command", c] },
   pwsh: { binary: "pwsh", args: (c) => ["-NoProfile", "-Command", c] },
-  cmd: { binary: "cmd.exe", args: (c) => ["/d", "/s", "/c", c] },
+  // cmd /s strips the FIRST and LAST quote of the string after /c and keeps the
+  // rest verbatim — so wrap the whole command in one pair of quotes and pass the
+  // args verbatim (windowsVerbatimArguments), exactly like Node's own shell:true
+  // does. Without verbatim args, Node escapes the command's inner quotes as \",
+  // which cmd leaves as literal backslash-quotes → child processes receive
+  // quoted paths with literal quote characters (MODULE_NOT_FOUND, "file not found").
+  cmd: { binary: "cmd.exe", args: (c) => ["/d", "/s", "/c", '"' + c + '"'], verbatim: true },
   sh: { binary: "/bin/sh", args: (c) => ["-c", c] },
   bash: { binary: "bash", args: (c) => ["-c", c] },
 };
@@ -233,6 +239,8 @@ export class HookRunner {
       const child = spawn(shell, args, {
         cwd: this.cwd,
         windowsHide: true,
+        // verbatim spec (cmd): args are pre-quoted; Node must not re-escape them
+        windowsVerbatimArguments: spec.verbatim === true,
         env: { ...process.env, MYCLAUDE_HOOK_EVENT: "1" },
       });
       let stdout = "";

@@ -106,3 +106,11 @@
 - **自检发现的闸门漏洞（真实）**：gate 允许 skip 但**无任何约束**。实测 `# tests 863 = pass 862 + skipped 1` —— 测试从 pass 退化为 skip 时**总数不变**，水位断言看不见，闸门会保持绿而测试已停跑。修法：新增 `test/gate-skip-allowlist.json`（显式登记测试名 + 理由），**未登记的 skip 一律红**；白名单从真实 TAP 生成以避免手抄错名（全角冒号）。3 条新测试锁定该行为（含「测试悄悄变 skip → gate 红」的集成测试）。
 - **gate:full 链缺陷（第二个）**：build-exe 后固定 sleep 3s 是**猜测**，其失败特征是「下一步全部静默」（本次 smoke 46 个命令 0 输出、0 崩溃）。修法：改为**主动就绪探针** `waitForExeReady()`（反复跑 `exe --version` 直到打印版本，最多 12 次），并把 `print nothing at all` 加入 smoke 的可重试特征。固定 sleep 的问题在于它既可能不够、也可能白等，而主动探针直接验证前置条件。
 - **纪律**：先独立验证上游契约再动手改测试；发现同类问题（键名）时一并核对全部 hook 事件 schema（结论：其余事件键名本就 snake_case，仅 Notification 一处违规）；闸门自身的可靠性也在被检查范围内。
+
+## cmd 引号路径缺陷修复（2026-11-11）
+
+- **缺陷**：hook 命令带引号路径（如 node "E:/abs path/x.mjs"）在 Windows cmd 下失效——子进程收到带字面引号的路径（MODULE_NOT_FOUND）。
+- **根因**：spawn 未经 windowsVerbatimArguments 传参时，Node 把作为单个 arg 的命令字符串里的内层引号转义为反斜杠引号；cmd /s 的语义是剥首尾引号、其余原样保留 → 转义引号留在命令里 → 子进程收到的路径带字面引号。
+- **修法（照 Node 自身 shell:true 的实现）**：SHELLS.cmd 改为 args:(c)=>['/d','/s','/c','"'+c+'"'], verbatim:true，spawn 加 windowsVerbatimArguments。cmd /s 剥掉这层包裹引号后，命令内部引号原样交给命令行解析——含空格路径的引号正常生效。
+- **流程**：先写红测试（HOME 下建带空格目录 + 引号绝对路径 + stdin 捕获）复现，10 过 1 挂；修后红转绿、既有 10 项全保持绿。hooks 相关 6 套件 41/41；gate:full 九步全绿。
+- **边界**：只覆盖 cmd spec；powershell spec 未验证（opt-in，无测试覆盖）。

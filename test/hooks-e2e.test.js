@@ -6,7 +6,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-const { mkdtempSync, writeFileSync, readFileSync } = await import('node:fs');
+const { mkdtempSync, mkdirSync, writeFileSync, readFileSync } = await import('node:fs');
 const { tmpdir } = await import('node:os');
 const { join } = await import('node:path');
 
@@ -157,4 +157,23 @@ test('E2E: Notification 事件 stdin 载荷用 snake_case notification_type（�
   assert.equal(captured.notification_type, 'permission_request', '上游契约：snake_case（chunk-e0x0b6d.js @3565860）');
   assert.equal(captured.notificationType, undefined, '不得回落到 camelCase');
   assert.equal(captured.message, 'needs confirmation: Write', 'message 透传');
+});
+test('E2E: hook 命令带引号路径（含空格）在 cmd 下可用 —— 回归：cmd /s 引号陷阱', async () => {
+  // 上游/用户场景：hook 命令写带引号的绝对路径（路径含空格时必须引号）。此前 spawn 未经
+  // windowsVerbatimArguments 传参，Node 会把内层引号转义成 \",cmd /s 剥首尾引号后 \",原样
+  // 留在命令里 → 子进程收到带字面引号的路径 → MODULE_NOT_FOUND。
+  scriptN++;
+  const dirWithSpaces = join(HOME, 'dir with spaces');
+  mkdirSync(dirWithSpaces, { recursive: true });
+  const dumper = join(dirWithSpaces, `dump-${scriptN}.mjs`);
+  writeFileSync(dumper, "import { writeFileSync } from 'node:fs';\nlet b = '';\nprocess.stdin.on('data', (c) => (b += c));\nprocess.stdin.on('end', () => writeFileSync(process.env.OUT_FILE, b));\n");
+  const captureFile = join(HOME, `quoted-${scriptN}.json`);
+  process.env.OUT_FILE = captureFile;
+  const runner = makeRunner({ Notification: [{ hooks: [{ type: 'command', command: 'node "' + dumper + '"' }] }] });
+  const r = await runner.run('Notification', { message: 'quoted path test', notification_type: 'permission_request' });
+  delete process.env.OUT_FILE;
+  assert.equal(r.ran, 1, 'hook 命令运行（带引号路径不再是 MODULE_NOT_FOUND）');
+  const captured = JSON.parse(readFileSync(captureFile, 'utf8'));
+  assert.equal(captured.hook_event_name, 'Notification', '子进程真正执行并收到 stdin 载荷');
+  assert.equal(captured.notification_type, 'permission_request');
 });
