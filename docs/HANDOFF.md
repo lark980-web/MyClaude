@@ -10,7 +10,7 @@
 | 项 | 值 | 怎么核实 |
 |---|---|---|
 | HEAD | 见 `git log --oneline -1` | `git rev-parse --short HEAD` |
-| 测试 | **867** 项（866 通过 + 1 登记 skip），全绿（测于 2026-11-11 via `npm run gate:full` 九步全绿；高水位基线在 test/gate-metrics.json） | `npm run gate:fast` |
+| 测试 | **868** 项（867 通过 + 1 登记 skip），全绿（测于 2026-11-11 via `npm run gate:full` 九步全绿；高水位基线在 test/gate-metrics.json） | `npm run gate:fast` |
 | 提示词 | 组装现测 autoRun=false **25,257** / autoRun=true **28,420** 字符，19/20 段，0 error | `npm run inspect:prompt`（测于 2026-11-11） |
 | 内置技能 | verify 正文 10,412 字符 | `node -e "import('./src/skills-builtin.js').then(m=>console.log(m.BUILTIN_SKILLS[0].body.length))"` |
 | exe | 构建时间见 `dist\myclaude.exe` | `git status` 与源文件 mtime 比对 |
