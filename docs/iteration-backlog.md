@@ -1,5 +1,13 @@
 # 迭代待办清单（长目标：逐一修正 BUG / 未完成功能 / 样式）
 
+## 收尾轮（2026-11-11）：闸门自身可靠性的两处补强 + 一处待办
+
+- [x] **Notification 契约锁到行为层**：behavior 测试改断言原始 payload 键（`notification_type`）+「不得回落 camelCase」；新增 e2e 契约测试（真实 cmd shell + stdin JSON，断言 hook 进程真收到 snake_case）。上游三处证据见 adr.md。
+- [x] **gate skip 白名单**：未登记的 skip 一律红（实测 `# tests = pass + skipped`，pass 退化为 skip 时总数不变、水位断言看不见）。白名单 `test/gate-skip-allowlist.json` 从真实 TAP 生成。
+- [x] **gate exe 就绪探针**：build-exe 后固定 sleep 3s 改为主动 `waitForExeReady()`（反复跑 exe --version）。失败特征是「下一步全部静默」（本次 smoke 46 命令 0 输出）。
+- [ ] **待办（本轮发现，未修）**：hook 命令里的**带引号路径在 Windows cmd 下会被原样传给子进程**。复现：`command: 'node "E:/abs/path.mjs"'` → 子进程收到 `cwd\"E:/abs/path.mjs"`（引号字面化）→ MODULE_NOT_FOUND。根因在 `cmd /d /s /c` 的引号处理（`src/hooks.js` 的 SHELLS.cmd）。现有 e2e 测试用「不加引号的 .cmd 脚本路径」绕过（见 hooks-e2e.test.js 头注）。影响：用户写带空格的路径（如 `C:\Program Files\...`）会失败。修法候选：改 `shell:true`、或去掉 `/s`、或检测并自行加引号——需先有测试再动。
+
+
 ## 基建轮 R1（2026-11-07）：闸门接线（已完成，详录见 docs/adr.md）
 
 - [x] `npm run gate:fast` 三链（单测[高水位]→提示词→marker），基线 **717** 落 test/gate-metrics.json。

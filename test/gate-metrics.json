@@ -1,16 +1,16 @@
 {
   "schemaVersion": 1,
   "baseline": {
-    "testCount": 867,
-    "commit": "521d3aea8b54c5f958cecc7df443c688012f3714",
-    "at": "2026-11-11T01:34:48.616Z"
+    "testCount": 868,
+    "commit": "6a41657e2ac13695b0b672ee0166962702a9df97",
+    "at": "2026-11-11T01:52:19.958Z"
   },
   "latest": {
-    "runId": "2026-11-11T01-32-03-997Z",
+    "runId": "2026-11-11T01-49-56-652Z",
     "mode": "full",
-    "startedAt": "2026-11-11T01:32:04.004Z",
-    "commit": "521d3aea8b54c5f958cecc7df443c688012f3714",
-    "dirty": "M scripts/gate.mjs\n M src/agent/agent.js\n M test/gate-metrics.json\n M test/gate.test.js\n M test/notification-behavior.test.js",
+    "startedAt": "2026-11-11T01:49:56.684Z",
+    "commit": "6a41657e2ac13695b0b672ee0166962702a9df97",
+    "dirty": "M docs/iteration-backlog.md\n M test/hooks-e2e.test.js",
     "status": "passed",
     "steps": [
       {
@@ -24,7 +24,7 @@
         ],
         "exitCode": 0,
         "signal": null,
-        "logPath": "E:\\WorkSpaces\\Test09\\MyClaude\\.local\\gate\\2026-11-11T01-32-03-997Z\\tests.log"
+        "logPath": "E:\\WorkSpaces\\Test09\\MyClaude\\.local\\gate\\2026-11-11T01-49-56-652Z\\tests.log"
       },
       {
         "name": "prompt",
@@ -34,7 +34,7 @@
         ],
         "exitCode": 0,
         "signal": null,
-        "logPath": "E:\\WorkSpaces\\Test09\\MyClaude\\.local\\gate\\2026-11-11T01-32-03-997Z\\prompt.log"
+        "logPath": "E:\\WorkSpaces\\Test09\\MyClaude\\.local\\gate\\2026-11-11T01-49-56-652Z\\prompt.log"
       },
       {
         "name": "features",
@@ -43,7 +43,7 @@
         ],
         "exitCode": 0,
         "signal": null,
-        "logPath": "E:\\WorkSpaces\\Test09\\MyClaude\\.local\\gate\\2026-11-11T01-32-03-997Z\\features.log"
+        "logPath": "E:\\WorkSpaces\\Test09\\MyClaude\\.local\\gate\\2026-11-11T01-49-56-652Z\\features.log"
       },
       {
         "name": "build-embed",
@@ -52,7 +52,7 @@
         ],
         "exitCode": 0,
         "signal": null,
-        "logPath": "E:\\WorkSpaces\\Test09\\MyClaude\\.local\\gate\\2026-11-11T01-32-03-997Z\\build-embed.log"
+        "logPath": "E:\\WorkSpaces\\Test09\\MyClaude\\.local\\gate\\2026-11-11T01-49-56-652Z\\build-embed.log"
       },
       {
         "name": "build-exe",
@@ -61,7 +61,7 @@
         ],
         "exitCode": 0,
         "signal": null,
-        "logPath": "E:\\WorkSpaces\\Test09\\MyClaude\\.local\\gate\\2026-11-11T01-32-03-997Z\\build-exe.log"
+        "logPath": "E:\\WorkSpaces\\Test09\\MyClaude\\.local\\gate\\2026-11-11T01-49-56-652Z\\build-exe.log"
       },
       {
         "name": "smoke",
@@ -72,7 +72,7 @@
         ],
         "exitCode": 0,
         "signal": null,
-        "logPath": "E:\\WorkSpaces\\Test09\\MyClaude\\.local\\gate\\2026-11-11T01-32-03-997Z\\smoke.log"
+        "logPath": "E:\\WorkSpaces\\Test09\\MyClaude\\.local\\gate\\2026-11-11T01-49-56-652Z\\smoke.log"
       },
       {
         "name": "catalog-cdp",
@@ -81,7 +81,7 @@
         ],
         "exitCode": 0,
         "signal": null,
-        "logPath": "E:\\WorkSpaces\\Test09\\MyClaude\\.local\\gate\\2026-11-11T01-32-03-997Z\\catalog-cdp.log"
+        "logPath": "E:\\WorkSpaces\\Test09\\MyClaude\\.local\\gate\\2026-11-11T01-49-56-652Z\\catalog-cdp.log"
       },
       {
         "name": "vim-cdp",
@@ -90,7 +90,7 @@
         ],
         "exitCode": 0,
         "signal": null,
-        "logPath": "E:\\WorkSpaces\\Test09\\MyClaude\\.local\\gate\\2026-11-11T01-32-03-997Z\\vim-cdp.log"
+        "logPath": "E:\\WorkSpaces\\Test09\\MyClaude\\.local\\gate\\2026-11-11T01-49-56-652Z\\vim-cdp.log"
       },
       {
         "name": "tty",
@@ -99,7 +99,7 @@
         ],
         "exitCode": 0,
         "signal": null,
-        "logPath": "E:\\WorkSpaces\\Test09\\MyClaude\\.local\\gate\\2026-11-11T01-32-03-997Z\\tty.log"
+        "logPath": "E:\\WorkSpaces\\Test09\\MyClaude\\.local\\gate\\2026-11-11T01-49-56-652Z\\tty.log"
       }
     ],
     "skipCheck": {
@@ -115,7 +115,7 @@
       "out": "myclaude 0.19.0",
       "attempts": 1
     },
-    "testCount": 867,
-    "finishedAt": "2026-11-11T01:34:48.616Z"
+    "testCount": 868,
+    "finishedAt": "2026-11-11T01:52:19.959Z"
   }
 }

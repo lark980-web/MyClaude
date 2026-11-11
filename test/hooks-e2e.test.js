@@ -143,3 +143,18 @@ test('E2E: UserPromptSubmit additionalContexts 注入', async () => {
   const r = await runner.run('UserPromptSubmit', { prompt: 'my question' });
   assert.deepEqual(r.contexts, ['injected by UserPromptSubmit hook'], '上下文注入');
 });
+test('E2E: Notification 事件 stdin 载荷用 snake_case notification_type（上游契约）', async () => {
+  scriptN++;
+  const captureFile = join(HOME, `notif-${scriptN}.json`);
+  const script = join(HOME, `notif-${scriptN}.cmd`);
+  const esc = captureFile.replace(/\\/g, '\\\\');
+  writeFileSync(script, `@echo off\r\nnode -e "let b='';process.stdin.on('data',c=>b+=c);process.stdin.on('end',()=>{require('fs').writeFileSync('${esc}',b,'utf8')})"\r\n`, 'utf8');
+  const runner = makeRunner({ Notification: [{ hooks: [{ type: 'command', command: script }] }] });
+  const r = await runner.run('Notification', { message: 'needs confirmation: Write', notification_type: 'permission_request' });
+  assert.equal(r.ran, 1, 'hook 运行');
+  const captured = JSON.parse(readFileSync(captureFile, 'utf8'));
+  assert.equal(captured.hook_event_name, 'Notification', 'hook_event_name 契约');
+  assert.equal(captured.notification_type, 'permission_request', '上游契约：snake_case（chunk-e0x0b6d.js @3565860）');
+  assert.equal(captured.notificationType, undefined, '不得回落到 camelCase');
+  assert.equal(captured.message, 'needs confirmation: Write', 'message 透传');
+});
