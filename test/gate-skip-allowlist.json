@@ -1,0 +1,10 @@
+{
+  "comment": "gate 允许的 skip 白名单：每条必须显式登记测试名与理由。未登记的 skip 会让 gate 变红——防止测试从 pass 悄悄退化为 skip 而闸门仍绿。",
+  "allowed": [
+    {
+      "name": "真引擎 permission_denials：manual+none 下写文件的拒绝结构",
+      "reason": "真引擎测试需要上游凭据（OAuth/API key）；不可用时如实 skip 优于假绿。gate 用本清单锁住「哪些 skip 是合法的」，未登记的 skip 一律红（防止测试从 pass 悄悄退化为 skip 而水位断言看不见）。",
+      "addedAt": "2026-11-11"
+    }
+  ]
+}

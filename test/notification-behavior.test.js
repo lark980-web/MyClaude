@@ -34,7 +34,7 @@ test('Notification: ask 模式确认时 hook 被触发且带 permission_request'
   const hooks = new HookRunner({ config: {} });
   hooks.has = () => true;
   hooks.run = async (event, payload) => {
-    fired.push({ event, type: payload.notificationType, msg: payload.message });
+    fired.push({ event, payload });
     return { block: false, reason: "", context: "", permission: null, systemMessage: "", contexts: [] };
   };
   const agent = makeAgent(provider, config, hooks);
@@ -42,7 +42,10 @@ test('Notification: ask 模式确认时 hook 被触发且带 permission_request'
   await agent.askPermission('Write', { file_path: 'a.txt' });
   const notifs = fired.filter((f) => f.event === 'Notification');
   assert.ok(notifs.length > 0, 'Notification hook 被触发');
-  assert.equal(notifs[0].type, 'permission_request', 'notificationType = permission_request');
+  // 契约锁在原始载荷键上：上游 chunk-e0x0b6d.js @3565860 发的是 snake_case。
+  assert.equal(notifs[0].payload.notification_type, 'permission_request', 'notification_type = permission_request');
+  assert.equal(notifs[0].payload.notificationType, undefined, '不得回落到 camelCase（上游契约是 snake_case）');
+  assert.ok(notifs[0].payload.message, '载荷带 message');
 });
 
 test('Notification: auto 模式破坏性命令确认时 hook 被触发', async () => {
@@ -54,7 +57,7 @@ test('Notification: auto 模式破坏性命令确认时 hook 被触发', async (
   const hooks = new HookRunner({ config: {} });
   hooks.has = () => true;
   hooks.run = async (event, payload) => {
-    fired.push({ event, type: payload.notificationType });
+    fired.push({ event, payload });
     return { block: false, reason: "", context: "", permission: null, systemMessage: "", contexts: [] };
   };
   const agent = makeAgent(provider, config, hooks);
@@ -63,7 +66,7 @@ test('Notification: auto 模式破坏性命令确认时 hook 被触发', async (
   await agent.askPermission('Bash', { command: 'rm -rf /tmp/test' });
   const notifs = fired.filter((f) => f.event === 'Notification');
   assert.ok(notifs.length > 0, '破坏性命令触发 Notification');
-  assert.equal(notifs[0].type, 'permission_request');
+  assert.equal(notifs[0].payload.notification_type, 'permission_request');
 });
 
 test('Notification: default 无样式时 turnReminder 为空（不产生假通知）', () => {

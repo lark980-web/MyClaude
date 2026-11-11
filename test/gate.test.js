@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { runGate, parseSummary, gateSteps } from '../scripts/gate.mjs';
+import { runGate, parseSummary, parseSkips, checkSkips, waitForExeReady, gateSteps } from '../scripts/gate.mjs';
 const tap = n => ['# tests '+n, '# pass '+n, '# fail 0', '# cancelled 0', '# skipped 0', '# todo 0', ''].join('\n');
 function fixture(t) {
   const root=mkdtempSync(join(tmpdir(),'mc-gate-'));
@@ -41,4 +41,40 @@ test('missing script is not a skip and prompt errors block success',t=>{
 });
 test('full builds executable before smoke and includes both CDP suites and TTY',()=>{
  const names=gateSteps(true).map(x=>x[0]); assert.ok(names.indexOf('build-exe')<names.indexOf('smoke')); assert.deepEqual(names.slice(-3),['catalog-cdp','vim-cdp','tty']);
+});
+test('parseSkips extracts skipped test names and reasons from TAP', () => {
+  const tap = ['ok 1 - passes', 'ok 2 - needs key # SKIP 引擎不可用', 'ok 3 - other # SKIP no reason', ''].join('\n');
+  const s = parseSkips(tap);
+  assert.deepEqual(s.map(x => x.name), ['needs key', 'other']);
+  assert.equal(s[0].reason, '引擎不可用');
+  assert.deepEqual(parseSkips(''), []);
+});
+
+test('checkSkips fails on an unlisted skip and reports stale entries', () => {
+  const allow = { allowed: [{ name: 'known', reason: 'x' }] };
+  // listed skip passes
+  assert.equal(checkSkips([{ name: 'known', reason: 'x' }], allow).skipped, 1);
+  // unlisted skip is red
+  assert.throws(() => checkSkips([{ name: 'surprise', reason: 'silently stopped running' }], allow), /Unlisted skipped test/);
+  // empty allowlist + any skip is red (fail-closed)
+  assert.throws(() => checkSkips([{ name: 'anything', reason: '' }], { allowed: [] }), /Unlisted/);
+  assert.doesNotThrow(() => checkSkips([], { allowed: [] }));
+});
+
+test('gate turns red when a test silently becomes an unlisted skip', t => {
+  const root = fixture(t);
+  writeFileSync(join(root, 'test/gate-skip-allowlist.json'), JSON.stringify({ allowed: [] }));
+  const withSkip = '# tests 4\n# pass 3\n# fail 0\n# cancelled 0\n# skipped 1\n# todo 0\nok 1 - x # SKIP env\n';
+  const good = runner(4);
+  const r = runGate({ root, runner: (name, ...args) => name === 'tests' ? { status: 0, stdout: withSkip, stderr: '' } : good(name, ...args) });
+  assert.equal(r.latest.status, 'failed');
+  assert.match(r.latest.error, /Unlisted skipped test/);
+});
+test('waitForExeReady reports not-ready when the exe is missing (deterministic)', () => {
+  const root = mkdtempSync(join(tmpdir(), 'mc-exe-'));
+  try {
+    const r = waitForExeReady(root, { attempts: 1, delayMs: 10 });
+    assert.equal(r.ready, false);
+    assert.match(r.reason, /missing/);
+  } finally { rmSync(root, { recursive: true, force: true }); }
 });

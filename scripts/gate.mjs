@@ -15,6 +15,44 @@ export function parseSummary(text) {
   if (result.skipped) console.log('[gate] skipped: ' + result.skipped + ' (honest skips are OK)');
   return result;
 }
+/** The freshly built exe can be briefly un-launchable (AV scan / file lock).
+ *  Probe it actively instead of sleeping a fixed time: a fixed sleep is a guess,
+ *  and its failure mode is silent - every command in the next step prints nothing. */
+export function waitForExeReady(root, { attempts = 12, delayMs = 1500 } = {}) {
+  const exe = join(root, 'dist', 'myclaude.exe');
+  if (!existsSync(exe)) return { ready: false, reason: 'dist/myclaude.exe missing' };
+  for (let i = 0; i < attempts; i++) {
+    const r = spawnSync(exe, ['--version'], { encoding: 'utf8', timeout: 15000, windowsHide: true });
+    if (r.status === 0 && String(r.stdout || '').trim()) return { ready: true, out: String(r.stdout).trim(), attempts: i + 1 };
+    spawnSync(process.execPath, ['-e', 'setTimeout(()=>{}, ' + Number(delayMs) + ')'], { windowsHide: true, timeout: 20000 });
+  }
+  return { ready: false, reason: 'exe never reported a version after ' + attempts + ' attempts' };
+}
+/** Parse skipped test names from TAP (ok N - name # SKIP reason). */
+export function parseSkips(tapText) {
+  const out = [];
+  for (const m of String(tapText || '').matchAll(/^ok \d+ - (.+?) # SKIP\s*(.*)$/gm)) {
+    out.push({ name: m[1].trim(), reason: (m[2] || '').trim() });
+  }
+  return out;
+}
+
+/** A skip is legal only if it is on the explicit allowlist. Unlisted skip = red:
+ *  a test moving from pass to skip keeps the tests count constant, so the
+ *  high-water check cannot see it. This is the second lock. */
+export function checkSkips(skips, allowlist) {
+  const allowed = new Set(((allowlist && allowlist.allowed) || []).map((x) => x.name));
+  const unlisted = skips.filter((s) => !allowed.has(s.name));
+  if (unlisted.length) {
+    throw Error('Unlisted skipped test(s) - add to test/gate-skip-allowlist.json with a reason, or fix the test: ' +
+      unlisted.map((s) => JSON.stringify(s.name) + ' (' + (s.reason || 'no reason') + ')').join('; '));
+  }
+  const skippedNames = new Set(skips.map((s) => s.name));
+  const stale = [...allowed].filter((n) => !skippedNames.has(n));
+  if (stale.length) console.log('[gate] note: allowlist entries not skipped this run: ' + stale.join('; '));
+  return { skipped: skips.length, unlisted: 0, stale };
+}
+
 export function checkCount(count, baseline) {
   if (baseline && (!Number.isSafeInteger(baseline.testCount) || baseline.testCount < 1)) throw Error('Invalid baseline');
   if (baseline && count < baseline.testCount) throw Error('Test count regressed: ' + count + ' < ' + baseline.testCount);
@@ -61,16 +99,26 @@ export function runGate({root, full=false, runner, steps=gateSteps(full)} = {}) 
       // exe-launching steps with backoff; this is environment noise, not a verdict.
       for (let attempt = 0; attempt < 4 && exeSteps.has(name) && !runner; attempt++) {
         const blob = (result.stdout||'')+'\n'+(result.stderr||'')+'\n'+(result.error?.message||'');
-        if (result.status === 0 || !/EBUSY|EPERM|error 0x20|being used by another process|另一个程序正在使用/.test(blob)) break;
+        const retryable = /EBUSY|EPERM|error 0x20|being used by another process|另一个程序正在使用/.test(blob)
+          // all-silent smoke = exe produced no output at all (startup blocked), retry it
+          || (name === 'smoke' && /print nothing at all/.test(blob));
+        if (result.status === 0 || !retryable) break;
         spawnSync(process.execPath, ['-e', 'setTimeout(()=>{}, 2500*(Number(process.env.MYCLAUDE_GATE_RETRY)||1))'], {windowsHide:true, timeout:15000});
         result = runOnce();
       }
       const text=(result.stdout||'')+'\n'+(result.stderr||''); writeFileSync(logPath,text);
       latest.steps.push({name,args,exitCode:result.status,signal:result.signal||null,logPath});
       if (result.error || result.signal || result.status !== 0) throw Error(name+': '+(result.error?.message||'exit '+result.status));
-      if (name === 'build-exe') { // AV briefly locks the freshly built exe (error 0x20); let the scan settle before smoke/TTY launch it.
-        spawnSync(process.execPath, ['-e', 'setTimeout(()=>{}, Number(process.env.MYCLAUDE_GATE_BUILD_SETTLE_MS)||3000)'], {windowsHide:true, timeout:15000}); }
-      if (name === 'tests' || name === 'smoke') { const s=parseSummary(result.stdout||''); if(name==='tests'){summary=s; checkCount(s.tests,baseline);} }
+      if (name === 'build-exe' && !runner) { // active readiness probe instead of a fixed sleep (see waitForExeReady)
+        const w = waitForExeReady(root); latest.exeReady = w;
+        if (!w.ready) throw Error('exe not runnable after build: ' + w.reason); }
+      if (name === 'tests' || name === 'smoke') { const s=parseSummary(result.stdout||''); if(name==='tests'){
+        summary=s; checkCount(s.tests,baseline);
+        const skips=parseSkips(result.stdout||'');
+        const skipPath=join(root,'test/gate-skip-allowlist.json');
+        const allow=existsSync(skipPath)?JSON.parse(readFileSync(skipPath,'utf8')):{allowed:[]};
+        latest.skipCheck=checkSkips(skips,allow); latest.skipped=skips.map(x=>x.name);
+      } }
       if (name === 'prompt') { const p=JSON.parse(result.stdout); if(p.errors !== 0) throw Error('Prompt inspection failed'); }
       if (name === 'tty') { const line=(result.stdout||'').split(/\r?\n/).find(x=>x.startsWith('{')); const p=JSON.parse(line||'null'); if(!p || p.welcome!==true || p.sawTyped!==true || p.cfgPanelSeen!==true) throw Error('TTY behavioral checks failed'); }
       console.log('[gate] PASS '+name);

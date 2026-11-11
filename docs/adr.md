@@ -97,3 +97,12 @@
 - **自检发现的真实加固点**：restart 原 stdio:"inherit" 让重启子进程继承父终端，父进程(winpty)退出可能拆毁它；改 stdio:"ignore" 让 OS 给新控制台，真正独立。隔离测试证明 detached 机制正确（子进程存活写标记）。
 - **gate 再加固**：catalog-cdp 复发 spawn EBUSY（杀软锁新构建 exe，smoke 之后）——gate 对 exe 启动步（smoke/catalog/vim/tty）加 EBUSY/EPERM 退避重试（4 次）。gate:full 复跑全 9 步绿。
 - **结论**：行为级自检补上了存在性断言测不到的东西（真渲染、真重启、真持久化），并揪出 stdio inherit 的真实健壮性缺口。存在性测试保留作快速回归，行为验证作深度确认。
+
+## 收尾轮（2026-11-11）：zcode 夜航未收尾的三件事
+
+- **发现**：HEAD `521d3ae` 留了一个未提交改动 `src/agent/agent.js`（Notification 载荷键 `notificationType` → `notification_type`），但 `test/notification-behavior.test.js` 仍读 camelCase —— 该测试是**失败状态被留在树里**。
+- **独立验证（不采信 zcode 注释）**：上游三处证据 —— chunk-e0x0b6d.js @3565860（解构 `notificationType` 但载荷发 `notification_type`）、@3610201（matcher 读 `e.notification_type`）、chunk-hhhyra7g.js @200296（zod schema 字段 `notification_type`）。结论：**src 改动正确，是测试没跟上**。
+- **修法（不只让它过）**：行为测试改为断言**原始 payload 键**（`payload.notification_type`），并加「不得回落到 camelCase」断言 —— 把契约锁在行为层，而不是只在派生字段上。
+- **自检发现的闸门漏洞（真实）**：gate 允许 skip 但**无任何约束**。实测 `# tests 863 = pass 862 + skipped 1` —— 测试从 pass 退化为 skip 时**总数不变**，水位断言看不见，闸门会保持绿而测试已停跑。修法：新增 `test/gate-skip-allowlist.json`（显式登记测试名 + 理由），**未登记的 skip 一律红**；白名单从真实 TAP 生成以避免手抄错名（全角冒号）。3 条新测试锁定该行为（含「测试悄悄变 skip → gate 红」的集成测试）。
+- **gate:full 链缺陷（第二个）**：build-exe 后固定 sleep 3s 是**猜测**，其失败特征是「下一步全部静默」（本次 smoke 46 个命令 0 输出、0 崩溃）。修法：改为**主动就绪探针** `waitForExeReady()`（反复跑 `exe --version` 直到打印版本，最多 12 次），并把 `print nothing at all` 加入 smoke 的可重试特征。固定 sleep 的问题在于它既可能不够、也可能白等，而主动探针直接验证前置条件。
+- **纪律**：先独立验证上游契约再动手改测试；发现同类问题（键名）时一并核对全部 hook 事件 schema（结论：其余事件键名本就 snake_case，仅 Notification 一处违规）；闸门自身的可靠性也在被检查范围内。

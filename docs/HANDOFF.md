@@ -10,8 +10,8 @@
 | 项 | 值 | 怎么核实 |
 |---|---|---|
 | HEAD | 见 `git log --oneline -1` | `git rev-parse --short HEAD` |
-| 测试 | **717** 项，全绿（测于 2026-11-07 via `npm run gate:fast`；高水位基线在 test/gate-metrics.json） | `npm run gate:fast` |
-| 提示词 | SYSTEM_PROMPT 21,391 常量（7 段全部迁移）；组装现测 autoRun=false **24,527** / autoRun=true **27,690**，19/20 段，0 error | `npm run inspect:prompt`（测于 2026-11-07） |
+| 测试 | **867** 项（866 通过 + 1 登记 skip），全绿（测于 2026-11-11 via `npm run gate:full` 九步全绿；高水位基线在 test/gate-metrics.json） | `npm run gate:fast` |
+| 提示词 | 组装现测 autoRun=false **25,257** / autoRun=true **28,420** 字符，19/20 段，0 error | `npm run inspect:prompt`（测于 2026-11-11） |
 | 内置技能 | verify 正文 10,412 字符 | `node -e "import('./src/skills-builtin.js').then(m=>console.log(m.BUILTIN_SKILLS[0].body.length))"` |
 | exe | 构建时间见 `dist\myclaude.exe` | `git status` 与源文件 mtime 比对 |
 | 服务 | `--gui --no-open` 在 7788 | `Get-NetTCPConnection -LocalPort 7788` |
@@ -85,6 +85,7 @@ git log --oneline -6          # 看最近做了什么
 - 证据：每次运行全量日志落 `.local/gate/<runId>/`；基线 `test/gate-metrics.json` 随仓库提交。
 - **跳过 gate = 必须改 package.json**——跳过本身留下证据。
 - 反向验证由 test/gate.test.js 锁死：marker 缺失/测试数回退/基线损坏/缺脚本/prompt error 全部红。
+- **skip 必须登记**：gate 允许「如实 skip」（如真引擎测试缺凭据），但每个 skip 必须在 `test/gate-skip-allowlist.json` 显式登记名字与理由；**未登记的 skip 一律红**。原因：测试从 pass 退化为 skip 时总数不变，水位断言看不见——这是第二道锁。
 - 注意：TTY 步依赖 winpty（Git Bash 自带，当前不在 PATH——需从 Git 的 usr\bin 目录运行或补 PATH）。
 
 ## 8. 这一系列改动留下的设计决定
