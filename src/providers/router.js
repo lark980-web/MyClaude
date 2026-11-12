@@ -163,7 +163,14 @@ export class ProviderRouter {
           if (e && e.name === "AbortError") throw e;
           lastError = e;
           this.lastError = e;
+          // Auth errors (401/403) are failover-retryable (a sibling candidate
+          // may use a different key) but NOT same-candidate-retryable: the
+          // same key against the same endpoint cannot start working by
+          // waiting, and the retry stalls every dead-key startup by seconds.
+          const status = Number(e && (e.status || e.code) || 0);
+          const authError = status === 401 || status === 403;
           const canRetrySame = attempt < this.retriesPerCandidate
+            && !authError
             && isRetryable(e)
             && budgetLeft();
           if (canRetrySame) {

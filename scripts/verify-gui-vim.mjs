@@ -195,8 +195,11 @@ try {
   try { chrome && chrome.kill(); } catch {}
   try { gui && gui.kill(); } catch {}
   await sleep(400);
-  rmSync(home, { recursive: true, force: true });
-  rmSync(chromeProfile, { recursive: true, force: true });
+  // 清理失败（杀软短暂锁文件 → EPERM）不代表验证失败：重试一次，仍失败就留给系统临时目录自清
+  for (const dir of [home, chromeProfile]) {
+    try { rmSync(dir, { recursive: true, force: true }); }
+    catch { await sleep(300); try { rmSync(dir, { recursive: true, force: true }); } catch { /* 留给 OS */ } }
+  }
 }
 
 if (failures.length) {
