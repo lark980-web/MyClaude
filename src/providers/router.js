@@ -3,9 +3,11 @@
  *
  * A single endpoint failing should not end the conversation. When a request
  * fails for a reason that a *different* model might survive (rate limit, quota,
- * 5xx, timeout, network error), the router walks a list of fallbacks until one
- * answers. Errors that indicate a broken request (400, 422, auth on every
- * candidate) are surfaced immediately instead of being retried everywhere.
+ * 5xx, timeout, network error), the router first retries the same candidate
+ * with exponential backoff (upstream semantics: 429/overloaded clear on their
+ * own after a moment), then walks a list of fallbacks until one answers.
+ * Errors that indicate a broken request (400, 422, auth on every candidate)
+ * are surfaced immediately instead of being retried everywhere.
  *
  * The router owns nothing but the fallback list; each candidate is a full
  * provider config so a fallback may live on a different host with a different
@@ -60,12 +62,18 @@ export class ProviderRouter {
    * @param {Array<object>} [options.fallbacks] additional provider configs
    * @param {(msg: string, kind?: string) => void} [options.onSwitch]
    */
-  constructor({ config, fallbacks = [], onSwitch = null, provider = null } = {}) {
+  constructor({ config, fallbacks = [], onSwitch = null, onRetry = null, provider = null } = {}) {
     this.config = config;
     // Whole-walk budget: per-attempt timers bound one candidate, but six of
     // them in a row still meant many minutes of silence before an error.
     this.failoverBudgetMs = Number(config.failoverBudgetMs ?? 300_000);
+    // Same-candidate backoff before switching: one 429/529 blip on a
+    // single-provider setup used to kill the run mid-task (the exact
+    // "任务中断" complaint). Upstream retries the same endpoint first.
+    this.retriesPerCandidate = Math.max(0, Number(config.routerRetries ?? 2));
+    this.retryBaseMs = Math.max(100, Number(config.retryBaseMs ?? 1200));
     this.onSwitch = onSwitch;
+    this.onRetry = onRetry;
     // Fallbacks without a usable endpoint are dropped rather than failing later.
     this.fallbacks = fallbacks.filter((f) => f && f.model && (f.baseUrl || config.baseUrl));
     // Reuse the caller's provider when given: agents already build one and tests
@@ -131,8 +139,9 @@ export class ProviderRouter {
     const list = this.candidates();
     let lastError = null;
     const startedAt = Date.now();
+    const budgetLeft = () => this.failoverBudgetMs <= 0 || Date.now() - startedAt <= this.failoverBudgetMs;
     for (let i = 0; i < list.length; i++) {
-      if (i > 0 && this.failoverBudgetMs > 0 && Date.now() - startedAt > this.failoverBudgetMs) {
+      if (i > 0 && !budgetLeft()) {
         // Give up loudly rather than walking candidate after candidate in
         // silence; the caller shows this message instead of a hung spinner.
         throw new ProviderError(
@@ -142,18 +151,34 @@ export class ProviderRouter {
       }
       const cfg = list[i];
       const provider = i === 0 ? this.provider : createProvider({ ...this.config, ...cfg });
-      try {
-        const result = await fn(provider);
-        if (i > 0) this.use(cfg, "recovered");
-        return result;
-      } catch (e) {
-        // Never swallow an explicit cancellation.
-        if (e && e.name === "AbortError") throw e;
-        lastError = e;
-        this.lastError = e;
-        const more = i < list.length - 1;
-        if (!more || !isRetryable(e)) throw e;
-        if (this.onSwitch) this.onSwitch(cfg, "failing", { next: list[i + 1], error: e });
+      // Same-candidate retries first: transient blips (429, overloaded, socket
+      // reset) clear within seconds; switching models for them is overkill.
+      for (let attempt = 0; ; attempt++) {
+        try {
+          const result = await fn(provider);
+          if (i > 0) this.use(cfg, "recovered");
+          return result;
+        } catch (e) {
+          // Never swallow an explicit cancellation.
+          if (e && e.name === "AbortError") throw e;
+          lastError = e;
+          this.lastError = e;
+          const canRetrySame = attempt < this.retriesPerCandidate
+            && isRetryable(e)
+            && budgetLeft();
+          if (canRetrySame) {
+            const delay = Math.min(10_000, this.retryBaseMs * 2 ** attempt);
+            if (this.onRetry) {
+              this.onRetry(`provider error (${describe(e)}) — retrying in ${Math.round(delay / 1000)}s (attempt ${attempt + 1}/${this.retriesPerCandidate})`);
+            }
+            await new Promise((r) => setTimeout(r, delay));
+            continue;
+          }
+          const more = i < list.length - 1;
+          if (!more || !isRetryable(e)) throw e;
+          if (this.onSwitch) this.onSwitch(cfg, "failing", { next: list[i + 1], error: e });
+          break; // move on to the next candidate
+        }
       }
     }
     throw lastError || new ProviderError("no provider candidates configured");

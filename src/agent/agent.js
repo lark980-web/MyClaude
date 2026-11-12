@@ -144,7 +144,9 @@ export class Agent {
       config,
       provider,
       fallbacks: config.fallbacks || [],
-      onSwitch: (cfg, reason, extra) => this.onProviderSwitch(cfg, reason, extra)
+      onSwitch: (cfg, reason, extra) => this.onProviderSwitch(cfg, reason, extra),
+      // 瞬时错误（429/overloaded/断流）的退避重试要让用户看见，而不是静默卡住
+      onRetry: (msg) => { if (this.ui && typeof this.ui.warn === "function") { this.ui.warn(msg); } }
     });
     this.config = config;
     this.ui = ui;
@@ -739,13 +741,30 @@ export class Agent {
     // inside the turn loop wiped the set after the final text-only turn, so
     // the panel showed nothing even though the agent had just written files.
     this.turnFiles = new Set();
-    for (let turn = 0; turn < this.config.maxTurns; turn++) {
+    // 上游主循环没有回合上限 —— agent 一直跑到模型不再调用工具为止。
+    // maxTurns 在这里是「检查点」而非终点：每到检查点先压缩上下文再继续
+    // （micro 清旧 tool_result → 不够再全量压缩，压缩按上下文压力触发）。
+    // 真正的兜底是 maxTurns * 4 的绝对上限（防失控烧 token）：到顶才如实
+    // 上报 maxTurnsReached，autoRun 用户随后由 autorun 的续跑轮接管。
+    const maxTurns = Math.max(1, Number(this.config.maxTurns) || 200);
+    const hardCap = maxTurns * 4;
+    let nextCheckpoint = maxTurns;
+    for (let turn = 0; turn < hardCap; turn++) {
       if (this.stopRequested) {
         this.ui.info("\n(interrupted)");
         this.messages.push({ role: "assistant", content: "(interrupted)" });
         return { interrupted: true };
       }
       this.turnCount++;
+      // 检查点：模型仍在调用工具但回合预算用完 —— 压缩后继续，而不是把任务拦腰截断
+      if (turn >= nextCheckpoint) {
+        nextCheckpoint += maxTurns;
+        this.ui.warn(`turn checkpoint (${turn} turns) — compacting context and continuing`);
+        const freed = this.microCompact();
+        if (freed > 500) { this.ui.info(`micro-compact: freed ${freed} chars from old tool results`); }
+        const compacted = await this.maybeCompact();
+        if (compacted) { this.ui.info("compaction freed context — continuing past the checkpoint"); }
+      }
       this.abortController = new AbortController();
 
       let streamed = "";
@@ -1000,10 +1019,12 @@ export class Agent {
         this.messages.push({ role: "user", content });
         pendingImages.length = 0;
       }
+
     }
 
-    this.ui.warn(`reached max turns (${this.config.maxTurns})`);
-    return { maxTurnsReached: true };
+    // 绝对上限用尽且模型仍在调用工具 —— 如实上报（autoRun 用户由 autorun 续跑接管）
+    this.ui.warn(`hard stopped after ${hardCap} turns (absolute cap)`);
+    return { maxTurnsReached: true, turns: this.turnCount };
   }
 
   /**

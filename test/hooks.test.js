@@ -181,8 +181,12 @@ test("UserPromptSubmit can veto a turn before any model call", async () => {
 });
 
 test("PreToolUse block skips the tool and reports the reason to the model", async () => {
+  let called = 0;
   const provider = {
     async streamChat() {
+      // 第二次调用收尾：真实模型不会永远重试同一个被阻断的调用，
+      // 也避免长跑触发检查点压缩把早期 tool_result 清理掉。
+      if (called++ > 0) { return { text: "done", toolCalls: [] }; }
       return { text: "", toolCalls: [{ id: "c1", name: "Write", arguments: { file_path: "nope.txt", content: "x" } }] };
     },
   };

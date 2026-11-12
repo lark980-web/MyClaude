@@ -87,8 +87,9 @@ test("a failed closing request produces a real tool summary, not a placeholder",
     { text: "", toolCalls: [] },
     { text: "", toolCalls: [] },
     { text: "", toolCalls: [] },
-    () => { throw new Error("stream interrupted: aborted"); },
-    () => { throw new Error("stream interrupted: aborted"); },
+    // noRetry：router 层的退避重试已耗尽后的形状 —— 收尾循环自己的两次尝试
+    () => { const e = new Error("stream interrupted: aborted"); e.noRetry = true; throw e; },
+    () => { const e = new Error("stream interrupted: aborted"); e.noRetry = true; throw e; },
   ]);
   await agent.run("干活");
   const last = agent.messages[agent.messages.length - 1];

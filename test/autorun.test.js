@@ -49,21 +49,31 @@ test("a turn-cap stop is continued until the model finishes", async () => {
   assert.equal(calls.length, 2, "exactly one continuation");
 });
 
-test("autoRun off stops at the cap, as before", async () => {
+test("the checkpoint continues in-loop even without autoRun (upstream has no turn cap)", async () => {
+  // 上游主循环没有回合上限：maxTurns 是检查点（压缩后继续），不是终点。
   const { agent, calls } = makeAgent(false, 1, [
     { text: "", toolCalls: [{ id: "t1", name: "Echo", arguments: {} }] },
     { text: "second", toolCalls: [] },
   ]);
-  const res = await runWithAutoContinue(agent, { message: "go" }, { ui: makeUi() });
-  assert.equal(res.maxTurnsReached, true, "no continuation without the flag");
-  assert.equal(calls.length, 1);
+  const res = await agent.run("go");
+  assert.equal(res.maxTurnsReached, undefined, "the cap checkpoint continued in-loop");
+  assert.equal(calls.length, 2, "finished on the turn after the checkpoint");
 });
 
-test("the round cap bounds the walk even if the model never finishes", async () => {
-  const { agent, calls } = makeAgent(true, 1, []); // every run: empty script -> "finished" fallback... use toolCalls
-  // make every call return toolCalls so every run hits the cap
-  calls.length = 0;
-  const script = [1, 2, 3, 4];
+test("the absolute cap (maxTurns * 4) bounds a runaway loop", async () => {
+  // 模型永远在调用工具：检查点每轮压缩后继续，直到绝对上限才如实上报
+  const agent2calls = [];
+  const provider2 = { async streamChat() { agent2calls.push(1); return { text: "", toolCalls: [{ id: "t" + agent2calls.length, name: "Echo", arguments: {} }] }; }, async complete() { return { text: "s" }; } };
+  const config = { provider: "openai", baseUrl: "http://x/v1", apiKey: "k", model: "m",
+    maxTokens: 64, temperature: 0, permissionMode: "auto", maxTurns: 1,
+    contextWindow: 100000, compactThreshold: 0.8, vision: true };
+  const agent2 = new Agent({ provider: provider2, config, ui: makeUi(), tools: [{ name: "Echo", description: "e", input_schema: { type: "object", properties: {} }, run: async () => ({ ok: true, content: "x" }) }], sessionKey: "t2" });
+  const res = await agent2.run("go");
+  assert.equal(agent2calls.length, 4, "hardCap = maxTurns (1) * 4");
+  assert.equal(res.maxTurnsReached, true, "honestly reported at the absolute cap");
+});
+
+test("the autorun round cap bounds the walk even if the model never finishes", async () => {
   const agent2calls = [];
   const provider2 = { async streamChat() { agent2calls.push(1); return { text: "", toolCalls: [{ id: "t" + agent2calls.length, name: "Echo", arguments: {} }] }; }, async complete() { return { text: "s" }; } };
   const config = { provider: "openai", baseUrl: "http://x/v1", apiKey: "k", model: "m",
@@ -71,7 +81,8 @@ test("the round cap bounds the walk even if the model never finishes", async () 
     contextWindow: 100000, compactThreshold: 0.8, vision: true, autoRun: true };
   const agent2 = new Agent({ provider: provider2, config, ui: makeUi(), tools: [{ name: "Echo", description: "e", input_schema: { type: "object", properties: {} }, run: async () => ({ ok: true, content: "x" }) }], sessionKey: "t2" });
   const res = await runWithAutoContinue(agent2, { message: "go" }, { ui: makeUi(), maxRounds: 2 });
-  assert.equal(agent2calls.length, 3, "initial + 2 continuations (maxRounds 2)");
+  // 每轮 run 内部跑到绝对上限（maxTurns 1 * 4 = 4 次调用），autorun 再续跑 maxRounds 2 轮
+  assert.equal(agent2calls.length, 12, "3 runs x hardCap 4 (initial + 2 continuations)");
   assert.equal(res.maxTurnsReached, true, "and then it honestly reports the cap");
 });
 
