@@ -80,6 +80,7 @@ Commands (interactive):
   /release-notes     版本说明
   /add-dir <路径>    追加工作目录
   /auto [on|off]     自主模式：回合上限后自动续跑（默认关）
+  /computer-use [on|off]  Computer Use：注册 computer 工具族（浏览器动作面，CDP 后端）
   /agents            子代理定义
   /mcp logout <名>     清除已保存的 MCP 令牌
   /model [name]      show or set model
@@ -108,6 +109,7 @@ Upstream 2.1.302 parity (local subset):
   /reload-plugins /reload-skills /rename /statusline /tui /security-review
   /terminal-setup /scroll-speed /usage /recap /goal /sandbox /list-agents
   /ultrareview /upgrade /insights /artifacts /team-onboarding (cloud: degraded)
+  /computer-use (Computer Use: browser action surface over CDP)
 `;
 
 function parseArgs(argv) {
