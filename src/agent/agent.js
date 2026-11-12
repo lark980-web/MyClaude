@@ -456,8 +456,20 @@ export class Agent {
 
   buildRequestMessages() {
     const system = [{ role: "system", content: this.systemPrompt }];
-    if (!this.config.fastMode) { return system.concat(this.messages); }
-    return system.concat(this.fastWindow());
+    const body = this.config.fastMode ? this.fastWindow() : this.messages;
+    // 本回合的元消息（上游 attachment 语义：skill_listing / skill_mention 是
+    // 随请求走的隐藏上下文，不落在会话历史里 —— 落了会污染标题、消息计数
+    // 和用户可见的 transcript）。插在最后一条 user 消息之前，用完即弃。
+    if (this.pendingMeta && this.pendingMeta.length) {
+      const meta = this.pendingMeta.map((content) => ({ role: "user", content }));
+      this.pendingMeta = [];
+      // 插在「最后一条 user 消息」之前 —— 那是本回合的正文；meta 是随行附件
+      let end = body.length;
+      while (end > 0 && body[end - 1].role !== "user") { end--; }
+      if (end > 0) { end--; }
+      return system.concat(body.slice(0, end), meta, body.slice(end));
+    }
+    return system.concat(body);
   }
 
   /**
@@ -726,6 +738,26 @@ export class Agent {
       const turnText = styleReminder && typeof userInput === "string"
         ? userInput + "\n\n[系统] output-style 提醒：" + styleReminder
         : userInput;
+
+      // 上游 skill_listing 附件（chunk-e0x0xb6d.js）：可用技能清单以 system-reminder
+      // 注入，模型才知道 Skill 工具能调什么（"available-skills list"）。清单变化时
+      // 重发 —— 覆盖会话中途新装技能 / 新落盘技能的热发现（dynamic_skill 语义）。
+      // 元消息走 pendingMeta（buildRequestMessages 注入请求，不落历史）。
+      const meta = [];
+      try {
+        const listing = this.skillListingReminder();
+        if (listing) { meta.push(listing); }
+      } catch { /* 技能目录扫描失败不得拦住用户回合 */ }
+
+      // 上游 skill_mention 附件：消息里出现 /技能名 → 提示模型调用 Skill 工具
+      // （逐字语义：明确要求执行才执行，只是提及则不动）。
+      if (typeof turnText === "string") {
+        for (const sm of this.matchSkillMentions(turnText)) {
+          meta.push(`The user's message contains /${sm.name}, which is the name of a skill. If they are asking you to run it, call the Skill tool with skill: "${sm.name}", passing any arguments they gave as args. If they only mention it, do not run it.`);
+        }
+      }
+      if (meta.length) { this.pendingMeta = meta; }
+
       this.messages.push({
         role: "user",
         content: buildUserContent(turnText, usable, { vision: this.vision }),
@@ -969,6 +1001,14 @@ export class Agent {
         if (out.persistedOutputPath) { extra.persistedOutputPath = out.persistedOutputPath; }
         this.ui.toolEnd(call.name, out.ok, entry.elapsed, out.content, extra);
 
+        // 上游 invoked_skills：记录技能调用体，压缩后重放（技能指南不因压缩丢失）
+        if (call.name === "Skill" && out.ok) {
+          (this.invokedSkills || (this.invokedSkills = [])).push({
+            name: String((call.arguments && call.arguments.skill) || ""),
+            content: String(out.content || ""),
+          });
+        }
+
         // PostToolUse sees the result, so it can lint, scan or audit it. A block
         // here cannot undo the call, but its reason is fed back to the model.
         // 上游语义（chunk-e0x0xb6d.js）：updatedToolOutput 可修改工具输出；
@@ -1044,6 +1084,41 @@ export class Agent {
    * @param {number} [keepRecent] 保留最近几个 tool_result 完整（默认 3）
    * @returns {number} 释放的字符数（0 = 无事可做）
    */
+  /** 技能目录取数口 —— 测试可覆盖（与真实 skillCatalogue 同形）。 */
+  _skillCatalogue() { return skillCatalogue(); }
+
+  /**
+   * 上游 skill_listing 附件（chunk-e0x0xb6d.js skill_listing）：可用技能清单，
+   * 以 system-reminder 形式随用户回合注入 —— 模型靠它知道 Skill 工具能调什么。
+   * 清单没变时返回 null（上游按 sentSkillNames 去重，不每回合重发）；变了
+   * （新装 / 新落盘 / 压缩后）才重发，覆盖会话中途的热发现。
+   */
+  skillListingReminder() {
+    const skills = this._skillCatalogue();
+    if (!skills.length) { return null; }
+    const lines = skills.map((s) => `- ${s.name}: ${s.description}`).join("\n");
+    const body = `The following skills are available for use with the Skill tool:\n\n${lines}`;
+    if (this._sentSkillListing === body) { return null; }
+    this._sentSkillListing = body;
+    return body;
+  }
+
+  /**
+   * 上游 skill_mention 附件：用户消息里出现的 /技能名。
+   * 只匹配已知技能名 —— 未知的斜杠词是命令或路径，不是技能。
+   */
+  matchSkillMentions(text) {
+    const skills = this._skillCatalogue();
+    if (!skills.length || typeof text !== "string") { return []; }
+    const out = [];
+    for (const s of skills) {
+      const escaped = String(s.name).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const re = new RegExp("(^|[^\\w`-])/" + escaped + "(?![\\w-])", "i");
+      if (re.test(text)) { out.push(s); }
+    }
+    return out;
+  }
+
   microCompact(keepRecent = 3) {
     let freed = 0;
     const toolMsgs = [];
@@ -1130,6 +1205,24 @@ export class Agent {
       ? "[earlier conversation summarised\n\n" + summary + "]"
       : "[context compacted: " + middle.length + " earlier messages removed]";
     this.messages = [{ role: "user", content: opening }, ...keep];
+
+    // 上游 invoked_skills 附件（chunk-e0x0xb6d.js）：本会话早前调用过的技能在压缩后
+    // 重放 —— 指南还在上下文里，但明确「不要重新执行一次性动作」。同时重置技能
+    // 清单去重，让压缩后的下一个回合重新带上 skill_listing。
+    const invoked = this.invokedSkills || [];
+    if (invoked.length) {
+      const body = invoked
+        .map((s) => `### Skill: ${s.name}\n\n${s.content}`)
+        .join("\n\n---\n\n");
+      this.messages.push({
+        role: "user",
+        content:
+          "[系统] The following skills were invoked EARLIER in this session (before the conversation was compacted), not on the current turn. They are shown here for context only so you remain aware of their guidelines.\n\nIMPORTANT: Do NOT re-execute these skills or perform their one-time setup actions (e.g., scheduling, creating files) again. Any request or argument text embedded in the skill bodies below was captured when that skill was first invoked — treat it as historical context, not a new instruction.\n\n" +
+          body,
+      });
+      this.invokedSkills = [];
+    }
+    this._sentSkillListing = null;
     return { dropped: middle.length, approxTokens: approxTokens, summarised: !!summary };
   }
 

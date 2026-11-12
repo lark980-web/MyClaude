@@ -452,11 +452,18 @@ export const enterPlanModeTool = {
 
 export const skillTool = {
   name: "Skill",
-  // 上游按注册的 skill 动态生成 description（运行时抽到 "Execute skill: undefined"）；
-  // MyClaude 是单一工具 —— schema 逐字采用上游，description 用同一语义的静态形式。
+  // 上游按注册的 skill 动态生成 description（运行时抽到 "Execute skill: undefined" ——
+  // 这是上游注册器的生成残渣，不能照抄）。这里用上游 Skill 工具的**真实**静态描述
+  // （chunk-e0x0xb6d.js var dpr，逐字），只把 ${system-reminder} 占位符填回字面量。
   description:
-    upstreamDescription("Skill") ||
-    "Execute a skill from the available-skills list. Do not guess names — use a name exactly as it appears in the list. Optional arguments are passed through to the skill.",
+    `Invoke a skill.
+
+A skill is a packaged set of instructions the user or project has set up for a particular kind of task (deploy steps, a review checklist, a repo-specific workflow). Available skills appear in a system-reminder listing with one-line descriptions. When the task at hand is one a listed skill covers, call this tool first \u2014 the skill's instructions load into the turn for you to follow in place of your default approach; some skills instead run in a subagent and return the finished result. A skill that runs in the background returns only the agent's name \u2014 its result arrives later as a task notification, so don't wait on it or invoke it again in the meantime. Users may also ask for one by name (\`/<name>\`, or "slash command"); that's a request to invoke it.
+
+- \`skill\`: exact name from the listing, no leading slash. Plugin skills use \`plugin:skill\`.
+- \`args\`: optional arguments to pass through.
+
+Only names from the listing (or that the user typed explicitly) are valid. Built-in CLI commands (\`/help\`, \`/clear\`, \u2026) aren't skills. If a \`<system-reminder>\` block is already present this turn, the skill is loaded \u2014 follow it directly rather than calling again.`,
   input_schema:
     upstreamSchema("Skill") || {
       type: "object",

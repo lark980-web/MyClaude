@@ -163,7 +163,9 @@ test("Agent.run sends attachments as multi-part user content", async () => {
   await agent.run("describe", {
     attachments: [{ kind: "image", name: "x.png", mime: "image/png", data: "AAA" }],
   });
-  const user = seen.find((m) => m.role === "user");
+  // 首条 user 消息可能是随回合注入的技能元消息（上游 attachment 语义）——
+  // 这条断言要的是带附件的正文消息，取最后一条 user。
+  const user = seen.filter((m) => m.role === "user").pop();
   assert.ok(Array.isArray(user.content));
   assert.equal(user.content[0].text, "describe");
   assert.equal(user.content[1].type, "image_url");

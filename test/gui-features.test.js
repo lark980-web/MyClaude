@@ -140,9 +140,10 @@ test("two session keys keep independent conversation histories", async () => {
     assert.ok(b.some((e) => e.type === "delta" && e.text === "reply to B"));
 
     // The second request must not see the first tab's user message.
+    // （首条 user 可能是技能清单等元消息 —— 隔离断言只看正文消息）
     const sentToB = ctx.backend.state.bodies.at(-1).messages.filter((m) => m.role === "user");
-    assert.equal(sentToB.length, 1);
-    assert.equal(sentToB[0].content, "hello from B");
+    assert.equal(sentToB.filter((m) => m.content === "hello from B").length, 1, "B 的正文恰好一条");
+    assert.ok(!sentToB.some((m) => String(m.content).includes("hello from A")), "看不到 A 的消息");
 
     const cfgA = await (await fetch(ctx.address + "/api/config?sessionKey=tab-a")).json();
     const cfgB = await (await fetch(ctx.address + "/api/config?sessionKey=tab-b")).json();

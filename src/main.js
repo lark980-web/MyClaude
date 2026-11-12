@@ -245,7 +245,7 @@ function valueSetting(name, arg, config, ui, key, opts) {
   return value;
 }
 
-async function handleCommand(raw, ctx) {
+export async function handleCommand(raw, ctx) {
   const { agent, config, provider, ui } = ctx;
   const [cmd, ...rest] = raw.slice(1).split(/\s+/);
   const arg = rest.join(" ");
@@ -1146,7 +1146,10 @@ case "init": {
       ui.info(
         `skills (${list.length}):\n` +
           list
-            .map((s) => `  /${s.name.padEnd(16)} ${s.description}${s.scope === "user" ? "  (user)" : ""}`)
+            .map((s) => {
+              const scopeLabel = { user: "user", project: "project", plugin: "plugin", builtin: "builtin" }[s.scope] || s.scope;
+              return `  /${s.name.padEnd(16)} [${scopeLabel}]  ${s.description.slice(0, 100)}`;
+            })
             .join("\n")
       );
       return {};
@@ -1462,6 +1465,10 @@ case "init": {
       // Not a built-in: try a user/project command file before giving up.
       const custom = findCommand(cmd, process.cwd());
       if (!custom) {
+        // 上游 skill_mention：/技能名不是未知命令 —— 原文交给模型，
+        // agent 层注入 skill_mention 提醒（模型随后自己调 Skill 工具）。
+        const { findSkill } = await import("./skills.js");
+        if (findSkill(cmd, process.cwd())) { return { passthrough: true }; }
         ui.warn(`未知命令：/${cmd}`);
         return {};
       }
@@ -1509,6 +1516,11 @@ async function runPlain({ config, provider, agent, autoSaver, ui }) {
     if (trimmed.startsWith("/")) {
       const r = await handleCommand(trimmed, ctx);
       if (r.exit) running = false;
+      // 上游 skill_mention：/技能名 → 原文照常进模型（agent 注入提醒），
+      // 不当命令吞掉、也不报未知命令。
+      if (r.passthrough) {
+        // fall through to the ordinary send path below
+      } else {
       // A custom command expands into a normal turn, so it must go through the
       // same run/save/compact path as typed input.
       if (r.customPrompt) {
@@ -1522,6 +1534,7 @@ async function runPlain({ config, provider, agent, autoSaver, ui }) {
         autoSaver?.save();
       }
       continue;
+      }
     }
 
     const files = ctx.pendingAttachments.splice(0);
@@ -1580,6 +1593,25 @@ async function runTui({ config, provider, agent, autoSaver }) {
       if (r.exit) {
         exiting = true;
         tui.instance.unmount();
+        return;
+      }
+      // 上游 skill_mention：/技能名不是命令 —— 原文照常进模型（agent 注入提醒）。
+      // 用户消息已回显，走和 onSubmit 相同的执行路径（但不再重复 bridge.user）。
+      if (r.passthrough) {
+        bridge.setBusy(true);
+        const files = pendingAttachments.splice(0);
+        bridge.setAttachments(pendingAttachments);
+        try {
+          await (config.autoRun
+          ? runWithAutoContinue(agent, { message: text, attachments: files }, { ui })
+          : agent.run(text, { attachments: files }));
+          const compact = await agent.maybeCompact();
+          if (compact) bridge.info(`context compacted (dropped ${compact.dropped} messages)`);
+        } finally {
+          autoSaver?.save();
+          bridge.setBusy(false);
+          bridge.setMode(agent.mode ?? config.permissionMode);
+        }
         return;
       }
       // Custom command: run it as a normal turn with the same busy handling.
@@ -1849,10 +1881,15 @@ async function main() {
   }
 }
 
-main().catch((e) => {
-  console.error(`fatal: ${e?.stack || e?.message || e}`);
-  process.exit(1);
-});
+// CLI 入口守卫：main.js 既是可执行入口，也被测试当库导入（handleCommand）。
+// 直接 import 会把整个 CLI（TUI/单实例锁/provider）拉起来 —— 测试里进程就此挂住。
+// 测试在动态 import 前设 MYCLAUDE_SKIP_MAIN=1；正常 CLI/exe 路径不受影响。
+if (process.env.MYCLAUDE_SKIP_MAIN !== "1") {
+  main().catch((e) => {
+    console.error(`fatal: ${e?.stack || e?.message || e}`);
+    process.exit(1);
+  });
+}
 
 
 
