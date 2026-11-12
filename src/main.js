@@ -788,6 +788,23 @@ export async function handleCommand(raw, ctx) {
       }
       return {};
     }
+    case "computer-use": {
+      // Computer Use 开关：注册/注销 computer 工具族（浏览器动作面，CDP 后端）
+      const on = rest[0] === "on" ? true : rest[0] === "off" ? false : !config.computerUse;
+      config.computerUse = on;
+      saveConfig({ computerUse: on });
+      const { registerTools, allRegisteredTools } = await import("./tools/index.js");
+      const { COMPUTER_TOOLS } = await import("./tools/extended.js");
+      if (on) { registerTools(COMPUTER_TOOLS); }
+      const names = allRegisteredTools().map((t) => t.name).filter((n) => ["computer", "navigate", "tabs_context_mcp", "get_page_text"].includes(n));
+      if (on) {
+        ui.info("Computer Use 已开启 — 本会话注册 browser 工具：" + names.join(", "));
+        ui.info("浏览器动作面驱动本机 Chrome/Edge（CDP）；重启会话后对所有新会话生效。/computer-use off 关闭");
+      } else {
+        ui.info("Computer Use 已关闭 — 新会话不再注册 browser 工具");
+      }
+      return {};
+    }
     case "agents": {
       const { loadAgents } = await import("./skills.js");
       const agents = loadAgents(process.cwd());

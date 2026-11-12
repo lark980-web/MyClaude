@@ -96,6 +96,10 @@ export const DEFAULT_CONFIG = {
   // (round cap + time budget bound the walk; see agent/autorun.js). Off by
   // default because it burns tokens by design.
   autoRun: false,
+  // Computer Use：computer 工具族（上游 Claude-in-Chrome 的浏览器动作面，
+  // CDP 后端直接驱动本机 Chrome/Edge）。显式开关 —— 开着会让每次对话都带
+  // 上 browser 工具。computerUse.browserPath 可指定浏览器可执行文件。
+  computerUse: false,
   // Claude describes auto mode as "no routine prompts; a reviewer model
   // screens actions". Turning this on makes auto mode do that too. It costs
   // one extra request per tool call, so it is off unless asked for.

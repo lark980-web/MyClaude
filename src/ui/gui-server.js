@@ -15,7 +15,7 @@ import { WebSocketServer } from "ws";
 import { createProvider, PROVIDER_KINDS } from "../providers/index.js";
 import { createAgent } from "../agent/runtime.js";
 import { allRegisteredTools, registerTools, multiEditTool, todoWriteTool, webFetchTool } from "../tools/index.js";
-import { EXTENDED_TOOLS } from "../tools/extended.js";
+import { EXTENDED_TOOLS, COMPUTER_TOOLS } from "../tools/extended.js";
 import { getTodos, setTodos } from "../tools/extra.js";
 import { taskSummaries, readTaskOutput, killTask } from "../tools/tasks.js";
 import { listOutputStyles } from "../output-style.js";
@@ -619,7 +619,8 @@ const statsOf = (agent) => {
   };
 
   const toolList = () => {
-    registerTools([multiEditTool, todoWriteTool, webFetchTool, ...EXTENDED_TOOLS]);
+    // computer 工具族按 config.computerUse 开关（与 runtime.createAgent 一致）
+    registerTools([multiEditTool, todoWriteTool, webFetchTool, ...EXTENDED_TOOLS, ...(config.computerUse ? COMPUTER_TOOLS : [])]);
     return allRegisteredTools().map((t) => ({ name: t.name, description: t.description || "" }));
   };
 
@@ -902,6 +903,11 @@ async function searchWorkspaceFiles(query = "", limit = 40) {
         config.autoRun = !!body.autoRun;
         saveConfig({ autoRun: config.autoRun });
         setAutonomous(config.autoRun);
+      }
+      if (body.computerUse !== undefined) {
+        // Computer Use 开关：computer 工具族是否随会话注册（浏览器动作面）
+        config.computerUse = !!body.computerUse;
+        saveConfig({ computerUse: config.computerUse });
       }
       if (body.provider !== undefined) {
         // /api/config 之前从不写 config.provider：设置中心里选「Anthropic 官方」

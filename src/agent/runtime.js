@@ -10,7 +10,7 @@ import {
   toolSchemas,
   findTool,
 } from "../tools/index.js";
-import { EXTENDED_TOOLS, setQuestionPresenter, setModeController, answerQuestion } from "../tools/extended.js";
+import { EXTENDED_TOOLS, COMPUTER_TOOLS, setQuestionPresenter, setModeController, answerQuestion } from "../tools/extended.js";
 import { taskOutputTool } from "../tools/task-output.js";
 
 /**
@@ -18,7 +18,9 @@ import { taskOutputTool } from "../tools/task-output.js";
  */
 export async function createAgent({ provider, config, ui, providerFactory, sessionKey, sessionSource = "startup" }) {
   // Register the built-in extended tools once per process.
-  registerTools([multiEditTool, todoWriteTool, webFetchTool, taskOutputTool, ...EXTENDED_TOOLS]);
+  // computer 工具族按 config.computerUse 显式开关（上游语义：只有连接了
+  // 浏览器会话才暴露 browser 工具 —— 常开会让模型在每次对话里都试图截图）。
+  registerTools([multiEditTool, todoWriteTool, webFetchTool, taskOutputTool, ...EXTENDED_TOOLS, ...(config.computerUse ? COMPUTER_TOOLS : [])]);
 
   const agent = new Agent({
     provider,
