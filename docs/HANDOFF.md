@@ -10,7 +10,7 @@
 | 项 | 值 | 怎么核实 |
 |---|---|---|
 | HEAD | 见 `git log --oneline -1` | `git rev-parse --short HEAD` |
-| 测试 | **869** 项（868 通过 + 1 登记 skip），全绿（测于 2026-11-11 via `npm run gate:full` 九步全绿；高水位基线在 test/gate-metrics.json） | `npm run gate:fast` |
+| 测试 | **895** 项（894 通过 + 1 登记 skip），全绿（测于 2026-11-14 via `npm run gate:full` 九步全绿 + 真机自检矩阵 9/9；高水位基线在 test/gate-metrics.json） | `npm run gate:fast` |
 | 提示词 | 组装现测 autoRun=false **25,257** / autoRun=true **28,420** 字符，19/20 段，0 error | `npm run inspect:prompt`（测于 2026-11-11） |
 | 内置技能 | verify 正文 10,412 字符 | `node -e "import('./src/skills-builtin.js').then(m=>console.log(m.BUILTIN_SKILLS[0].body.length))"` |
 | exe | 构建时间见 `dist\myclaude.exe` | `git status` 与源文件 mtime 比对 |
@@ -53,9 +53,10 @@
 
 其余待办（非命令面）：
 
-- 消息目录只列「已渐进渲染」的消息，长对话目录不完整
-- 技能管理弹层开着时 @ 菜单焦点异常（低频）
 - Anthropic 真实 API 未实测（本机无 `ANTHROPIC_API_KEY`）
+- （复核后移除的假待办：消息目录已按 S._replayMsgs 全量构建、未渲染条目点击补齐；
+  GUI「编辑上一条消息」已实现——openInlineUserEditor；
+  技能弹层与 @ 菜单并无真实冲突，系测试脚本点击隐藏按钮的假象）
 - （已复核不存在：GUI「编辑上一条消息」已实现——用户消息悬停 → 编辑 →
   保存并重新生成，openInlineUserEditor；原待办过时）
 
