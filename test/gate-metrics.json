@@ -2,15 +2,15 @@
   "schemaVersion": 1,
   "baseline": {
     "testCount": 895,
-    "commit": "f0ce81339da86610a72f54a07f7b4731870abb88",
-    "at": "2026-11-13T22:31:57.298Z"
+    "commit": "2ae836bd215ca78a56314dd5b16edc9f8abe0983",
+    "at": "2026-11-13T23:52:25.350Z"
   },
   "latest": {
-    "runId": "2026-11-13T22-29-35-491Z",
+    "runId": "2026-11-13T23-49-53-575Z",
     "mode": "fast",
-    "startedAt": "2026-11-13T22:29:35.518Z",
-    "commit": "f0ce81339da86610a72f54a07f7b4731870abb88",
-    "dirty": "",
+    "startedAt": "2026-11-13T23:49:53.592Z",
+    "commit": "2ae836bd215ca78a56314dd5b16edc9f8abe0983",
+    "dirty": "M test/gate-metrics.json",
     "status": "passed",
     "steps": [
       {
@@ -24,7 +24,7 @@
         ],
         "exitCode": 0,
         "signal": null,
-        "logPath": "E:\\WorkSpaces\\Test09\\MyClaude\\.local\\gate\\2026-11-13T22-29-35-491Z\\tests.log"
+        "logPath": "E:\\WorkSpaces\\Test09\\MyClaude\\.local\\gate\\2026-11-13T23-49-53-575Z\\tests.log"
       },
       {
         "name": "prompt",
@@ -34,7 +34,7 @@
         ],
         "exitCode": 0,
         "signal": null,
-        "logPath": "E:\\WorkSpaces\\Test09\\MyClaude\\.local\\gate\\2026-11-13T22-29-35-491Z\\prompt.log"
+        "logPath": "E:\\WorkSpaces\\Test09\\MyClaude\\.local\\gate\\2026-11-13T23-49-53-575Z\\prompt.log"
       },
       {
         "name": "features",
@@ -43,7 +43,7 @@
         ],
         "exitCode": 0,
         "signal": null,
-        "logPath": "E:\\WorkSpaces\\Test09\\MyClaude\\.local\\gate\\2026-11-13T22-29-35-491Z\\features.log"
+        "logPath": "E:\\WorkSpaces\\Test09\\MyClaude\\.local\\gate\\2026-11-13T23-49-53-575Z\\features.log"
       }
     ],
     "skipCheck": {
@@ -55,6 +55,6 @@
       "真引擎 permission_denials：manual+none 下写文件的拒绝结构"
     ],
     "testCount": 895,
-    "finishedAt": "2026-11-13T22:31:57.298Z"
+    "finishedAt": "2026-11-13T23:52:25.350Z"
   }
 }
