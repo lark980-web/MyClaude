@@ -41,12 +41,21 @@
 - `/sandbox` — **不做**。本项目有意用命令分级替代沙箱（见 `docs/PERMISSION-MODEL.md`）。
 - `/output-style` — 已实现；注意上游已把它并入 `/config`，属已知差异，不是缺陷。
 
+2026-11-14 夜航后更新（详见 docs/NIGHT-REPORT-2026-11-14.md）：
+
+- ✅ GUI 技能全链路（斜杠菜单/passthrough/管理面板/创建删除）——**关键：双布局**，
+  `.myclaude/skills` 与 `.claude/skills` 都要写，upstream 引擎（原生 Claude）只认后者
+- ✅ GUI 14 条 TUI 缺口命令（attach/attachments/detach/base/key/computer-use/continue/
+  rm/save/reload-memory/vision/skill/dream/loop）且全部进斜杠菜单
+- ✅ 断线续跑：SSE 断开不再杀回合；turnBus 缓冲 + /api/turn-state + /api/turn-events
+  重放跟随；浏览器实测「刷新→已重新接上→回放→收束」
+- ✅ @ 文件索引（BFS 1500 上限 + 启动预热 + 首请求等待）
+
 其余待办（非命令面）：
 
 - Esc+Esc 编辑上一条消息（TUI）+ GUI 等价物
 - 消息目录只列「已渐进渲染」的消息，长对话目录不完整
-- 右栏「备用模型」空池时的禁用态文案
-- 提示词库 / Projects 模态框仍是旧视觉语言
+- 技能管理弹层开着时 @ 菜单焦点异常（低频）
 - Anthropic 真实 API 未实测（本机无 `ANTHROPIC_API_KEY`）
 
 ## 4. 关键约束（都是踩过的坑）
