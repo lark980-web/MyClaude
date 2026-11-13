@@ -21,7 +21,14 @@ import { BUILTIN_SKILLS } from "./skills-builtin.js";
 /** The only file name Claude recognises as a skill definition. */
 const SKILL_FILE = "SKILL.md";
 
-/** Directories scanned for skills, lowest precedence first. */
+/**
+ * Directories scanned for skills, lowest precedence first.
+ *
+ * 两种布局同时读：MyClaude 自己的 `.myclaude/skills` 与上游 Claude Code 的
+ * `.claude/skills`（原生引擎「原生 Claude」后端只认后者）。不兼容的后果：
+ * GUI 建的技能上游引擎看不见、上游装的技能自研层看不见——用户主诉的
+ * 「无法使用技能/无法创建技能」正是这个断层。
+ */
 export function skillDirs(cwd = process.cwd()) {
   const dirs = [];
   const home = join(CONFIG_DIR, "skills");
@@ -30,6 +37,9 @@ export function skillDirs(cwd = process.cwd()) {
   // 项目级只认「项目根」一处，不逐级向上爬：从 Temp 之类目录向上找，会把
   // ~/.myclaude/skills 误判成 project 技能，同一个技能被加载两次且作用域错误。
   const root = projectRootOf(cwd);
+  // 上游 Claude Code 布局在前：同名时让 .myclaude（后扫）覆盖它
+  const claudeCandidate = join(root, ".claude", "skills");
+  if (existsSync(claudeCandidate)) { dirs.push({ dir: claudeCandidate, scope: "project" }); }
   const candidate = join(root, ".myclaude", "skills");
   if (existsSync(candidate) && resolve(candidate) !== resolve(home)) {
     dirs.push({ dir: candidate, scope: "project" });
@@ -126,26 +136,44 @@ export function findSkill(name, cwd = process.cwd()) {
  * @returns {{ok: true, file: string, name: string} | {ok: false, error: string}}
  */
 export function createSkill({ cwd = process.cwd(), name, description = "", body = "", overwrite = false }) {
-  const clean = String(name || "").trim().toLowerCase();
+  // 名字规范化：空格转连字符、剔除非法字符 —— 用户输入「Bridge Skill」也能得到合法目录名
+  const clean = String(name || "").trim().toLowerCase()
+    .replace(/\s+/g, "-")
+    .replace(/[^a-z0-9_-]/g, "")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 64);
   if (!/^[a-z0-9][a-z0-9_-]{0,63}$/.test(clean)) {
     return { ok: false, error: "技能名只能用小写字母、数字、连字符或下划线（1-64 字符）" };
   }
   if (!String(body || "").trim()) { return { ok: false, error: "技能正文（SKILL.md 内容）不能为空" }; }
-  const dir = join(projectRootOf(cwd), ".myclaude", "skills", clean);
-  const file = join(dir, SKILL_FILE);
-  if (!overwrite && existsSync(file)) {
-    return { ok: false, error: "技能 " + clean + " 已存在 — 再次提交并勾选覆盖可更新它" };
+  const root = projectRootOf(cwd);
+  // 双布局落盘：.myclaude/skills（自研层）+ .claude/skills（上游原生引擎）。
+  // 只写一处，另一个引擎就看不见——「创建的技能用不了」的根源。
+  const targets = [
+    join(root, ".myclaude", "skills", clean),
+    join(root, ".claude", "skills", clean),
+  ];
+  for (const dir of targets) {
+    const file = join(dir, SKILL_FILE);
+    if (!overwrite && existsSync(file)) {
+      return { ok: false, error: "技能 " + clean + " 已存在 — 再次提交并勾选覆盖可更新它" };
+    }
   }
+  let written = null;
   try {
-    mkdirSync(dir, { recursive: true });
     const desc = String(description || "").replace(/\s*\r?\n\s*/g, " ").trim().slice(0, 200);
     const front = ["---", "name: " + clean, "description: " + desc, "---", ""].join("\n");
     const text = String(body).replace(/\r\n/g, "\n").trim();
-    writeFileSync(file, front + "\n" + text + "\n", "utf8");
+    for (const dir of targets) {
+      mkdirSync(dir, { recursive: true });
+      const file = join(dir, SKILL_FILE);
+      writeFileSync(file, front + "\n" + text + "\n", "utf8");
+      if (!written) { written = file; }
+    }
   } catch (err) {
     return { ok: false, error: "写入失败：" + (err && err.message ? err.message : err) };
   }
-  return { ok: true, file, name: clean };
+  return { ok: true, file: written, name: clean };
 }
 
 /**
@@ -168,6 +196,15 @@ export function deleteSkill(name, cwd = process.cwd()) {
       }
     } catch { /* 下一个候选 */ }
   }
+  // 上游布局目录可能没进 skillDirs（不存在时被跳过）：按名直查一遍，
+  // 保证「删除」对 .claude/skills 里的同名技能同样生效。
+  const claudeTarget = join(projectRootOf(cwd), ".claude", "skills", clean);
+  try {
+    if (existsSync(join(claudeTarget, SKILL_FILE))) {
+      rmSync(claudeTarget, { recursive: true, force: true });
+      removed = removed || "project";
+    }
+  } catch { /* 已尽力 */ }
   return removed
     ? { ok: true, scope: removed }
     : { ok: false, error: "没有可删除的技能 " + clean + "（内置技能不可删除）" };

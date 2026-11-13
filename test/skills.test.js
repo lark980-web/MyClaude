@@ -1,13 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
 // 用户家目录里的真实技能会漏进这些断言：给测试一个隔离的 MYCLAUDE_HOME，
 // 并且必须用动态 import —— 静态 import 会被提升到赋值之前，隔离不生效。
 process.env.MYCLAUDE_HOME = mkdtempSync(join(tmpdir(), "myclaude-skills-home-"));
-const { loadSkills, findSkill, skillCatalogue, skillDirs } = await import("../src/skills.js");
+const { loadSkills, findSkill, skillCatalogue, skillDirs, createSkill, deleteSkill } = await import("../src/skills.js");
 
 /**
  * Build a fake workspace: <root>/.myclaude/skills/<name>/SKILL.md
@@ -115,5 +115,63 @@ test("skillDirs reports the project directory", () => {
     assert.ok(dirs.some((d) => d.scope === "project" && d.dir.includes(".myclaude")));
   } finally {
     cleanup();
+  }
+});
+
+test("skills in .claude/skills (upstream Claude Code layout) are picked up", () => {
+  const root = mkdtempSync(join(process.env.TEMP || ".", "skills-claude-"));
+  try {
+    const base = join(root, ".claude", "skills", "alpha");
+    mkdirSync(base, { recursive: true });
+    writeFileSync(join(base, "SKILL.md"), "---\ndescription: Alpha from upstream layout\n---\nalpha body\n", "utf8");
+    const skills = loadSkills(root, { builtin: false });
+    const hit = skills.find((s) => s.name === "alpha");
+    assert.ok(hit, "upstream-layout skill must load");
+    assert.equal(hit.scope, "project");
+    assert.ok(hit.file.includes(".claude"), "file points into .claude/skills");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test(".myclaude/skills overrides a same-named .claude/skills skill", () => {
+  const root = mkdtempSync(join(process.env.TEMP || ".", "skills-both-"));
+  try {
+    for (const [layout, body] of [[".claude", "claude version"], [".myclaude", "myclaude version"]]) {
+      const base = join(root, layout, "skills", "dupe");
+      mkdirSync(base, { recursive: true });
+      writeFileSync(join(base, "SKILL.md"), "---\ndescription: D\n---\n" + body + "\n", "utf8");
+    }
+    const hit = findSkill("dupe", root);
+    assert.ok(hit, "skill found in both layouts");
+    assert.match(hit.body, /myclaude version/, "the .myclaude copy wins");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("createSkill writes both layouts; deleteSkill removes both", () => {
+  const root = mkdtempSync(join(process.env.TEMP || ".", "skills-crud-"));
+  try {
+    const r = createSkill({ cwd: root, name: "Bridge Skill", description: "bridge", body: "# bridge\nstep one" });
+    assert.ok(r.ok, "createSkill ok: " + (r.error || ""));
+    const myPath = join(root, ".myclaude", "skills", "bridge-skill", "SKILL.md");
+    const clPath = join(root, ".claude", "skills", "bridge-skill", "SKILL.md");
+    for (const f of [myPath, clPath]) {
+      assert.ok(existsSync(f), "written to " + f);
+    }
+    // 名字规范化：大写与空格 → 小写连字符
+    assert.equal(findSkill("bridge-skill", root).name, "bridge-skill");
+    // 拒绝重复
+    const dup = createSkill({ cwd: root, name: "bridge-skill", description: "x", body: "y" });
+    assert.equal(dup.ok, false, "duplicate create must fail");
+    // 删除双布局
+    const d = deleteSkill("bridge-skill", root);
+    assert.ok(d.ok);
+    for (const f of [myPath, clPath]) {
+      assert.equal(existsSync(f), false, "removed " + f);
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
   }
 });

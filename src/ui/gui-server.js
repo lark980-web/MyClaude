@@ -1505,6 +1505,29 @@ async function searchWorkspaceFiles(query = "", limit = 40) {
             const list = loadSkills(cwd);
             reply(list.length ? "Skills（" + list.length + "）\n" + list.map((s) => "  /" + s.name + "  " + (s.description || "")).join("\n") : "(no skills) — 在 .myclaude/skills/ 或 ~/.myclaude/skills/ 放 SKILL.md"); return;
           }
+          if (name === "save") {
+            if (!agent) { reply("(no live session) — GUI 每 2.5s 自动落盘，刷新即可见"); return; }
+            const saver = saverFor(key, agent);
+            try { saver.save({ force: true }); reply("saved " + agent.messages.length + " messages → " + (saver.file || saver.id)); }
+            catch (e) { sendJson(res, 500, { ok: false, error: String(e && e.message ? e.message : e) }); }
+            return;
+          }
+          if (name === "dream") {
+            // 与 TUI /dream 同语义：读项目记忆 → 让 agent 整理 → 写回。
+            const { memoryFilePath } = await import("../agent/permissions.js");
+            const file = memoryFilePath(cwd);
+            let existing = "";
+            try { existing = readFileSync(file, "utf8"); } catch {}
+            if (!existing.trim()) { reply("记忆文件为空，没有需要整理的内容（" + file + "）。"); return; }
+            if (!agent) { reply("(no live session) — 先发一条消息建立会话再 /dream"); return; }
+            const prompt =
+              "整理项目记忆文件。删除重复或过时的条目，合并相近的内容，" +
+              "保留仍然准确的说明。不要添加新内容，也不要改变意思。" +
+              "只输出整理后的完整文件内容，不要解释。\n\n当前内容：\n" + existing;
+            const r = await agent.run(prompt);
+            reply("记忆整理完成（" + file + "）" + (r && r.done ? "" : " — 注意：回合未正常收尾"));
+            return;
+          }
           if (name === "plugin") {
             const list = loadPlugins(cwd);
             reply(list.length ? "Plugins（" + list.length + "）\n" + list.map((p) => "  " + p.name + "（" + p.scope + "）" + ((p.manifest && p.manifest.description) || "")).join("\n") : "(no plugins) — 在 .myclaude/plugins/ 放 plugin.json"); return;
@@ -2413,6 +2436,25 @@ async function searchWorkspaceFiles(query = "", limit = 40) {
       if (path === "/api/busy" && req.method === "GET") {
         const key = keyOf(url.searchParams.get("sessionKey") ? { sessionKey: url.searchParams.get("sessionKey") } : {});
         sendJson(res, 200, { busy: running.has(key) });
+        return;
+      }
+
+      /* ---- agent-debug：localhost 诊断面（技能目录/工具数/进程 cwd）----
+       * 技能链路跨 GUI/agent/skills 三层，排障时需要看服务进程的真实视图。 */
+      if (path === "/api/agent-debug" && req.method === "GET") {
+        const key = keyOf(url.searchParams.get("sessionKey") ? { sessionKey: url.searchParams.get("sessionKey") } : {});
+        const agent = sessions.get(key);
+        const { skillCatalogue } = await import("../skills.js");
+        const catalogue = skillCatalogue(cwd);
+        sendJson(res, 200, {
+          cwd,
+          processCwd: process.cwd(),
+          catalogue: catalogue.map((s) => ({ name: s.name, scope: s.scope })),
+          agentExists: !!agent,
+          agentTools: agent && agent.tools ? agent.tools.map((t) => t.function?.name || t.name) : null,
+          lastRequestMeta: agent ? (agent.lastRequestMeta || null) : null,
+          sessionKeys: [...sessions.keys()].slice(0, 20),
+        });
         return;
       }
 

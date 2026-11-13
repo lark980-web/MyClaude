@@ -6096,6 +6096,14 @@
     return null;
   }
 
+  /** /技能名 → 按原文发普通回合；agent 端 skill_mention 附件会提示模型调用 Skill 工具。 */
+  function runSkillPassthrough(text) {
+    if (S.busy) { toast("任务运行中，请先停止或等它结束", "warn"); return; }
+    addUserMessage(text, []);
+    S.lastUserText = text;
+    runTurn({ message: text, sessionKey: S.sessionKey, attachments: [] });
+  }
+
   function skillScopeLabel(scope) {
     return scope === "builtin" ? "内置" : scope === "user" ? "用户级" : scope === "plugin" ? "插件" : "项目级";
   }
@@ -6786,6 +6794,131 @@
     },
     plan: function () {
       addNotice("本机无对应服务：/plan 的计划文件由 TUI 读写，GUI 服务端未暴露计划接口。\n本机可用替代：/files 浏览工作区，或在 TUI 用 /plan 查看计划。", "warn");
+    },
+
+    /* ---- TUI 有而 GUI 曾缺的命令面（commands-parity 补齐 2026-11-14）---- */
+    attach: function (arg) {
+      if (!arg) { var fi = $("file-input"); if (fi) { fi.click(); } return; }
+      var paths = String(arg).match(/"[^"]+"|\S+/g) || [];
+      postJSON("/api/attach", { paths: paths.map(function (p) { return p.replace(/^"|"$/g, ""); }) }).then(function (j) {
+        (j.attachments || []).forEach(function (a) { S.attachments.push(a); });
+        renderAttachments();
+        var fails = (j.errors || []).map(function (e) { return e.name + "：" + e.error; });
+        toast("已附加 " + (j.attachments || []).length + " 个" + (fails.length ? "；失败：" + fails.join("；") : ""), fails.length ? "warn" : "ok");
+      }).catch(function (e) { addNotice("附加失败：" + e.message, "err"); });
+    },
+    attachments: function () {
+      if (!S.attachments.length) { addNotice("(no pending attachments)", "info"); return; }
+      addNotice(S.attachments.map(function (a) { return "  " + (a.name || "?") + " · " + bytes(a.size || 0); }).join("\n"), "info");
+    },
+    detach: function (arg) {
+      var which = String(arg || "").trim();
+      if (!which || which === "all") { S.attachments = []; renderAttachments(); toast("attachments cleared", "ok"); return; }
+      var idx = Number(which) - 1;
+      if (idx >= 0 && idx < S.attachments.length) { S.attachments.splice(idx, 1); renderAttachments(); toast("已移除第 " + which + " 个附件", "ok"); }
+      else { addNotice("用法：/detach [序号|all]", "warn"); }
+    },
+    base: function (arg) {
+      var v = String(arg || "").trim();
+      if (!v) { addNotice("baseUrl = " + ((S.config || {}).baseUrl || "(默认)"), "info"); return; }
+      postJSON("/api/config", { baseUrl: v }).then(function () { if (S.config) { S.config.baseUrl = v; } toast("baseUrl = " + v, "ok"); }).catch(function (e) { addNotice("设置失败：" + e.message, "err"); });
+    },
+    key: function (arg) {
+      var v = String(arg || "").trim();
+      if (!v) { addNotice("apiKey = " + ((S.config || {}).apiKeyConfigured ? "(set)" : "(empty)"), "info"); return; }
+      postJSON("/api/config", { apiKey: v }).then(function () { if (S.config) { S.config.apiKeyConfigured = true; } toast("api key updated", "ok"); }).catch(function (e) { addNotice("设置失败：" + e.message, "err"); });
+    },
+    "computer-use": function (arg) {
+      var v = String(arg || "").trim().toLowerCase();
+      if (!v || v === "status") { addNotice("Computer Use：" + ((S.config || {}).computerUse ? "on" : "off") + "\n用法：/computer-use on|off", "info"); return; }
+      if (v !== "on" && v !== "off") { addNotice("用法：/computer-use on|off", "warn"); return; }
+      postJSON("/api/config", { computerUse: v === "on" }).then(function () {
+        if (S.config) { S.config.computerUse = v === "on"; }
+        toast(v === "on" ? "Computer Use 已开启 — 新会话注册 browser 工具" : "Computer Use 已关闭 — 新会话不再注册 browser 工具", "ok");
+      }).catch(function (e) { addNotice("设置失败：" + e.message, "err"); });
+    },
+    continue: function () {
+      var rows = (S.sessions || []).filter(function (s) { return !s.archived; });
+      if (!rows.length) { addNotice("(no saved sessions to continue)", "warn"); return; }
+      resumeSession(rows[0].id);
+    },
+    rm: function (arg) {
+      var id = String(arg || "").trim();
+      if (!id) { addNotice("用法：/rm <会话 id>（/sessions 里可查）", "warn"); return; }
+      deleteSession(id);
+    },
+    save: function () { runServerCommand("save"); },
+    "reload-memory": function () { runServerCommand("memory"); },
+    vision: function (arg) {
+      var v = String(arg || "").trim().toLowerCase();
+      if (v === "on" || v === "off") {
+        postJSON("/api/config", { vision: v === "on" }).then(function () {
+          S.vision = v === "on"; renderVision();
+          toast("视觉已" + (S.vision ? "开启" : "关闭"), S.vision ? "ok" : "warn");
+        }).catch(function (e) { addNotice("设置失败：" + e.message, "err"); });
+        return;
+      }
+      addNotice("vision = " + (S.vision !== false ? "on" : "off") + "\n用法：/vision on|off", "info");
+    },
+    skill: function (arg) {
+      var line = String(arg || "").trim();
+      var name = line.split(/\s+/)[0] || "";
+      var rest = line.slice(name.length).trim();
+      if (!name) { addNotice("用法：/skill <技能名> [参数]（TUI 同语义：直接执行技能正文）", "warn"); return; }
+      getJSON("/api/skills/" + encodeURIComponent(name)).then(function (j) {
+        if (!j.ok || !j.body) { addNotice(j.error || ("没有名为 " + name + " 的技能"), "err"); return; }
+        addUserMessage("/skill " + name + (rest ? " " + rest : ""), []);
+        S.lastUserText = j.body;
+        runTurn({ message: j.body + (rest ? "\n\n[skill args]: " + rest : ""), sessionKey: S.sessionKey });
+      }).catch(function (e) { addNotice("读取技能失败：" + e.message, "err"); });
+    },
+    dream: function () { runServerCommand("dream"); },
+    loop: function (arg) {
+      // /loop <提示词> [--cycles N] [--every 秒]；无提示词时回退 loop.md（TUI 同款）
+      var words = [];
+      var cycles = 1;
+      var intervalSec = 0;
+      var toks = String(arg || "").trim().match(/"[^"]+"|\S+/g) || [];
+      for (var i = 0; i < toks.length; i++) {
+        var w = toks[i];
+        if (w === "--cycles") { cycles = Number(toks[++i]) || 1; continue; }
+        if (w === "--every") { intervalSec = Number(toks[++i]) || 0; continue; }
+        words.push(w.replace(/^"|"$/g, ""));
+      }
+      var prompt = words.join(" ").trim();
+      var usage = "用法：/loop <提示词> [--cycles N] [--every 秒]（或工作目录放 loop.md）";
+      if (cycles < 1) { cycles = 1; }
+      if (cycles > 25) { addNotice("循环次数上限 25，已按 25 处理", "warn"); cycles = 25; }
+      var begin = function () {
+        if (!prompt) { addNotice(usage, "warn"); return; }
+        if (S.busy) { toast("任务运行中，请先停止或等它结束", "warn"); return; }
+        addNotice("开始循环：" + cycles + " 次" + (intervalSec ? "，间隔 " + intervalSec + "s" : ""), "info");
+        var n = 0;
+        var runOnce = function () {
+          n++;
+          addNotice("--- 循环第 " + n + "/" + cycles + " 次 ---", "info");
+          addUserMessage(prompt, []);
+          S.lastUserText = prompt;
+          runTurn({ message: prompt, sessionKey: S.sessionKey });
+          if (n < cycles) { scheduleNext(); }
+        };
+        var scheduleNext = function () {
+          var waitIdle = function () {
+            if (!S.busy) { setTimeout(runOnce, Math.max(0, intervalSec) * 1000); }
+            else { setTimeout(waitIdle, 800); }
+          };
+          setTimeout(waitIdle, 800);
+        };
+        runOnce();
+      };
+      if (prompt) { begin(); return; }
+      getJSON("/api/fs/file?path=" + encodeURIComponent("loop.md")).then(function (j) {
+        if (j && j.content && j.content.trim()) {
+          prompt = j.content.trim();
+          addNotice("使用 loop.md（" + prompt.length + " 字符）", "info");
+          begin();
+        } else { addNotice(usage, "warn"); }
+      }).catch(function () { addNotice(usage, "warn"); });
     }
   };
 
@@ -6984,15 +7117,16 @@
         // /技能名 passthrough（对齐 agent 层 skill_mention 契约）：按原文发给
         // agent，由 skill_mention 附件提示模型调用 Skill 工具。此前 GUI 把
         // 技能名当成「未知命令」拦下，技能在界面里永远用不了。
-        var skill = findSkill(cmd);
-        if (skill) {
-          if (S.busy) { toast("任务运行中，请先停止或等它结束", "warn"); break; }
-          addUserMessage(text, []);
-          S.lastUserText = text;
-          runTurn({ message: text, sessionKey: S.sessionKey, attachments: [] });
-          break;
-        }
-        addNotice("未知命令：/" + cmd + "（试试 /help 或 /commands）", "warn");
+        // 缓存可能落后（技能是在页面打开后才创建/安装的）：未命中时拉一次
+        // /api/skills 复查，仍未中才报未知命令。
+        if (findSkill(cmd)) { runSkillPassthrough(text); break; }
+        loadSkillsList().then(function () {
+          if (findSkill(cmd)) { runSkillPassthrough(text); return; }
+          addNotice("未知命令：/" + cmd + "（试试 /help 或 /commands）", "warn");
+        }).catch(function () {
+          addNotice("未知命令：/" + cmd + "（试试 /help 或 /commands）", "warn");
+        });
+        break;
       }
     }
   }
@@ -7001,10 +7135,23 @@
   var slashIndex = 0;
   var slashMatches = [];
 
+  var slashSkillsTimer = null;
+
   function updateSlashMenu(value) {
     var text = value || "";
     if (text.charAt(0) !== "/" || text.indexOf(" ") >= 0) { closeSlash(); return; }
     var needle = text.slice(1).toLowerCase();
+    // 斜杠面板含技能项；列表可能落后（页面打开后新装的技能），打开时静默刷新
+    // 一次，完成后若面板还开着就重画。
+    clearTimeout(slashSkillsTimer);
+    slashSkillsTimer = setTimeout(function () {
+      loadSkillsList().then(function () {
+        if (!slashOpen) { return; }
+        var ta2 = $("in");
+        var cur = ta2 ? (ta2.value || "") : "";
+        if (cur.charAt(0) === "/" && cur.indexOf(" ") < 0) { updateSlashMenu(cur); }
+      });
+    }, 120);
     slashMatches = allCommands().filter(function (c) {
       return !needle || c.k.toLowerCase().replace(/^\//, "").indexOf(needle) >= 0;
     });

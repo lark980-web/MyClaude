@@ -463,6 +463,8 @@ export class Agent {
     if (this.pendingMeta && this.pendingMeta.length) {
       const meta = this.pendingMeta.map((content) => ({ role: "user", content }));
       this.pendingMeta = [];
+      // 诊断面用：最近一次请求携带的元消息快照（/api/agent-debug 读）。
+      this.lastRequestMeta = meta.map((m) => String(m.content).slice(0, 400));
       // 插在「最后一条 user 消息」之前 —— 那是本回合的正文；meta 是随行附件
       let end = body.length;
       while (end > 0 && body[end - 1].role !== "user") { end--; }
@@ -740,20 +742,24 @@ export class Agent {
         : userInput;
 
       // 上游 skill_listing 附件（chunk-e0x0xb6d.js）：可用技能清单以 system-reminder
-      // 注入，模型才知道 Skill 工具能调什么（"available-skills list"）。清单变化时
+      // 形式随用户回合注入 —— 模型靠它知道 Skill 工具能调什么（"available-skills list"）。清单变化时
       // 重发 —— 覆盖会话中途新装技能 / 新落盘技能的热发现（dynamic_skill 语义）。
       // 元消息走 pendingMeta（buildRequestMessages 注入请求，不落历史）。
+      // 以 <system-reminder> 包裹：Skill 工具描述承诺「清单以 system-reminder 到达」，
+      // 且裸文本用户消息会被弱模型当普通闲聊忽略（实测 codebuddy/glm 完全无视，
+      // 模型转头去 grep 仓库找 /命令定义 —— 这是「技能用不了」的最后一个环）。
+      const reminder = (s) => `<system-reminder>\n${s}\n</system-reminder>`;
       const meta = [];
       try {
         const listing = this.skillListingReminder();
-        if (listing) { meta.push(listing); }
+        if (listing) { meta.push(reminder(listing)); }
       } catch { /* 技能目录扫描失败不得拦住用户回合 */ }
 
       // 上游 skill_mention 附件：消息里出现 /技能名 → 提示模型调用 Skill 工具
       // （逐字语义：明确要求执行才执行，只是提及则不动）。
       if (typeof turnText === "string") {
         for (const sm of this.matchSkillMentions(turnText)) {
-          meta.push(`The user's message contains /${sm.name}, which is the name of a skill. If they are asking you to run it, call the Skill tool with skill: "${sm.name}", passing any arguments they gave as args. If they only mention it, do not run it.`);
+          meta.push(reminder(`The user's message contains /${sm.name}, which is the name of a skill. If they are asking you to run it, call the Skill tool with skill: "${sm.name}", passing any arguments they gave as args. If they only mention it, do not run it.`));
         }
       }
       if (meta.length) { this.pendingMeta = meta; }
