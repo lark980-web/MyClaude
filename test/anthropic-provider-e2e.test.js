@@ -74,4 +74,8 @@ test("anthropic wire format: request shape, stream parsing, tool round-trip", as
   }
 });
 
-after(() => { setTimeout(() => process.exit(0), 100).unref?.(); });
+// 收尾即退出：测试结果在 before after-hook 阶段前已经由 IPC 上报给 runner，
+// 立即退出可跳过「自然卸载」阶段——本文件在整套件并发跑时会在那个窗口里
+// 触发 libuv win/async.c 的 UV_HANDLE_CLOSING 断言（裸 abort，进程级 ✖，
+// 断言本身全绿）。此前的 100ms 延迟退出仍赶不上卸载窗口。
+after(() => { process.exit(0); });

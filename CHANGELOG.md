@@ -8,6 +8,61 @@
 
 ## [Unreleased]
 
+### Fixed（2026-11-14 夜航：GUI 六大主诉——@ / 技能 / 断线续跑 / 命令面）
+
+**@ 引用搜不到源码文件**
+
+- 症状：输入 `@` 后菜单里找不到 `src/**`、`test/**`——仿佛这些目录不存在。
+- 根因：文件索引是 DFS + 400 条上限。本仓库根目录有上百个 `myclaude-export-*.md`，
+  配额在走进任何子目录之前就被耗光；首次请求还赶上后台建索引返回空列表，
+  前端收到 `[]` 直接关菜单。
+- 修复：BFS（浅层目录先入索引）+ 上限 1500 + 跳过 `-Force`/`%SystemDrive%` 类垃圾目录；
+  索引未建好时首个请求等待构建完成；服务启动即预热。
+
+**技能「装了却用不了」——根因是双布局断层**
+
+- 症状：GUI 创建的技能，模型说「未注册」；`/技能名` 在 GUI 里直接报「未知命令」。
+- 根因（决定性）：GUI 会话实际跑在 **upstream 引擎**（原生 Claude Code 子进程）上，
+  它只读 `.claude/skills/` 与 `~/.claude/skills/`；而 MyClaude 全套读写 `.myclaude/skills/`。
+  `/api/agent-debug`（本次新增诊断面）显示 `sessionKeys: []` 实锤了这一点。
+- 修复：`skillDirs` 双布局读取（`.claude/skills` + `~/.claude/skills`，`.myclaude` 同名覆盖）；
+  `createSkill` 双布局落盘；GUI 斜杠菜单列出技能、`/技能名` passthrough 到 agent；
+  元消息以 `<system-reminder>` 包裹（裸文本被弱模型当闲聊忽略）。
+  e2e：修复前模型转头 grep 仓库找定义；修复后 upstream 引擎逐字执行技能正文。
+
+**刷新/断网 = 任务被拦腰打断**
+
+- 症状：任务跑到一半刷新页面（或 Wi-Fi 抖一下），回合直接死亡。
+- 根因：SSE `close` 一到就 `abort()` 整个回合。上一版的修复（避免 409 砖死）
+  用「杀掉任务」换「会话可用」——两个都有理，但杀任务治不了本症状。
+- 修复：turnBus——回合事件进每会话缓冲并向所有挂接客户端扇出；断开只摘客户端
+  不杀回合；`GET /api/turn-state` + `GET /api/turn-events`（重放 + 跟随）让刷新后的
+  页面接回去。前端复用同一事件渲染路径，409 自动转跟随模式。
+  真浏览器实测：长任务 → F5 → 「已重新接上」→ 后台生成全文完整回放 → 正常收束。
+
+**GUI 命令面缺 14 条 TUI 命令**
+
+- attach/attachments/detach/base/key/computer-use/continue/rm/save/reload-memory/
+  vision/skill/dream/loop 在 GUI 无处可跑，斜杠菜单也不可见。
+- 修复：EXTRA_COMMANDS 补齐（save/dream 走服务端命令桥），全部进菜单；
+  「提示中的命令必须可派发」守卫扩展认可注册表键。
+
+**误粘贴的优雅关机代码长在 gitNumstat 里**
+
+- 症状（隐性地）：SIGINT/SIGTERM 处理只在 git diff 出错后才注册——
+  正常进程从来没有优雅关机，Ctrl+C 直接丢内存里的会话。
+- 根因：一段 flushAllSavers 代码被整块粘进了 `gitNumstat` 的 git-failed 分支。
+- 修复：移回 `startGui` 顶层。
+
+### Added（2026-11-14）
+
+- 技能管理面板：左栏入口 + `/skills`——列表（scope 徽标）、新建/更新（名字规范化、
+  覆盖开关）、删除（双布局同步移除）。
+- `/api/skills` GET/POST/DELETE + `/api/agent-debug`（服务进程的 cwd/技能目录/
+  工具表/最近请求 meta 视图——技能链路排障的事实来源）。
+- GUI 语音、设置、导出等既有控件经全量巡检：116 控件 0 JS 异常；
+  前端 44 个 `/api` 调用与服务端路由逐一配对 0 死端。
+
 ### Fixed（第二轮：审计挖出的 4 类问题 + 一个自己挖出来的 schema 缺陷）
 
 **N1 Windows 上系统性误用 Unix 命令（审计 §4.1，出现最频繁）**
