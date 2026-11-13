@@ -89,10 +89,12 @@ await readSse(await b1).catch(() => []);
 state.hang = false;
 
 // ---- S5: maxTurns → max_turns 事件 ----
+// 2025-11-13 起 maxTurns 是「检查点」（压缩后继续），max_turns 只在硬上限
+// maxTurns*4 兜底时发。要看到事件必须让每一轮都在调用工具，一路顶到硬上限。
 await fetch(`http://127.0.0.1:${PORT}/api/config`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ maxTurns: 1 }) });
-state.script.push({ toolCalls: [{ id: "t1", name: "Echo", arguments: {} }] });
+for (let i = 0; i < 6; i++) { state.script.push({ toolCalls: [{ id: "t" + i, name: "Echo", arguments: {} }] }); }
 const e5 = await readSse(await chat("触发上限", "audit-s5"));
-ok("S5 到回合上限发 max_turns 事件", e5.some((e) => e.type === "max_turns"), "");
+ok("S5 到硬上限发 max_turns 事件", e5.some((e) => e.type === "max_turns"), "");
 await fetch(`http://127.0.0.1:${PORT}/api/config`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ maxTurns: 3 }) });
 
 // ---- S6: resume mid-run keeps live agent + still abortable ----

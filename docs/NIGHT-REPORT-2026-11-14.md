@@ -66,11 +66,27 @@ diff/编辑/写入工作区/版本切换/下载/弹窗/全屏/迭代）、右栏
 ```
 npm run gate:fast   # tests / prompt / features 三步 PASS，1 诚实 skip
 npm test            # 895 项：894 绿 + 1 登记 skip
+npm run gate:full   # 九步全绿（含 build-exe：dist/myclaude.exe 已含全部修复）
 ```
 
 提交链：bf487d8（@ 索引 + 技能 GUI 面 + turnBus 断线续跑 + 优雅关机归位）→
 7a1aa6d（技能双布局 + system-reminder 包裹 + 14 命令 + agent-debug）→
-9c22357（菜单补齐 + hint 守卫扩展）→ 本报告与 gate 基线随最后一提交入库。
+9c22357（菜单补齐 + hint 守卫扩展）→ 7d2eafb（报告+基线）→
+01e2478（build-embed 资产重生成）→ c8ee79a（用户级 ~/.claude/skills 双向读取）→
+全部已推送 origin/main（此前积压 142 个提交一并推齐）。
+
+## 五.5、增量验证（终报告后补）
+
+1. **用户级双布局读取**：自研层现在也读 ~/.claude/skills（上游装的技能自研层看得见，
+   .myclaude 同名覆盖；测试隔离靠 MYCLAUDE_CLAUDE_HOME 显式开启）。
+   生产目录现可见 10 技能（含 agent-reach / craft-anything / eastmoney-quant 系）。
+2. **API 交叉审计（机械）**：前端 44 个 /api 调用 vs 服务端路由逐一配对——
+   **0 个死端**；服务端 5 个仅诊断/测试用的路由（agent-debug/busy/tools/undo/usage-stats）单列。
+3. **@ 接受流程浏览器实测**：@README → 菜单 3 项 → mousedown 选中 →
+   附件卡「@README.md 551 行」出现，输入占位清除 ✓
+4. **HANDOFF 待办复核**：「GUI 编辑上一条消息」其实早已实现（用户消息悬停 → 编辑 →
+   保存并重新生成，openInlineUserEditor），原待办过时已移除。
+5. **exe 重建**：dist/myclaude.exe（89MB）含全部修复；verify-features 9 文件标记全过。
 
 ## 六、复测方式
 
