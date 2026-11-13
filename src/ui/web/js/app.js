@@ -11665,9 +11665,11 @@ function switchInspectorTab(tab) {
     var ta = $("in");
     if (ta) { ta.focus(); }
 
-    // 会话恢复（resumeSession）是异步的；给它 1.6s 完成后再查后台任务，
+    // 会话恢复（resumeSession）是异步的；给它足够时间完成后再查后台任务，
     // 运行中的回合会被接回界面（断线续跑）。S.busy 已置位时跳过。
-    setTimeout(reattachRunningTurn, 1600);
+    // 重连应用的事件渲染进当前 DOM —— 若恢复渲染还没清完日志就会写进孤儿节点，
+    // 所以留 2.6s 而不是贴着 60ms 的恢复启动走。
+    setTimeout(reattachRunningTurn, 2600);
   }
 
   if (document.readyState === "loading") {
