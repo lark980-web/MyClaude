@@ -2602,15 +2602,7 @@
   }
 
   function runTurn(payload) {
-    var state = {
-      asst: null,
-      buffer: "",
-      pendingTools: [],
-      startedAt: Date.now(),
-      thought: null,
-      reasoningBuf: "",
-      thoughtTimer: null
-    }
+    var state = freshTurnState();
 
     setBusy(true);
     var oldEnd = logRoot().querySelector(".turn-end");
@@ -2626,9 +2618,94 @@
       onEvent: function (ev) { handleStreamEvent(ev, state); },
       onEnd: function () { endTurn(state); }
     }).catch(function (e) {
+      // 409 = 该会话已有任务在跑（比如我们刚刷新了页面）。此时不该报错，
+      // 而是转入跟随模式把后台任务接回来。
+      if (/HTTP 409/.test(e.message || "")) {
+        addNotice("检测到该会话已有任务在运行 — 已接回后台任务", "info");
+        var followState = freshTurnState();
+        followTurnEvents(S.sessionKey || "default", followState);
+        return;
+      }
       addNotice("请求失败：" + e.message, "err");
       endTurn(state);
     });
+  }
+
+  function freshTurnState() {
+    return {
+      asst: null,
+      buffer: "",
+      pendingTools: [],
+      startedAt: Date.now(),
+      thought: null,
+      reasoningBuf: "",
+      thoughtTimer: null
+    };
+  }
+
+  /* ---- 断线重连：把仍在后台跑的回合接回界面 ----
+   * 刷新、断网、睡眠唤醒后，服务端任务并没有死（事件还在 turnBus 里）。
+   * 页面加载时查 /api/turn-state：running 就打开 /api/turn-events——
+   * 服务端先重放缓冲，再实时扇出；这里复用 handleStreamEvent 的同一条
+   * 渲染路径，与正常回合完全一致。 */
+  function reattachRunningTurn() {
+    var key = S.sessionKey || "default";
+    getJSON("/api/turn-state?sessionKey=" + encodeURIComponent(key)).then(function (st) {
+      if (!st || !st.running || S.busy) { return; }
+      setBusy(true);
+      addNotice("检测到后台任务仍在运行 — 已重新接上（刷新 / 断网不再中断任务）", "info");
+      followTurnEvents(key, freshTurnState());
+    }).catch(function () { /* 服务端无此端点（旧版本）时静默 */ });
+  }
+
+  function followTurnEvents(key, state) {
+    fetch("/api/turn-events?sessionKey=" + encodeURIComponent(key), { headers: { Accept: "text/event-stream" } })
+      .then(function (res) {
+        if (!res.ok || !res.body) { throw new Error("HTTP " + res.status); }
+        var reader = res.body.getReader();
+        var dec = new TextDecoder();
+        var buf = "";
+        var replay = [];
+        function pump() {
+          return reader.read().then(function (r) {
+            if (r.done) { endTurn(state); return; }
+            buf += dec.decode(r.value, { stream: true });
+            var idx;
+            while ((idx = buf.indexOf("\n")) >= 0) {
+              var line = buf.slice(0, idx).trim();
+              buf = buf.slice(idx + 1);
+              if (line.indexOf("data:") !== 0) { continue; }
+              var raw = line.slice(5).trim();
+              if (!raw || raw === "[DONE]") { continue; }
+              var ev;
+              try { ev = JSON.parse(raw); } catch (e) { continue; }
+              if (ev.type === "turn_replay") {
+                // 只应用「最后一个已持久化边界」之后的事件：assistant_end /
+                // tool_end 之前的内容已随 2.5s 定期落盘进了会话文件，重放会
+                // 与 resumeSession 渲染的历史重复。
+                var boundary = -1;
+                for (var i = 0; i < replay.length; i++) {
+                  if (replay[i].type === "assistant_end" || replay[i].type === "tool_end") { boundary = i; }
+                }
+                for (var j = boundary + 1; j < replay.length; j++) {
+                  try { handleStreamEvent(replay[j], state); } catch (e) { /* 单事件失败不挡跟随 */ }
+                }
+                replay = null;
+                if (ev.done) { endTurn(state); return; }
+                continue;
+              }
+              if (replay) { replay.push(ev); }
+              else if (ev.type === "done") { endTurn(state); return; }
+              else {
+                try { handleStreamEvent(ev, state); } catch (e) { /* 单事件失败不挡跟随 */ }
+              }
+            }
+            return pump();
+          });
+        }
+        return pump();
+      })
+      .catch(function () { endTurn(state); });
   }
 
   function finalizeAssistantBranches(asst) {
@@ -5999,6 +6076,126 @@
     return null;
   }
 
+  /* ---- Skills（技能）：GUI 面板 + /技能名 passthrough。布局与 Claude Code
+   * 一致（.myclaude/skills/<名>/SKILL.md），模型经 skill_listing 自主调用。 ---- */
+  var skillsList = [];
+
+  function loadSkillsList() {
+    return getJSON("/api/skills").then(function (j) {
+      skillsList = j.skills || [];
+      refreshSkillBadge();
+      return skillsList;
+    }).catch(function () { skillsList = []; return []; });
+  }
+
+  function findSkill(name) {
+    var n = String(name || "").toLowerCase();
+    for (var i = 0; i < skillsList.length; i++) {
+      if (skillsList[i].name === n) { return skillsList[i]; }
+    }
+    return null;
+  }
+
+  function skillScopeLabel(scope) {
+    return scope === "builtin" ? "内置" : scope === "user" ? "用户级" : scope === "plugin" ? "插件" : "项目级";
+  }
+
+  function refreshSkillBadge() {
+    var b = $("skill-count");
+    if (b) { b.textContent = String(skillsList.length); }
+  }
+
+  function openSkillsManager() {
+    loadSkillsList().then(function () {
+      openModal("技能（" + skillsList.length + "）", function (body) {
+        var intro = el("div", "tools-intro");
+        intro.appendChild(el("b", null, String(skillsList.length)));
+        intro.appendChild(document.createTextNode(" 个技能 · 模型按描述自主调用；消息里输入 /技能名 也直接生效。新建技能写入 .myclaude/skills/<名>/SKILL.md，与 Claude Code 布局一致。"));
+        body.appendChild(intro);
+
+        var listBox = el("div", "skill-list");
+        body.appendChild(listBox);
+        skillsList.forEach(function (s) {
+          var row = el("div", "skill-row");
+          var main = el("div", "skill-main");
+          var head = el("div", "skill-head");
+          head.appendChild(el("b", null, "/" + s.name));
+          head.appendChild(el("span", "pill scope-" + s.scope, skillScopeLabel(s.scope)));
+          main.appendChild(head);
+          main.appendChild(el("div", "skill-desc", s.description || ""));
+          row.appendChild(main);
+          if (s.scope !== "builtin" && s.scope !== "plugin") {
+            var del = el("button", "model-action-btn skill-del", "删除");
+            del.type = "button";
+            del.title = "删除技能 " + s.name + "（同时移除磁盘目录）";
+            del.addEventListener("click", function () {
+              if (!window.confirm("删除技能 /" + s.name + "？将删除对应 SKILL.md 目录，不可恢复。")) { return; }
+              fetch("/api/skills/" + encodeURIComponent(s.name), { method: "DELETE" })
+                .then(function (r) { return r.json(); })
+                .then(function (j) {
+                  if (!j.ok) { toast("删除失败：" + (j.error || "未知错误"), "err"); return; }
+                  toast("已删除技能 /" + s.name, "ok");
+                  closeModal();
+                  openSkillsManager();
+                })
+                .catch(function (e) { toast("删除失败：" + e.message, "err"); });
+            });
+            row.appendChild(del);
+          }
+          listBox.appendChild(row);
+        });
+        if (!skillsList.length) {
+          listBox.appendChild(el("div", "empty-note", "还没有技能。用下方表单创建第一个技能。"));
+        }
+
+        var form = el("div", "skill-create");
+        form.appendChild(el("div", "skill-create-head", "新建 / 更新技能"));
+        var rowName = el("div", "skill-create-row");
+        var nameIn = el("input", "skill-input");
+        nameIn.type = "text";
+        nameIn.placeholder = "技能名（如 code-review；小写字母/数字/连字符）";
+        rowName.appendChild(nameIn);
+        var descIn = el("input", "skill-input");
+        descIn.type = "text";
+        descIn.placeholder = "一句话描述（模型靠它决定何时使用这个技能）";
+        rowName.appendChild(descIn);
+        form.appendChild(rowName);
+        var bodyIn = el("textarea", "skill-textarea");
+        bodyIn.rows = 8;
+        bodyIn.placeholder = "SKILL.md 正文：给模型的操作指南（步骤、注意事项、示例）。# 标题开头更清晰。";
+        form.appendChild(bodyIn);
+        var overRow = el("label", "skill-over-row");
+        var overChk = el("input");
+        overChk.type = "checkbox";
+        overRow.appendChild(overChk);
+        overRow.appendChild(document.createTextNode(" 同名时覆盖更新"));
+        form.appendChild(overRow);
+        var btnRow = el("div", "skill-btn-row");
+        var createBtn = el("button", "btn primary", "保存技能");
+        createBtn.type = "button";
+        createBtn.addEventListener("click", function () {
+          var payload = {
+            name: nameIn.value.trim(),
+            description: descIn.value.trim(),
+            body: bodyIn.value,
+            overwrite: overChk.checked
+          };
+          if (!payload.name) { toast("请先填技能名", "warn"); nameIn.focus(); return; }
+          if (!payload.body.trim()) { toast("技能正文不能为空", "warn"); bodyIn.focus(); return; }
+          postJSON("/api/skills", payload).then(function (j) {
+            if (!j.ok) { toast(j.error || "保存失败", "err"); return null; }
+            toast("技能 /" + j.name + " 已保存到 .myclaude/skills/" + j.name + "/SKILL.md", "ok");
+            closeModal();
+            return loadSkillsList().then(function () { openSkillsManager(); });
+          }).catch(function (e) { toast("保存失败：" + e.message, "err"); });
+        });
+        btnRow.appendChild(createBtn);
+        form.appendChild(btnRow);
+        body.appendChild(form);
+      }, [{ label: "关闭", fn: closeModal }], { wide: true });
+    });
+  }
+
   /** 把自定义命令展开成一次普通对话轮次。 */
   function runCustomCommand(cmd, args) {
     postJSON("/api/commands/run", { name: cmd.name, args: args }).then(function (j) {
@@ -6421,7 +6618,7 @@
     restart: function () { runServerCommand("restart"); },
     update: function () { runServerCommand("restart"); },
     memory: function (arg) { runServerCommand("memory", arg); },
-    skills: function () { runServerCommand("skills"); },
+    skills: function () { openSkillsManager(); },
     plugin: function () { runServerCommand("plugin"); },
     agents: function () { runServerCommand("agents"); },
     "release-notes": function () { runServerCommand("release-notes"); },
@@ -6504,7 +6701,11 @@
     import: function () { addNotice(guiUnsupported("import", "/attach <路径> 或 /add-dir <目录> 可把本地文件接入上下文"), "warn"); },
     "pause-memory": function (arg) { guiBool("pause-memory", arg, "memoryPaused", { onText: "记忆读取偏好已暂停", offText: "记忆读取偏好已恢复" }); },
     "reload-plugins": function () { runServerCommand("plugin"); },
-    "reload-skills": function () { runServerCommand("skills"); },
+    "reload-skills": function () {
+      loadSkillsList().then(function (list) {
+        toast("技能已重新加载：当前 " + list.length + " 个", "ok");
+      });
+    },
     rename: function (arg) { return EXTRA_COMMANDS.title(arg); },
     statusline: function (arg) {
       var v = String(arg || "").trim();
@@ -6780,6 +6981,17 @@
         // TUI 有而 GUI 原先没有的内建命令，走 EXTRA_COMMANDS 注册表补齐。
         var extra = EXTRA_COMMANDS[cmd];
         if (extra) { extra(arg); break; }
+        // /技能名 passthrough（对齐 agent 层 skill_mention 契约）：按原文发给
+        // agent，由 skill_mention 附件提示模型调用 Skill 工具。此前 GUI 把
+        // 技能名当成「未知命令」拦下，技能在界面里永远用不了。
+        var skill = findSkill(cmd);
+        if (skill) {
+          if (S.busy) { toast("任务运行中，请先停止或等它结束", "warn"); break; }
+          addUserMessage(text, []);
+          S.lastUserText = text;
+          runTurn({ message: text, sessionKey: S.sessionKey, attachments: [] });
+          break;
+        }
         addNotice("未知命令：/" + cmd + "（试试 /help 或 /commands）", "warn");
       }
     }
@@ -6990,6 +7202,8 @@
     if (bFiles) { bFiles.addEventListener("click", function () { openFiles(); }); }
     var bTools = $("btn-tools");
     if (bTools) { bTools.addEventListener("click", openTools); }
+    var bSkills = $("btn-skills");
+    if (bSkills) { bSkills.addEventListener("click", openSkillsManager); }
     var bSessions = $("btn-sessions");
     if (bSessions) { bSessions.addEventListener("click", openSessions); }
     var bSettings = $("btn-settings");
@@ -10550,7 +10764,7 @@ function switchInspectorTab(tab) {
   var cmdIndex = 0;
   var cmdMatches = [];
 
-  /** 内建命令 + 自定义命令，供斜杠菜单与命令面板共用。 */
+  /** 内建命令 + 自定义命令 + 技能，供斜杠菜单与命令面板共用。 */
   function allCommands() {
     var list = COMMANDS.slice();
     customCommands.forEach(function (c) {
@@ -10560,6 +10774,15 @@ function switchInspectorTab(tab) {
         k: k,
         d: c.description + (c.scope === "user" ? "（用户）" : "（项目）"),
         fn: function () { runCustomCommand(c, ""); }
+      });
+    });
+    skillsList.forEach(function (s) {
+      var k = "/" + s.name;
+      if (list.some(function (x) { return x.k === k; })) { return; }
+      list.push({
+        k: k,
+        d: (s.scope === "builtin" ? "内置技能 · " : s.scope === "user" ? "用户技能 · " : s.scope === "plugin" ? "插件技能 · " : "项目技能 · ") + s.description,
+        fn: function () { runCommand(k); }
       });
     });
     return list;
@@ -11237,6 +11460,7 @@ function switchInspectorTab(tab) {
     if (params.get("motion") === "off") { applyMotion(false); }
 
     loadCustomCommands();
+    loadSkillsList();
     renderWelcomeCards();
     renderChatSkeleton();
     bindEvents();
@@ -11279,6 +11503,10 @@ function switchInspectorTab(tab) {
 
     var ta = $("in");
     if (ta) { ta.focus(); }
+
+    // 会话恢复（resumeSession）是异步的；给它 1.6s 完成后再查后台任务，
+    // 运行中的回合会被接回界面（断线续跑）。S.busy 已置位时跳过。
+    setTimeout(reattachRunningTurn, 1600);
   }
 
   if (document.readyState === "loading") {

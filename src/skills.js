@@ -11,7 +11,7 @@
  *
  * Project skills override user skills of the same name.
  */
-import { readdirSync, readFileSync, existsSync, statSync } from "node:fs";
+import { readdirSync, readFileSync, existsSync, statSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { join, resolve, basename } from "node:path";
 import { CONFIG_DIR } from "./config.js";
 import { splitFrontMatter } from "./commands.js";
@@ -112,6 +112,65 @@ function firstLine(text) {
 export function findSkill(name, cwd = process.cwd()) {
   const key = String(name || "").toLowerCase();
   return loadSkills(cwd).find((s) => s.name === key) || null;
+}
+
+/**
+ * Create (or, with overwrite, replace) a project-level skill.
+ *
+ * The GUI's skill manager and any script that "installs" a skill land here so
+ * the layout always matches what loadSkills reads: one directory per skill
+ * containing SKILL.md, under the project root — files stay portable and
+ * version-controllable, the same way Claude Code stores them.
+ *
+ * @param {{cwd?: string, name: string, description?: string, body: string, overwrite?: boolean}} opts
+ * @returns {{ok: true, file: string, name: string} | {ok: false, error: string}}
+ */
+export function createSkill({ cwd = process.cwd(), name, description = "", body = "", overwrite = false }) {
+  const clean = String(name || "").trim().toLowerCase();
+  if (!/^[a-z0-9][a-z0-9_-]{0,63}$/.test(clean)) {
+    return { ok: false, error: "技能名只能用小写字母、数字、连字符或下划线（1-64 字符）" };
+  }
+  if (!String(body || "").trim()) { return { ok: false, error: "技能正文（SKILL.md 内容）不能为空" }; }
+  const dir = join(projectRootOf(cwd), ".myclaude", "skills", clean);
+  const file = join(dir, SKILL_FILE);
+  if (!overwrite && existsSync(file)) {
+    return { ok: false, error: "技能 " + clean + " 已存在 — 再次提交并勾选覆盖可更新它" };
+  }
+  try {
+    mkdirSync(dir, { recursive: true });
+    const desc = String(description || "").replace(/\s*\r?\n\s*/g, " ").trim().slice(0, 200);
+    const front = ["---", "name: " + clean, "description: " + desc, "---", ""].join("\n");
+    const text = String(body).replace(/\r\n/g, "\n").trim();
+    writeFileSync(file, front + "\n" + text + "\n", "utf8");
+  } catch (err) {
+    return { ok: false, error: "写入失败：" + (err && err.message ? err.message : err) };
+  }
+  return { ok: true, file, name: clean };
+}
+
+/**
+ * Delete a user- or project-level skill directory by name. Plugin skills are
+ * owned by their plugin and builtins live in code, so neither is touched.
+ *
+ * @returns {{ok: true, scope: string} | {ok: false, error: string}}
+ */
+export function deleteSkill(name, cwd = process.cwd()) {
+  const clean = String(name || "").trim().toLowerCase();
+  if (!clean) { return { ok: false, error: "缺少技能名" }; }
+  let removed = null;
+  for (const { dir, scope } of skillDirs(cwd)) {
+    if (scope === "plugin") { continue; }
+    const target = join(dir, clean);
+    try {
+      if (existsSync(join(target, SKILL_FILE))) {
+        rmSync(target, { recursive: true, force: true });
+        removed = scope;
+      }
+    } catch { /* 下一个候选 */ }
+  }
+  return removed
+    ? { ok: true, scope: removed }
+    : { ok: false, error: "没有可删除的技能 " + clean + "（内置技能不可删除）" };
 }
 
 /**

@@ -4,8 +4,10 @@
  * Three live defects behind "I stopped a task and now nothing runs":
  *  - run() never cleared stopRequested, so every later turn on the same
  *    agent short-circuited to (interrupted) forever
- *  - closing the browser tab (refresh) left the run hanging on an SSE nobody
- *    reads: the running flag stayed set and new chats got 409
+ *  - closing the browser tab (refresh) used to abort the whole run: any
+ *    refresh / network blip cut the task in half. Since 2026-11-14 a
+ *    disconnect only detaches the SSE — the run keeps going, events buffer
+ *    in the turn bus, and a fresh page reattaches via /api/turn-events.
  *  - a pending ask-question dialog vanished on refresh but the agent kept
  *    waiting for an answer that can never arrive
  */
@@ -40,17 +42,25 @@ test("a new run clears the stale stop flag (RC1)", async () => {
 
 async function start() {
   const state = { hang: false, script: [] };
+  const DELAY_MS = 2500;
+  const writeTurn = (res, next) => {
+    res.writeHead(200, { "Content-Type": "text/event-stream" });
+    res.write("data: " + JSON.stringify({ choices: [{ delta: { content: next.text } }] }) + "\n\n");
+    res.write("data: " + JSON.stringify({ choices: [{ delta: {}, finish_reason: "stop" }] }) + "\n\n");
+    res.write("data: [DONE]\n\n");
+    res.end();
+  };
   const backend = createServer((req, res) => {
     let data = "";
     req.on("data", (c) => (data += c));
     req.on("end", () => {
-      if (state.hang) { res.writeHead(200, { "Content-Type": "text/event-stream" }); return; }
-      const next = state.script.shift() || { text: "done" };
-      res.writeHead(200, { "Content-Type": "text/event-stream" });
-      res.write("data: " + JSON.stringify({ choices: [{ delta: { content: next.text } }] }) + "\n\n");
-      res.write("data: " + JSON.stringify({ choices: [{ delta: {}, finish_reason: "stop" }] }) + "\n\n");
-      res.write("data: [DONE]\n\n");
-      res.end();
+      // 「慢响应」而不是「永不响应」：断线续跑的语义是任务照常跑完，
+      // 不需要等 provider 空闲超时（那样一个用例要 90 秒+）。
+      if (state.hang) {
+        setTimeout(() => writeTurn(res, state.script.shift() || { text: "late" }), DELAY_MS);
+        return;
+      }
+      writeTurn(res, state.script.shift() || { text: "done" });
     });
   });
   await new Promise((r) => backend.listen(0, "127.0.0.1", r));
@@ -81,7 +91,7 @@ async function stop(ctx) {
   ]);
 }
 
-test("client disconnect aborts the run and frees the session (RC2)", async () => {
+test("client disconnect keeps the run alive; a fresh page reattaches (RC2, 2026-11-14 semantics)", async () => {
   const ctx = await start();
   try {
     ctx.state.hang = true;
@@ -93,13 +103,33 @@ test("client disconnect aborts the run and frees the session (RC2)", async () =>
     await new Promise((r) => setTimeout(r, 600));
     const busy0 = await (await fetch(ctx.address + "/api/busy?sessionKey=disc")).json();
     assert.equal(busy0.busy, true, "running flag set during the hang");
-    ctrl.abort(); // the browser closes / refreshes
+    const st0 = await (await fetch(ctx.address + "/api/turn-state?sessionKey=disc")).json();
+    assert.equal(st0.running, true, "turn-state reports running during the hang");
+    ctrl.abort(); // the browser closes / refreshes — SSE goes away
     await p;
-    await new Promise((r) => setTimeout(r, 800));
+    await new Promise((r) => setTimeout(r, 500));
+    // 语义翻转：断开不再杀回合，任务仍在后台跑（刷新/断网不再中断任务）。
     const busy1 = await (await fetch(ctx.address + "/api/busy?sessionKey=disc")).json();
-    assert.equal(busy1.busy, false, "disconnect must release the session");
-    // A new chat on the same key must now run normally (no 409).
+    assert.equal(busy1.busy, true, "disconnect must NOT abort the run");
+    // A new chat on the same key still 409s while the run is alive.
     ctx.state.hang = false;
+    const res409 = await fetch(ctx.address + "/api/chat", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: "插队", sessionKey: "disc" }),
+    });
+    assert.equal(res409.status, 409, "second chat is refused while the first is running");
+
+    // 重连：/api/turn-events 重放缓冲 + 跟随，直到回合结束。
+    const follow = await fetch(ctx.address + "/api/turn-events?sessionKey=disc");
+    assert.equal(follow.status, 200);
+    const followText = await follow.text();
+    const followEvents = followText.split("\n").filter((l) => l.startsWith("data:")).map((l) => { try { return JSON.parse(l.slice(5).trim()); } catch { return null; } }).filter(Boolean);
+    assert.ok(followEvents.some((e) => e.type === "turn_replay"), "replay marker present");
+    assert.ok(followEvents.some((e) => e.type === "done"), "reattached stream reaches done");
+    await new Promise((r) => setTimeout(r, 500));
+    const busy2 = await (await fetch(ctx.address + "/api/busy?sessionKey=disc")).json();
+    assert.equal(busy2.busy, false, "run finished on its own; session freed");
+    // A new chat on the same key must now run normally (no 409).
     ctx.state.script.push({ text: "ok new" });
     const res = await fetch(ctx.address + "/api/chat", {
       method: "POST", headers: { "Content-Type": "application/json" },

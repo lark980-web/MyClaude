@@ -34,7 +34,7 @@ import {
 } from "../session.js";
 import { loadGuiAssets } from "./assets.js";
 import { loadCommands, findCommand, expandCommand } from "../commands.js";
-import { loadSkills, loadAgents } from "../skills.js";
+import { loadSkills, loadAgents, createSkill, deleteSkill } from "../skills.js";
 import { loadPlugins } from "../plugins.js";
 import { loadMemory, memoryFilePath, appendMemory } from "../agent/permissions.js";
 import { inspectProject, renderProjectMemory } from "../project-memory.js";
@@ -183,6 +183,19 @@ const running = new Set();
   const confirmResolvers = new Map();
   const questionResolvers = new Map();
 
+  // Graceful-shutdown flush: Ctrl+C or a clean close must persist every
+  // session still in memory. (A force-kill cannot run handlers — that is
+  // what the mid-run interval flush covers.) "exit" handlers must be sync;
+  // saveSession is. 这段原先被误粘进 gitNumstat 的 git-failed 分支，导致
+  // 信号处理只在 git 出错后才注册——正常运行的进程根本没有优雅关机。
+  const flushAllSavers = () => {
+    for (const [, s] of savers) { try { s.save({ force: true }); } catch {} }
+  };
+  process.once("exit", flushAllSavers);
+  for (const sig of ["SIGINT", "SIGTERM"]) {
+    process.on(sig, () => { flushAllSavers(); process.exit(0); });
+  }
+
   /**
    * The interactive prompt a session is currently blocked on, if any.
    *
@@ -205,6 +218,66 @@ const running = new Set();
 const sse = (res, event) => {
     if (res.writableEnded || res.destroyed) return;
     try { res.write(`data: ${JSON.stringify(event)}\n\n`); } catch { /* client is gone; the run itself must not die from a write */ }
+  };
+
+  /* ---- Turn event bus：断线续跑的核心 ----
+   * 回合事件写进每会话缓冲，再向所有挂接的 SSE 客户端扇出。浏览器刷新、
+   * 睡眠、Wi-Fi 抖动把 SSE 掐断时，回合**不再被 abort**——后台继续跑，
+   * 刷新后的页面经 /api/turn-events 重放缓冲并继续实时跟随。
+   * 此前「断开即杀回合」让任何一次页面刷新都把任务拦腰打断。 */
+  const turnBus = new Map();
+  const TURN_BUS_MAX_BYTES = 2 * 1024 * 1024;
+  const TURN_BUS_TTL_MS = 120000;
+
+  const turnStart = (key) => {
+    const bus = { seq: 0, events: [], clients: new Set(), bytes: 0, done: false, startedAt: Date.now(), ttlTimer: null };
+    turnBus.set(key, bus);
+    return bus;
+  };
+
+  const turnEmit = (key, ev) => {
+    const bus = turnBus.get(key);
+    if (!bus) { return; }
+    const payload = { ...ev, seq: bus.seq++ };
+    try {
+      const size = JSON.stringify(payload).length;
+      if (bus.bytes + size <= TURN_BUS_MAX_BYTES) {
+        bus.events.push(payload);
+        bus.bytes += size;
+      } else if (!bus.events.some((e) => e && e.type === "bus_overflow")) {
+        bus.events.push({ type: "info", text: "（事件缓冲已达上限：更早的中间输出不再回放，会话内容仍完整落盘）", seq: bus.seq++ });
+      }
+    } catch { /* 序列化失败不挡回合 */ }
+    for (const client of bus.clients) {
+      if (!client.writableEnded && !client.destroyed) { sse(client, payload); }
+    }
+    return payload;
+  };
+
+  const turnAttach = (key, res) => {
+    let bus = turnBus.get(key);
+    if (!bus) { bus = turnStart(key); }
+    bus.clients.add(res);
+    res.on("close", () => {
+      const b = turnBus.get(key);
+      if (b) { b.clients.delete(res); }
+    });
+    return bus;
+  };
+
+  /** 回合收束：通知跟随者、摘除客户端；缓冲再留 2 分钟给最后关头的重连。 */
+  const turnFinish = (key) => {
+    const bus = turnBus.get(key);
+    if (!bus) { return; }
+    bus.done = true;
+    turnEmit(key, { type: "done" });
+    for (const client of [...bus.clients]) {
+      bus.clients.delete(client);
+      try { client.end(); } catch { /* 已经断了 */ }
+    }
+    if (bus.ttlTimer) { clearTimeout(bus.ttlTimer); }
+    bus.ttlTimer = setTimeout(() => { turnBus.delete(key); }, TURN_BUS_TTL_MS);
+    if (typeof bus.ttlTimer.unref === "function") { bus.ttlTimer.unref(); }
   };
 
 
@@ -234,20 +307,22 @@ const sse = (res, event) => {
       "X-Accel-Buffering": "no"
     });
     res.flushHeaders?.();
+    // 断线续跑与自研分支同语义：事件进 turnBus 缓冲，连接断了任务照跑。
+    turnAttach(key, res);
     // 前端靠 session 事件 adopt id；上游模式沿用同一个 key
-    sse(res, { type: "session", id: key, file: null });
+    turnEmit(key, { type: "session", id: key, file: null });
     const bound = upstreamBoundSession(key);
     const r = await streamUpstreamTurn({
       prompt: message, model: config.model, baseUrl: config.baseUrl, apiKey: config.apiKey,
       cwd, timeoutMs: config.engineIdleMs, maxMs: config.engineMaxMs, permissionMode: config.permissionMode, additionalDirectories: config.additionalDirectories, resumeSessionId: bound,
-      onEvent: (ev) => sse(res, ev),
+      onEvent: (ev) => turnEmit(key, ev),
       onChild: (child) => upstreamChildren.set(key, child),
     });
     upstreamChildren.delete(key);
     if (!r.ok) {
-      sse(res, { type: "error", text: r.timedOut ? describeTimeout(r) : ("原生引擎失败" + (r.error ? "：" + r.error : "")) });
-      sse(res, { type: "assistant_end" });
-      sse(res, { type: "done" });
+      turnEmit(key, { type: "error", text: r.timedOut ? describeTimeout(r) : ("原生引擎失败" + (r.error ? "：" + r.error : "")) });
+      turnEmit(key, { type: "assistant_end" });
+      turnFinish(key);
       res.end();
       return;
     }
@@ -263,10 +338,10 @@ const sse = (res, event) => {
           permissionMode: config.permissionMode, turnCount: (prev && prev.turnCount || 0) + 1,
           version: VERSION, ui: "web", engine: "upstream",
         });
-      } catch (e) { sse(res, { type: "warn", text: "会话落盘失败：" + e.message }); }
+      } catch (e) { turnEmit(key, { type: "warn", text: "会话落盘失败：" + e.message }); }
     }
     if (r.sessionId) bindUpstreamSession(key, r.sessionId);
-    sse(res, { type: "done" });
+    turnFinish(key);
     res.end();
   }
 
@@ -311,18 +386,7 @@ const gitNumstat = (scope, onlyPaths) => {
   if (r.error || (r.status !== 0 && r.status !== 1)) {
     const msg = String(r.stderr || "");
     if (/not a git repository/i.test(msg)) { return { ok: false, reason: "non-git" }; }
-    // Graceful-shutdown flush: Ctrl+C or a clean close must persist every
-  // session still in memory. (A force-kill cannot run handlers — that is
-  // what the mid-run interval flush covers.) "exit" handlers must be sync;
-  // saveSession is.
-  const flushAllSavers = () => {
-    for (const [, s] of savers) { try { s.save({ force: true }); } catch {} }
-  };
-  process.once("exit", flushAllSavers);
-  for (const sig of ["SIGINT", "SIGTERM"]) {
-    process.on(sig, () => { flushAllSavers(); process.exit(0); });
-  }
-  return { ok: false, reason: "git-failed", error: msg.slice(0, 200) };
+    return { ok: false, reason: "git-failed", error: msg.slice(0, 200) };
   }
   const statusMap = {};
   for (const line of String(run(statusArgs).stdout || "").split("\n")) {
@@ -458,18 +522,18 @@ function buildConfirmDiff(name, args) {
   return files.length ? files : null;
 }
 
-  /** UI adapter: every method maps onto one SSE event. */
-  const makeUi = (res, key = "default") => ({
-    streamText: (t) => sse(res, { type: "delta", text: t }),
-    reasoningText: (t) => sse(res, { type: "reasoning", text: t }),
-    endStream: () => sse(res, { type: "assistant_end" }),
-    info: (t) => sse(res, { type: "info", text: String(t) }),
-    warn: (t) => sse(res, { type: "warn", text: String(t) }),
-    error: (t) => sse(res, { type: "error", text: String(t) }),
-    success: (t) => sse(res, { type: "success", text: String(t) }),
-    toolStart: (name, args) => sse(res, { type: "tool_start", call: { name, args } }),
+  /** UI adapter: every method maps onto one turn-bus event (fan-out to SSE clients). */
+  const makeUi = (key = "default") => ({
+    streamText: (t) => turnEmit(key, { type: "delta", text: t }),
+    reasoningText: (t) => turnEmit(key, { type: "reasoning", text: t }),
+    endStream: () => turnEmit(key, { type: "assistant_end" }),
+    info: (t) => turnEmit(key, { type: "info", text: String(t) }),
+    warn: (t) => turnEmit(key, { type: "warn", text: String(t) }),
+    error: (t) => turnEmit(key, { type: "error", text: String(t) }),
+    success: (t) => turnEmit(key, { type: "success", text: String(t) }),
+    toolStart: (name, args) => turnEmit(key, { type: "tool_start", call: { name, args } }),
     toolEnd: (name, ok, elapsed, output, extra) =>
-      sse(res, {
+      turnEmit(key, {
         type: "tool_end",
         name,
         ok,
@@ -483,7 +547,7 @@ function buildConfirmDiff(name, args) {
       new Promise((resolve) => {
         const id = Math.random().toString(36).slice(2);
         confirmResolvers.set(id, { key, resolve, name, args });
-        sse(res, { type: "confirm", id, name, args, diff: buildConfirmDiff(name, args) });
+        turnEmit(key, { type: "confirm", id, name, args, diff: buildConfirmDiff(name, args) });
         setTimeout(() => {
           if (confirmResolvers.has(id)) {
             confirmResolvers.delete(id);
@@ -495,7 +559,7 @@ function buildConfirmDiff(name, args) {
       new Promise((resolve) => {
         const id = Math.random().toString(36).slice(2);
         questionResolvers.set(id, { key, resolve, questions });
-        sse(res, { type: "question", id, questions });
+        turnEmit(key, { type: "question", id, questions });
         setTimeout(() => {
           if (questionResolvers.has(id)) {
             questionResolvers.delete(id);
@@ -506,13 +570,13 @@ function buildConfirmDiff(name, args) {
   });
 
   /** Per-turn UI whose todo events mirror the TodoWrite list. */
-const makeTurnUi = (res, key) => {
-    const base = makeUi(res, key);
+const makeTurnUi = (key) => {
+    const base = makeUi(key);
     return {
       ...base,
       toolEnd: (name, ok, elapsed, output, extra) => {
         base.toolEnd(name, ok, elapsed, output, extra);
-        if (name === "TodoWrite") sse(res, { type: "todos", todos: getTodos(key) });
+        if (name === "TodoWrite") turnEmit(key, { type: "todos", todos: getTodos(key) });
       }
     };
   };
@@ -523,7 +587,7 @@ const makeTurnUi = (res, key) => {
    * 8 秒超时兜底，失败静默——标题只是锦上添花，绝不能把回合拖死。 */
   const autoTitled = new Set();
 
-  async function emitAutoTitle(res, agent, saver) {
+  async function emitAutoTitle(key, agent, saver) {
     try {
       // autoTitle: false 时整个功能关闭（设置中心可切；测试用它解耦竞态）
       if (config.autoTitle === false) { return; }
@@ -563,7 +627,7 @@ const makeTurnUi = (res, key) => {
       const title = raw.replace(/^["'「『]+|["'」』。.]+$/g, "").replace(/\s+/g, " ").slice(0, 40);
       if (!title) { return; }
       setSessionTitle(id, title);
-      if (!res.writableEnded) { sse(res, { type: "session_title", title }); }
+      turnEmit(key, { type: "session_title", title });
     } catch {}
   }
 
@@ -686,25 +750,33 @@ const statsOf = (agent) => {
  * stalled typing "@" for 10s+ per keystroke. The index is cached with a TTL
  * and rebuilt in the background, so requests always answer from memory.
  */
-const fileIndex = { at: 0, building: false, list: [] };
+const fileIndex = { at: 0, building: false, list: [], built: false, pending: null };
 
 function buildFileIndex() {
   const root = resolve(cwd);
   const results = [];
-  const skipDirs = new Set(["node_modules", ".git", "dist", "build", ".next", "coverage", ".myclaude", "mitm-logs", ".cdp-profile", "scratch"]);
-  function walkSync(dir, depth) {
-    if (depth > 5 || results.length >= 400) return;
+  const MAX = 1500;
+  const skipDirs = new Set(["node_modules", ".git", "dist", "build", ".next", "coverage", ".myclaude", "mitm-logs", ".cdp-profile", "scratch", ".re", "shots", ".local"]);
+  // BFS 而不是 DFS：先收浅层（根、一级子目录），再往深处走。此前 DFS 配 400
+  // 条上限，根目录一堆导出文件就把配额耗光，src/、test/、docs/ 整个进不了
+  // 索引 —— @ 菜单搜 skills 都搜不到 src/skills.js。
+  const queue = [[root, 0]];
+  while (queue.length && results.length < MAX) {
+    const [dir, depth] = queue.shift();
+    if (depth > 5) continue;
     let entries = [];
-    try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    try { entries = readdirSync(dir, { withFileTypes: true }); } catch { continue; }
     for (const e of entries) {
-      if (skipDirs.has(e.name)) continue;
+      if (results.length >= MAX) break;
+      // 误敲 shell 重定向产生的垃圾目录（-Force、%SystemDrive% 这类）不该进索引
+      if (skipDirs.has(e.name) || /^[-%]/.test(e.name)) continue;
       const full = join(dir, e.name);
       const relAny = relative(root, full).replace(/\\/g, "/");
       if (e.isDirectory()) {
         // 目录也进索引（rel 带尾斜杠）：@ 菜单支持「进目录继续找」，
         // 与 Claude Code 的 @ 目录浏览行为一致。
-        if (results.length < 400) { results.push({ name: e.name, rel: relAny + "/", path: full, size: 0, isDir: true }); }
-        walkSync(full, depth + 1);
+        results.push({ name: e.name, rel: relAny + "/", path: full, size: 0, isDir: true });
+        queue.push([full, depth + 1]);
         continue;
       }
       const ext = extname(e.name).toLowerCase();
@@ -714,25 +786,35 @@ function buildFileIndex() {
       results.push({ name: e.name, rel: relAny, path: full, size });
     }
   }
-  walkSync(resolve(cwd), 0);
   results.sort((a, b) => a.rel.length - b.rel.length || a.rel.localeCompare(b.rel));
   return results;
 }
 
+/**
+ * 返回正在进行的构建 Promise（可能为 null）。TTL 内直接命中缓存；
+ * 列表为空的首次构建期间到达的请求会拿到 pending —— searchWorkspaceFiles
+ * 要等它，否则返回 [] 让 @ 菜单「闪一下就消失」。
+ */
 function ensureFileIndex() {
   const now = Date.now();
-  if (fileIndex.building) return;
-  if (now - fileIndex.at < 60000 && fileIndex.list.length) return;
+  if (fileIndex.building) { return fileIndex.pending; }
+  if (now - fileIndex.at < 60000 && fileIndex.list.length) { return null; }
   fileIndex.at = now;
   fileIndex.building = true;
-  setImmediate(() => {
-    try { fileIndex.list = buildFileIndex(); fileIndex.at = Date.now(); } catch {}
-    fileIndex.building = false;
+  fileIndex.pending = new Promise((done) => {
+    setImmediate(() => {
+      try { fileIndex.list = buildFileIndex(); fileIndex.built = true; fileIndex.at = Date.now(); } catch {}
+      fileIndex.building = false;
+      done();
+    });
   });
+  return fileIndex.pending;
 }
 
 async function searchWorkspaceFiles(query = "", limit = 40) {
-  ensureFileIndex();
+  const pending = ensureFileIndex();
+  // 只在「索引还从未建好」时等 —— TTL 重建期间老索引仍然可用，不必等。
+  if (pending && !fileIndex.built) { await pending; }
   const q = String(query || "").trim().toLowerCase();
   const hits = fileIndex.list.filter((f) => !q || f.rel.toLowerCase().includes(q) || f.name.toLowerCase().includes(q));
   hits.sort((a, b) => {
@@ -1311,6 +1393,38 @@ async function searchWorkspaceFiles(query = "", limit = 40) {
           return;
         }
         sendJson(res, 200, { ok: true, prompt: expandCommand(cmd, String(body.args || "")), name: cmd.name });
+        return;
+      }
+
+      /* ---- skills：JSON 列表 + 创建/删除（GUI 技能管理面板的数据面） ---- */
+      if (path === "/api/skills" && req.method === "GET") {
+        sendJson(res, 200, {
+          skills: loadSkills(cwd).map((s) => ({
+            name: s.name,
+            description: s.description,
+            scope: s.scope,
+            allowedTools: s.allowedTools || "",
+            file: s.file || "",
+          })),
+        });
+        return;
+      }
+      if (path === "/api/skills" && req.method === "POST") {
+        const body = await readJson(req);
+        const r = createSkill({
+          cwd,
+          name: body.name,
+          description: body.description,
+          body: body.body,
+          overwrite: Boolean(body.overwrite),
+        });
+        sendJson(res, r.ok ? 200 : 400, r);
+        return;
+      }
+      if (path.startsWith("/api/skills/") && req.method === "DELETE") {
+        const n = decodeURIComponent(path.slice("/api/skills/".length));
+        const r = deleteSkill(n, cwd);
+        sendJson(res, r.ok ? 200 : 404, r);
         return;
       }
 
@@ -2302,6 +2416,43 @@ async function searchWorkspaceFiles(query = "", limit = 40) {
         return;
       }
 
+      /* ---- 断线重连：查状态 / 接回仍在跑的回合 ----
+       * 页面加载时先 GET turn-state：running=true 就以跟随模式打开
+       * turn-events（重放缓冲 + 实时扇出），而不是再发一条消息撞 409。 */
+      if (path === "/api/turn-state" && req.method === "GET") {
+        const key = keyOf(url.searchParams.get("sessionKey") ? { sessionKey: url.searchParams.get("sessionKey") } : {});
+        const bus = turnBus.get(key);
+        sendJson(res, 200, {
+          running: running.has(key),
+          pending: pendingFor(key) != null,
+          events: bus ? bus.events.length : 0,
+          startedAt: bus ? bus.startedAt : null,
+          done: bus ? bus.done : false,
+        });
+        return;
+      }
+      if (path === "/api/turn-events" && req.method === "GET") {
+        const key = keyOf(url.searchParams.get("sessionKey") ? { sessionKey: url.searchParams.get("sessionKey") } : {});
+        res.writeHead(200, {
+          "Content-Type": "text/event-stream; charset=utf-8",
+          "Cache-Control": "no-cache, no-transform",
+          Connection: "keep-alive",
+          "X-Accel-Buffering": "no"
+        });
+        res.flushHeaders?.();
+        const bus = turnBus.get(key);
+        if (bus) {
+          for (const ev of bus.events) { sse(res, ev); }
+          sse(res, { type: "turn_replay", count: bus.events.length, done: bus.done });
+          if (bus.done) { res.end(); return; }
+        } else {
+          sse(res, { type: "turn_replay", count: 0, done: !running.has(key) });
+          if (!running.has(key)) { res.end(); return; }
+        }
+        turnAttach(key, res);
+        return;
+      }
+
       /* ---- abort ---- */
       if (path === "/api/abort" && req.method === "POST") {
         const body = await readJson(req);
@@ -2355,21 +2506,16 @@ async function searchWorkspaceFiles(query = "", limit = 40) {
         let flushTimer = null;
         let progressTimer = null;
         let runStartedAt = Date.now();
-        // A closed browser tab (refresh or navigate) is a disconnect, not a
-        // pause: nobody reads the SSE any more, so stop the run at once and
-        // release the session. Leaving it hanging was what made a refresh
-        // brick the conversation — new tasks hit 409 and the stop button was
-        // gone because the fresh page believed the session was idle.
+        // 断开 ≠ 中止（2026-11-14 语义修正）：浏览器刷新/断网只是「没人看直播」，
+        // 回合事件继续写进 turnBus 缓冲，刷新后的页面用 /api/turn-events 接回来。
+        // 此前这里直接 abort 整个回合——刷新、睡眠、网络抖动都会把任务拦腰打断，
+        // 这是用户主诉「任务执行过程中中断」的直接根因。挂着的确认/提问框不受
+        // 影响：刷新页从 resume 响应里重渲染卡片，答案仍走 /api/answer；
+        // 没人回来时确认框自身的 120s 超时会兜底放行。
         res.on("close", () => {
           if (turnFinished) { return; }
-          // Blocked on the user? Keep it alive: the refreshed page re-renders the
-          // prompt from pendingFor() and the answer arrives via /api/answer.
-          if (pendingFor(key)) { return; }
-          flushInteractive(key);
-          const a = sessions.get(key);
-          if (a && typeof a.abort === "function") { a.abort(); }
-          const up = upstreamChildren.get(key);
-          if (up) { try { up.kill(); } catch { /* 已退出 */ } upstreamChildren.delete(key); }
+          const bus = turnBus.get(key);
+          if (bus) { for (const c of [...bus.clients]) { if (c === res) { bus.clients.delete(c); } } }
         });
         // 阶段 1：执行后端分流。默认 self（自研 agent，零回归）；
         // upstream 时走原生 Claude Code 引擎，事件翻译成同一套 SSE。
@@ -2391,8 +2537,10 @@ running.add(key);
           "X-Accel-Buffering": "no"
         });
         res.flushHeaders?.();
+        // 挂进 turnBus：本回合所有事件经缓冲扇出；连接断开只摘客户端，不杀回合。
+        turnAttach(key, res);
 
-        const ui = consoleUi(makeTurnUi(res, key), key);
+        const ui = consoleUi(makeTurnUi(key), key);
         const agent = await agentFor(key, ui);
         const saver = saverFor(key, agent);
         // Force-close resilience: saving only at turn end meant a killed
@@ -2403,8 +2551,7 @@ running.add(key);
         // 实时进度：执行中每秒推一次耗时与累计 token。stats 事件原本只在
         // 回合结束时发一次，界面上的「正在执行…」条拿不到过程数据。
         progressTimer = setInterval(() => {
-          if (res.writableEnded || res.destroyed) return;
-          sse(res, {
+          turnEmit(key, {
             type: "progress",
             elapsedMs: Date.now() - runStartedAt,
             inputTokens: agent ? (agent.totalInputTokens || 0) : 0,
@@ -2435,7 +2582,7 @@ running.add(key);
           // Await it: without this the save and the "done" event raced the
           // compaction, so the stored history could keep the pre-compaction tail.
           const compacted = await agent.maybeCompact?.();
-        if (compacted) { sse(res, { type: "compact", dropped: compacted.dropped }); }
+        if (compacted) { turnEmit(key, { type: "compact", dropped: compacted.dropped }); }
         } catch (e) {
           ui.error(`agent error: ${e.message}`);
         }
@@ -2444,17 +2591,17 @@ running.add(key);
         // like the task had died. The frontend turns this into a "continue"
         // button instead of leaving the user with an English warning.
         if (runResult && runResult.maxTurnsReached) {
-          sse(res, { type: "max_turns", limit: config.maxTurns });
+          turnEmit(key, { type: "max_turns", limit: config.maxTurns });
         }
         // finish_reason=length：回复被 max_tokens 截断，前端给「继续生成」。
         if (runResult && runResult.finishReason === "length") {
-          sse(res, { type: "truncated" });
+          turnEmit(key, { type: "truncated" });
         }
         try { saver.save({ force: true }); } catch {}
-        sse(res, { type: "todos", todos: getTodos(key) });
-        sse(res, { type: "stats", ...statsOf(agent) });
-        sse(res, { type: "mode", permissionMode: agent.mode ?? config.permissionMode });
-        if (agent.routingStatus) sse(res, { type: "routing", ...agent.routingStatus() });
+        turnEmit(key, { type: "todos", todos: getTodos(key) });
+        turnEmit(key, { type: "stats", ...statsOf(agent) });
+        turnEmit(key, { type: "mode", permissionMode: agent.mode ?? config.permissionMode });
+        if (agent.routingStatus) turnEmit(key, { type: "routing", ...agent.routingStatus() });
         // Re-key the agent under the id the browser is about to adopt.
         // The frontend takes the id from this event and sends it as
         // sessionKey next time; without the migration that next turn hit a
@@ -2472,15 +2619,16 @@ running.add(key);
             savers.delete(key);
           }
         }
-        sse(res, { type: "session", id: saver.id, file: saver.file ?? null });
+        turnEmit(key, { type: "session", id: saver.id, file: saver.file ?? null });
         // AI 自动命名（对齐 claude.ai 的自动会话标题）。**不 await**：标题请求
         // 一旦打到慢/挂死的端点，曾把回合收束（done、busy 释放、断连清理）
         // 拖住最长 8 秒——disconnect 测试因此挂到 90s。标题晚点没关系，
         // 前端 done 后会延迟 refreshSessions 兜底。
-        emitAutoTitle(res, agent, saver);
-        sse(res, { type: "done" });
+        emitAutoTitle(key, agent, saver);
         turnFinished = true;
         console.log("[" + key + "] 完成 — " + agent.messages.length + " 消息 / " + agent.turnCount + " 回合 / 输入 " + (agent.totalInputTokens || 0) + " / 输出 " + (agent.totalOutputTokens || 0) + " tokens");
+        // turnFinish 发 done、收束所有跟随者（含原始连接），缓冲再留 2 分钟。
+        turnFinish(key);
         res.end();
         } finally {
           // Free the slot no matter how the run ended: error, interrupt, done.
@@ -3071,6 +3219,9 @@ if (path === "/api/session" && req.method === "POST") {
 
   const boundPort = server.address().port;
   const address = `http://127.0.0.1:${boundPort}`;
+  // 服务一起来就预热 @ 文件索引：等用户敲 "@" 时索引早已就绪，
+  // 而不是让第一次 @ 请求赶上空列表（前端收到 [] 会直接关菜单）。
+  try { ensureFileIndex(); } catch { /* 索引失败不阻塞启动 */ }
   if (open) {
     // 复用同一套「真的把地址交给系统」的逻辑：启动路径不阻塞，失败只丢日志。
     // 服务器本身会让事件循环活着，所以这里的 exec 一定跑得完。
