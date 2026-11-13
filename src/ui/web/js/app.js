@@ -6125,6 +6125,9 @@
         body.appendChild(listBox);
         skillsList.forEach(function (s) {
           var row = el("div", "skill-row");
+          // 显示真实来源路径：用户级技能可能来自 ~/.claude/skills（上游布局），
+          // 删除会连上游 Claude Code 的技能一起移除——把路径亮出来避免误删。
+          row.title = s.file || "";
           var main = el("div", "skill-main");
           var head = el("div", "skill-head");
           head.appendChild(el("b", null, "/" + s.name));
