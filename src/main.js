@@ -1757,6 +1757,12 @@ async function main() {
   }
 
   const config = loadConfig();
+  // 引擎后端生产默认 = 原生 Claude（upstream），锁定且 GUI 无切换入口
+  // （2026-11-14 用户要求）。配置文件/env 已显式设置的照旧；测试直接给
+  // startGui 传显式 config，不受这条影响。
+  if (config.engineBackend === undefined && process.env.MYCLAUDE_ENGINE_BACKEND === undefined) {
+    config.engineBackend = "upstream";
+  }
   if (opts.auto) config.permissionMode = "auto";
   if (opts.plan) config.permissionMode = "plan";
   // Checked last so it wins over --auto when both are given: it is the

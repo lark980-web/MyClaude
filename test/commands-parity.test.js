@@ -132,19 +132,14 @@ test("configuration commands persist instead of only printing", () => {
   assert.match(app, /function guiSetPref\([\s\S]*?localStorage\.setItem\(GUI_PREFS_KEY/);
 });
 
-test("GUI backend switch follows the /api/config engineBackend contract", () => {
-  assert.match(app, /function initEngineBackendSwitch\(\)/);
-  assert.match(app, /postJSON\("\/api\/config", \{ engineBackend: next \}\)/, "POST 回写 engineBackend");
-  assert.match(app, /getJSON\("\/api\/config"\)/, "GET 读取配置");
-  assert.match(app, /j\.engineBackend \|\| "self"/, "GET 的 engineBackend 是初始状态来源");
-  assert.match(app, /\[\["self", "自研"\], \["upstream", "原生 Claude"\]\]/, "文案固定为 自研 / 原生 Claude");
-  assert.match(app, /document\.querySelector\("\.mode-select-wrap"\)/);
-  assert.match(app, /modeWrap\.parentNode\.insertBefore\(host, modeWrap\.nextSibling\)/, "紧挨模式按钮");
-  assert.match(app, /后端已切换为「/, "成功 toast");
-  assert.match(app, /initEngineBackendSwitch\(\);/, "启动时初始化");
-  assert.match(app, /setEngineBackendUI\(j\.engineBackend \|\| "self"\);/, "配置刷新时同步状态");
-  assert.match(css, /\.engine-backend-switch \{/);
-  assert.match(css, /\.backend-opt\.active \{/);
+test("GUI engine switch is removed — backend locked, no switching entry (2026-11-14)", () => {
+  // 用户要求「始终保持原生 Claude」：切换 UI 与 POST 回写全部撤除，
+  // 后端只由配置文件/环境变量/main.js 生产默认决定。
+  assert.match(app, /引擎后端切换 UI 已按用户要求移除/);
+  assert.doesNotMatch(app, /function initEngineBackendSwitch\(\)/, "初始化函数已撤");
+  assert.doesNotMatch(app, /postJSON\("\/api\/config", \{ engineBackend: next \}\)/, "POST 回写入口已撤");
+  assert.doesNotMatch(app, /\[\["self", "自研"\], \["upstream", "原生 Claude"\]\]/, "切换文案已撤");
+  assert.doesNotMatch(app, /setEngineBackendUI\(j\.engineBackend \|\| "self"\);/, "配置同步调用已撤");
 });
 
 /* ---- live: /api/config 的 engineBackend 契约（服务端由 Lead 实现） ---- */
@@ -152,7 +147,7 @@ const HOME = mkdtempSync(join(tmpdir(), "myclaude-parity-home-"));
 process.env.MYCLAUDE_HOME = HOME;
 const { startGui } = await import("../src/ui/gui-server.js");
 
-test("GET /api/config exposes engineBackend and POST /api/config switches it", async () => {
+test("GET /api/config exposes engineBackend; POST can no longer switch it (locked)", async () => {
   const config = {
     provider: "openai", baseUrl: "http://127.0.0.1:1/v1", apiKey: "t", model: "t",
     permissionMode: "fullAccess", vision: true, maxTurns: 1000,
@@ -160,21 +155,16 @@ test("GET /api/config exposes engineBackend and POST /api/config switches it", a
   };
   const { server, address } = await startGui({ config, port: 0, open: false, cwd: process.cwd() });
   try {
-    let got = await (await fetch(address + "/api/config")).json();
+    const got = await (await fetch(address + "/api/config")).json();
     assert.ok(got.engineBackend === "self" || got.engineBackend === "upstream",
       "GET 应返回 engineBackend: self|upstream");
+    const before = got.engineBackend;
     await fetch(address + "/api/config", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ engineBackend: "upstream" })
+      body: JSON.stringify({ engineBackend: before === "self" ? "upstream" : "self" })
     });
-    got = await (await fetch(address + "/api/config")).json();
-    assert.equal(got.engineBackend, "upstream", "POST 应能切到 upstream");
-    await fetch(address + "/api/config", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ engineBackend: "self" })
-    });
-    got = await (await fetch(address + "/api/config")).json();
-    assert.equal(got.engineBackend, "self", "POST 应能切回 self");
+    const after = await (await fetch(address + "/api/config")).json();
+    assert.equal(after.engineBackend, before, "POST 不再接受 engineBackend —— 后端已锁定");
   } finally {
     await new Promise((r) => server.close(r));
   }

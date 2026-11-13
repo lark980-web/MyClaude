@@ -4887,7 +4887,6 @@
   function refreshStats() {
     getJSON("/api/config").then(function (j) {
       S.config = j;
-      setEngineBackendUI(j.engineBackend || "self");
     // 深度思考按钮镜像 config.effort（与 /effort 同一设置）
     S.thinking = ["high", "medium", "low"].indexOf(S.config && S.config.effort) >= 0;
     renderThinkingButton();
@@ -6962,53 +6961,9 @@
     }).catch(function (e) { addNotice("命令失败：" + e.message, "err"); });
   }
 
-  /* ---------------------------------------------------------------- *
-   * GUI 后端引擎切换（契约）
-   *   GET  /api/config  -> { engineBackend: 'self' | 'upstream' }
-   *   POST /api/config  <- { engineBackend }
-   * 控件插在「权限模式」下拉旁，文案固定为「自研」/「原生 Claude」。
-   * 服务端持久化由 gui-server 负责；这里只做读取、回写与成功提示。
-   * ---------------------------------------------------------------- */
-  function engineBackendLabel(v) { return v === "upstream" ? "原生 Claude" : "自研"; }
-
-  function setEngineBackendUI(v) {
-    var host = $("engine-backend-switch");
-    var wanted = v === "upstream" ? "upstream" : "self";
-    if (S.config) { S.config.engineBackend = wanted; }
-    if (!host) { return; }
-    Array.prototype.forEach.call(host.querySelectorAll(".backend-opt"), function (b) {
-      var on = b.getAttribute("data-backend") === wanted;
-      if (on) { b.classList.add("active"); } else { b.classList.remove("active"); }
-      b.setAttribute("aria-pressed", on ? "true" : "false");
-    });
-  }
-
-  function initEngineBackendSwitch() {
-    var modeWrap = document.querySelector(".mode-select-wrap");
-    if (!modeWrap || $("engine-backend-switch")) { return; }
-    var host = el("div", "engine-backend-switch");
-    host.id = "engine-backend-switch";
-    host.setAttribute("role", "group");
-    host.setAttribute("aria-label", "回复后端引擎");
-    var states = [["self", "自研"], ["upstream", "原生 Claude"]];
-    states.forEach(function (pair) {
-      var b = el("button", "backend-opt", pair[1]);
-      b.type = "button";
-      b.setAttribute("data-backend", pair[0]);
-      b.addEventListener("click", function () {
-        var next = pair[0];
-        postJSON("/api/config", { engineBackend: next }).then(function (j) {
-          setEngineBackendUI((j && j.engineBackend) || next);
-          toast("后端已切换为「" + engineBackendLabel(next) + "」", "ok");
-        }).catch(function (e) { toast("切换后端失败：" + e.message, "err"); });
-      });
-      host.appendChild(b);
-    });
-    modeWrap.parentNode.insertBefore(host, modeWrap.nextSibling);
-    // 初始值以 GET /api/config 的 engineBackend 为准；字段暂缺时按 'self'。
-    getJSON("/api/config").then(function (j) { setEngineBackendUI(j.engineBackend || "self"); })
-      .catch(function () { setEngineBackendUI("self"); });
-  }
+  /* 引擎后端切换 UI 已按用户要求移除（2026-11-14）：始终使用原生 Claude。
+   * 后端选择由服务端配置锁定（main.js 生产默认 upstream，POST /api/config
+   * 不再接受 engineBackend），GUI 不再提供「自研 / 原生 Claude」切换。 */
 
   function runCommand(text) {
     var parts = text.slice(1).split(/\s+/);
@@ -7268,7 +7223,8 @@
       ta.addEventListener("input", function () {
         autoGrow(ta);
         updateSlashMenu(ta.value);
-        updateAtMenu(ta);
+        // @ 引用菜单已按用户要求移除（2026-11-14）：按钮与输入触发都撤了，
+        // 原生 Claude 引擎自己对消息里的 @path 做文件解析。
         saveDraftSoon(ta.value);
       });
       ta.addEventListener("keydown", function (e) {
@@ -10078,21 +10034,6 @@ function switchInspectorTab(tab) {
       });
     }
 
-    var btnAt = $("btn-at");
-    if (btnAt) {
-      btnAt.addEventListener("click", function (e) {
-        e.stopPropagation();
-        var ta = $("in");
-        if (!ta) { return; }
-        var cur = ta.value || "";
-        var needSpace = cur.length > 0 && !/\s$/.test(cur);
-        ta.value = cur + (needSpace ? " @" : "@");
-        ta.focus();
-        ta.setSelectionRange(ta.value.length, ta.value.length);
-        updateAtMenu(ta);
-      });
-    }
-
     var tabInfo = $("tab-insp-info");
     var tabArt = $("tab-insp-artifact");
     if (tabInfo) { tabInfo.addEventListener("click", function () { switchInspectorTab("info"); }); }
@@ -11628,7 +11569,6 @@ function switchInspectorTab(tab) {
     renderWelcomeCards();
     renderChatSkeleton();
     bindEvents();
-    initEngineBackendSwitch();
     if (params.get("insp") === "1") { $("app").classList.add("insp-open"); }
     if (params.get("settings") === "1") { setTimeout(openSettings, 400); }
     if (params.get("insptab") === "changes") { S.changesScope = params.get("chgscope") === "branch" ? "branch" : "turn"; setTimeout(function () { var ap = $("app"); if (ap) { ap.classList.add("insp-open"); } switchInspectorTab("changes"); }, 500); }
@@ -11645,7 +11585,6 @@ function switchInspectorTab(tab) {
       S.vision = j.vision !== false;
       if (j.routing) { S.routing = j.routing; }
       setMode(j.permissionMode || "ask");
-      setEngineBackendUI(j.engineBackend || "self");
       renderVision();
       renderUsage();
       renderInspector();

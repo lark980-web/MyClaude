@@ -50,6 +50,11 @@
 - ✅ 断线续跑：SSE 断开不再杀回合；turnBus 缓冲 + /api/turn-state + /api/turn-events
   重放跟随；浏览器实测「刷新→已重新接上→回放→收束」
 - ✅ @ 文件索引（BFS 1500 上限 + 启动预热 + 首请求等待）
+- ✅ 2026-11-14 上午（用户指令）：**对话框 @ 已移除**（按钮+输入触发+占位文案；
+  原生引擎自己对 @path 做解析）；**引擎切换 UI 已移除且 POST 锁定**——
+  「始终保持原生 Claude」：main.js 生产默认 engineBackend=upstream，
+  POST /api/config 不再接受 engineBackend；测试需 self 的在 startGui
+  显式传 config.engineBackend（commands-parity 两条契约测试已改写）
 
 其余待办（非命令面）：
 

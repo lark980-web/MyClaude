@@ -8,6 +8,15 @@
 
 ## [Unreleased]
 
+### Removed（2026-11-14 上午，用户指令：始终保持原生 Claude）
+
+- **对话框 @ 引用**：composer 的 @ 按钮、输入触发与占位文案全部移除。
+  原生 Claude 引擎自行解析消息里的 @path，GUI 侧引用菜单不再需要。
+- **引擎切换（自研 / 原生 Claude）**：composer 切换控件移除，
+  `POST /api/config` 不再接受 `engineBackend`；`main.js` 生产配置默认
+  `engineBackend: "upstream"` 并持久化——引擎始终为原生 Claude，无切换入口。
+  测试需自研引擎的在 startGui 显式传 `config.engineBackend: "self"`。
+
 ### Fixed（2026-11-14 夜航：GUI 六大主诉——@ / 技能 / 断线续跑 / 命令面）
 
 **@ 引用搜不到源码文件**

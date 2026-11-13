@@ -344,16 +344,13 @@
           </div>
           <div class="prompt-top">
             <textarea id="in" rows="1" spellcheck="false" autocomplete="off"
-              placeholder="今天想让 MyClaude 帮你做什么？（输入 @ 引用文件 · / 调用命令）"></textarea>
+              placeholder="今天想让 MyClaude 帮你做什么？（/ 调用命令）"></textarea>
             <div id="vim-indicator" class="vim-indicator" hidden></div>
           </div>
           <div class="prompt-bar">
             <div class="prompt-left">
               <button class="round-btn" id="btn-attach" title="添加图片或文件（也可拖放、粘贴）" aria-label="添加附件">
                 <svg width="16" height="16"><use href="#i-plus"/></svg>
-              </button>
-              <button class="round-btn" id="btn-at" title="引用工作区文件（输入 @ 触发）" aria-label="引用文件">
-                <svg width="16" height="16"><use href="#i-at"/></svg>
               </button>
               <!-- Permission mode: a native select instead of the old 3-item
                    segmented control. The segmented form could not carry the

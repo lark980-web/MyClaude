@@ -79,16 +79,15 @@ const restore = () => {
   for (const [k, v] of Object.entries(ORIG)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
 };
 
-test("GET /api/config exposes the engine backend, POST switches it", async () => {
+test("GET /api/config exposes the engine backend; POST can no longer switch it (locked 2026-11-14)", async () => {
   const { server: gui, address } = await startGui({ config: { model: "m", provider: "openai", baseUrl: "http://127.0.0.1:9", apiKey: "x" }, port: 0, open: false });
   try {
     const g = await (await fetch(address + "/api/config")).json();
-    assert.equal(g.engineBackend, "self", "default must stay self");
-    const p = await fetch(address + "/api/config", { method: "POST", headers: { "Content-Type": "application/json" },
+    assert.equal(g.engineBackend, "self", "default must stay self for explicit test configs");
+    await fetch(address + "/api/config", { method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ engineBackend: "upstream" }) });
-    assert.equal(p.status, 200);
     const g2 = await (await fetch(address + "/api/config")).json();
-    assert.equal(g2.engineBackend, "upstream");
+    assert.equal(g2.engineBackend, "self", "POST must NOT switch — engine locked to config/env");
   } finally { await new Promise((r) => gui.close(r)); }
 });
 

@@ -945,13 +945,8 @@ async function searchWorkspaceFiles(query = "", limit = 40) {
           if (Number.isFinite(v) && v >= 5000) { config[k] = v; saveConfig({ [k]: v }); }
           else if (body[k] === null) { delete config[k]; saveConfig({ [k]: null }); }
         }
-        if (body.engineBackend !== undefined) {
-          const v = String(body.engineBackend);
-          if (v === "self" || v === "upstream") {
-            config.engineBackend = v;
-            saveConfig({ engineBackend: v });
-          }
-        }
+        // engineBackend 已锁定（2026-11-14 用户要求「始终保持原生 Claude」）：
+        // GUI 不再提供切换，POST 一律不接受该字段——后端只由配置文件/环境变量决定。
         if (body.model) {
           config.model = String(body.model);
           provider.model = config.model;
