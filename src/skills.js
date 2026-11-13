@@ -13,6 +13,7 @@
  */
 import { readdirSync, readFileSync, existsSync, statSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { join, resolve, basename } from "node:path";
+import { homedir } from "node:os";
 import { CONFIG_DIR } from "./config.js";
 import { splitFrontMatter } from "./commands.js";
 import { pluginComponentPaths } from "./plugins.js";
@@ -32,7 +33,16 @@ const SKILL_FILE = "SKILL.md";
 export function skillDirs(cwd = process.cwd()) {
   const dirs = [];
   const home = join(CONFIG_DIR, "skills");
-  // 用户级：~/.myclaude/skills/<名>/SKILL.md，优先级最低
+  // 用户级两处都读：~/.claude/skills（上游 Claude Code 原生布局，最低优先）→
+  // ~/.myclaude/skills（MyClaude 布局，同名覆盖上游）。
+  // 隔离纪律：MYCLAUDE_HOME 被设置（测试/沙盒）时，只有显式给
+  // MYCLAUDE_CLAUDE_HOME 才读上游布局——真实用户目录绝不能漏进测试。
+  const claudeHome = process.env.MYCLAUDE_CLAUDE_HOME
+    ? join(process.env.MYCLAUDE_CLAUDE_HOME, "skills")
+    : (process.env.MYCLAUDE_HOME ? null : join(homedir(), ".claude", "skills"));
+  if (claudeHome && existsSync(claudeHome) && resolve(claudeHome) !== resolve(home)) {
+    dirs.push({ dir: claudeHome, scope: "user" });
+  }
   if (existsSync(home)) { dirs.push({ dir: home, scope: "user" }); }
   // 项目级只认「项目根」一处，不逐级向上爬：从 Temp 之类目录向上找，会把
   // ~/.myclaude/skills 误判成 project 技能，同一个技能被加载两次且作用域错误。
