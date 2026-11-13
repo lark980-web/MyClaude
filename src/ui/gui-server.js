@@ -2677,6 +2677,17 @@ running.add(key);
           if (flushTimer) { clearInterval(flushTimer); flushTimer = null; }
           if (progressTimer) { clearInterval(progressTimer); progressTimer = null; }
           running.delete(key);
+          // turnAttach 之后、turnFinish 之前就死的回合（agentFor 抛错等）：
+          // 缓冲没有 TTL 定时器，会永久留在 turnBus —— 在这里补收束。
+          if (!turnFinished) {
+            const b = turnBus.get(key);
+            if (b && !b.done) {
+              b.done = true;
+              b.ttlTimer = setTimeout(() => { turnBus.delete(key); }, TURN_BUS_TTL_MS);
+              if (typeof b.ttlTimer.unref === "function") { b.ttlTimer.unref(); }
+              for (const client of [...b.clients]) { b.clients.delete(client); try { client.end(); } catch {} }
+            }
+          }
         }
         return;
       }
