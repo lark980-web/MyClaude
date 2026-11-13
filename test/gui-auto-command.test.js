@@ -45,8 +45,12 @@ test("every command named by a user-facing hint is dispatchable", () => {
   assert.ok(hinted.size >= 1, "expected at least one hinted command");
   for (const cmd of hinted) {
     const dispatched = new RegExp('case "' + cmd + '":').test(appSource);
+    // EXTRA_COMMANDS 键（"reload-skills": function …）也是真实派发点：
+    // runCommand default 分支先查 case，再查这张注册表。
+    const inRegistry = new RegExp('(?<![\\w-])"' + cmd.replace(/-/g, "\\-") + '":\\s*function').test(appSource)
+      || new RegExp('(?<![\\w-])' + cmd.replace(/-/g, "\\-") + ':\\s*function').test(appSource);
     const inMenu = new RegExp('k: "/' + cmd + '"').test(appSource);
-    assert.ok(dispatched || inMenu, "/" + cmd + " is advertised in a hint but not dispatchable");
+    assert.ok(dispatched || inRegistry || inMenu, "/" + cmd + " is advertised in a hint but not dispatchable");
   }
 });
 
